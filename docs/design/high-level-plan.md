@@ -11,12 +11,15 @@
   - utf8proc
   - rapidyaml
 - Establish core/module boundaries
+- CI: self-contained build/test targets
 
 ## Stage 1 — Terminal session
 - PTY abstraction
 - Linux implementation: `forkpty`/`openpty`
 - Shell/process lifecycle
 - Non-blocking I/O
+- UI-thread ownership of terminal state: bounded SPSC queue + `Fl::awake()`
+- SIGCHLD-based child exit detection (EOF is a hint only)
 - Terminal resize
 - Wire PTY → libtsm
 
@@ -29,6 +32,9 @@
 - Colours/attributes
 - Cursor
 - Basic scrolling
+- Scrollback (libtsm built-in, bounded)
+- OSC 0/2 window title
+- Wide/combining characters
 - Keyboard/mouse input
 - Clipboard
 

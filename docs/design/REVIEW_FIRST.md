@@ -37,8 +37,18 @@ Solid, disciplined plan. The layering rule (`FLTK UI → Application model → T
 
 ## Suggested edits (summary)
 
-1. Add a "Threading & synchronization" section to Stage 1/2 specifying state ownership and the wakeup mechanism.
-2. Split scrollback out as its own Stage 2 task; document the libtsm no-scrollback/reflow caveat.
-3. Replace `ssize_t` in `TerminalSession` with portable types.
-4. Specify the child-exit detection mechanism (SIGCHLD reaper) and the EOF-vs-exit policy.
-5. Fix the "five components" inconsistency and add wide-char + IME tasks to Stage 2.
+- [x] Threading & synchronization section (UI-thread ownership, SPSC queue, `Fl::awake()`) — detailed plan 1.7
+- [x] Scrollback via libtsm built-in, bounded — detailed plan 2.9
+- [ ] Reflow — deferred; libtsm fork planned, see "Deferred Work"
+- [x] `ssize_t` → portable types — detailed plan 1.1
+- [x] SIGCHLD reaper + EOF policy — detailed plan 1.3/1.6
+- [x] "five components" fixed — Stage 0 exit criteria
+- [x] Wide/combining chars task — detailed plan 2.10
+- [x] IME verification — detailed plan 2.6
+- [x] Resize ordering — detailed plan 2.11
+- [x] OSC 0/2 title — detailed plan 2.12
+- [x] Styling-from-struct — detailed plan 2.3
+- [x] CI in Stage 0 — detailed plan 0.7
+- [x] Consistency touches — high-level plan
+
+Parser-swap question resolved: keep libtsm (kmscon/libtsm active, current releases).

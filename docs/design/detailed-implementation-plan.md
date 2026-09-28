@@ -148,6 +148,18 @@ Define:
 
 Add `.clang-format` and, if desired, `.clang-tidy`.
 
+### 0.7 CI
+
+All CI is self-contained: platform integrations are thin wrappers that call
+Make/CMake targets. The repository itself must provide runnable entry points,
+for example:
+
+- `cmake` configure + build (Debug and Release)
+- `ctest` (all tests)
+
+A CI platform (e.g. GitHub Actions) runs only these targets on Linux at this
+stage. The full platform matrix stays in Stage 8.5.
+
 ## Tests
 
 Add the first smoke test:
@@ -161,9 +173,10 @@ Add the first smoke test:
 Stage 0 is complete when:
 
 - a clean build succeeds from an empty build directory
-- all five selected components are linked successfully
+- all four selected dependencies are linked successfully
 - the application opens a FLTK window
 - CTest executes successfully
+- CI runs build + tests through the self-contained targets (0.7)
 - no core component depends directly on FLTK
 
 ---
@@ -184,8 +197,8 @@ public:
     virtual ~TerminalSession() = default;
 
     virtual bool start(const SessionOptions&) = 0;
-    virtual ssize_t read(std::span<std::byte>) = 0;
-    virtual ssize_t write(std::span<const std::byte>) = 0;
+    virtual std::size_t read(std::span<std::byte>) = 0;
+    virtual std::size_t write(std::span<const std::byte>) = 0;
     virtual bool resize(int cols, int rows) = 0;
     virtual void terminate() = 0;
     virtual bool running() const = 0;
@@ -193,6 +206,9 @@ public:
 ```
 
 Do not expose Linux-specific types from this interface.
+
+Return values are portable byte counts. `read` returns 0 for EOF; errors are
+reported as explicit status values, not via POSIX errno or `ssize_t`.
 
 ## 1.2 Define session options
 
@@ -222,7 +238,11 @@ Required behavior:
 6. `exec()` requested shell/program.
 7. Parent retains master FD.
 8. Set master FD non-blocking.
-9. Detect EOF and child exit.
+9. Detect child exit via SIGCHLD + `waitpid()`; this is authoritative for the
+   exit status.
+10. Treat EOF on the master FD as a hint only. Grandchildren can keep the
+    slave FD open after the direct child exits (e.g. `screen`, daemons), so
+    EOF alone must not end the session.
 
 Keep child-process setup isolated from application code.
 
@@ -281,6 +301,30 @@ Handle:
 - failed PTY creation
 - external termination
 - application shutdown
+
+A session only leaves `Running` when `waitpid()` confirms the direct child
+exited. EOF on the master FD does not end the session by itself.
+
+## 1.7 Threading and synchronization
+
+Terminal state is owned exclusively by the UI thread.
+
+The I/O thread (1.4) never touches terminal state. It:
+
+- reads PTY data
+- enqueues byte buffers into a bounded SPSC queue
+- calls `Fl::awake()` to notify the UI thread
+
+The UI thread:
+
+- drains the queue and calls `feed()` on the terminal core
+- coalesces wakeups; several notifications may trigger one redraw
+- performs all rendering and input handling
+
+No locks guard terminal state. The queue is the only shared object.
+
+Queue-full policy: the reader briefly blocks. PTY output is never buffered
+without bound.
 
 ## Tests
 
@@ -358,6 +402,10 @@ Requirements:
 
 Do not add HarfBuzz/FreeType as dependencies at this stage.
 
+Font and colour values come from a plain styling struct with defaults
+centralized in C++ from day one. Stage 5 only changes where the struct is
+filled from, not the widget code.
+
 ## 2.4 Implement basic rendering
 
 Render:
@@ -407,6 +455,10 @@ FLTK event → terminal key event → encoded terminal sequence
 
 Do not put key encoding logic directly inside `TerminalWidget`.
 
+Before finalizing the translation layer, verify FLTK's IME / non-Latin input
+support (dead keys, CJK input methods). Where FLTK delivers composed text,
+route it through the same path as printable characters.
+
 ## 2.7 Mouse input
 
 Implement:
@@ -429,11 +481,56 @@ Respect bracketed paste once the terminal state supports it.
 
 ## 2.9 Scrollback
 
-Use a bounded scrollback implementation.
+libtsm provides scrollback internally (`tsm_screen_set_max_sb`, `tsm_screen_sb_up/down`,
+`tsm_screen_sb_page_up/down`, `tsm_screen_sb_reset`, `tsm_screen_sb_get_line_count`,
+`tsm_screen_sb_get_line_pos`). Use it; do not build a separate scrollback store.
 
-Define a configurable maximum line count.
+Wrap it as follows:
 
-Avoid unbounded memory growth.
+- call `tsm_screen_set_max_sb()` with a configurable maximum line count (see Stage 5)
+- expose scroll position and line count through the terminal model API (2.2)
+- map mouse wheel and Shift/PageUp/PageDown to `sb_up`/`sb_down`/`sb_page_up`/`sb_page_down`
+- reset the scroll position on keypress (`sb_reset`) unless the key is a scroll key
+- when scrolled up, snap back to the live screen on new output only if the user
+  has not locked the view (xterm-style behavior; keep it simple at first)
+
+Avoid unbounded memory growth: the maximum must be finite and configurable.
+
+## 2.10 Wide and combining characters
+
+Rely on libtsm's cell width handling (it bundles wcwidth upstream v4) for
+double-width and combining characters.
+
+Requirements:
+
+- reserve two cells for double-width glyphs; never split them across lines
+- cursor movement and selection skip the trailing half of a wide char
+- expose per-cell width through the terminal model API (2.2); the libtsm draw
+  callback already reports it
+- tests: CJK text, combining accents, and a wide char placed at the last column
+
+## 2.11 Resize flow
+
+Use one canonical order:
+
+```text
+widget resize
+  → compute new cols/rows from cell metrics
+  → resize libtsm screen
+  → PTY resize (SIGWINCH to child)
+  → full redraw
+```
+
+No reflow in v1; see Deferred Work.
+
+## 2.12 Title handling
+
+Handle the basic `OSC 0;title` / `OSC 2;title` window-title case:
+
+- register `tsm_vte_set_osc_cb()` and parse `OSC 0` / `OSC 2`
+- expose the title through the terminal model API (2.2) so tabs (Stage 4)
+  and the window can display it
+- remain silent on unhandled OSC codes; Stage 6 adds more (see 6.1)
 
 ## Tests
 
@@ -805,7 +902,8 @@ Implement in this order.
 - pane movement
 - tab movement
 - terminal renaming
-- dynamic title handling
+- dynamic title updates beyond the basic OSC 0/2 case (e.g. OSC 7
+  working-directory reporting)
 
 ## 6.2 Terminal functionality
 
@@ -1100,6 +1198,27 @@ Maintain a small manual checklist covering:
 - restored layouts
 
 ---
+
+# Deferred Work
+
+## Reflow on resize
+
+libtsm 4.8.0 does not rewrap lines on resize (`tsm_screen_resize()` extends or
+truncates lines only). v1 ships with that behavior.
+
+Reflow is planned as a fork of libtsm in a separate repository, using the VTE
+approach:
+
+- add a per-line soft-wrap flag to `struct line`, set when autowrap continues
+  a line, cleared by hard newline, CR, EL, CUP, and ICH/DCH at the last column
+- on width change, walk screen and scrollback lines and re-wrap them, merging
+  soft-wrapped lines and preserving hard-wrapped ones
+- skip reflow on the alternate screen
+- restore the cursor best-effort
+- test with the libvterm reflow case catalogue plus wide/combining characters
+
+Contribute the patch upstream (kmscon/libtsm is active; releases are current)
+and integrate the fork once the current implementation is complete.
 
 # Dependency Policy
 
