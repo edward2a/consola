@@ -8,7 +8,6 @@
 - Build system: **CMake**
 - GUI: **FLTK**
 - Terminal state / VT handling: **libtsm**
-- Unicode processing: **utf8proc**
 - Configuration: **YAML via rapidyaml**
 - Initial target: **Linux**
 - Portability target: **macOS + Windows**
@@ -91,12 +90,23 @@ Make the build consume:
 
 - FLTK
 - libtsm
-- utf8proc
 - rapidyaml
 
-Prefer system packages during initial development.
+Full details: `docs/dependencies.md`.
 
-Do not vendor dependencies yet unless portability/build reproducibility later requires it.
+- CMake `FetchContent` pulls every dep at configure time
+- each dep pinned to a git commit hash (tag in a comment), all in
+  `cmake/deps.cmake`
+- all deps built from source, linked statically by default
+- libtsm is meson-only upstream: fetch its sources and compile them with our
+  own `cmake/libtsm.cmake` (no meson). `-ffast-math` stays on the libtsm
+  target only.
+- FLTK pinned to 1.4.x
+- `CONSOLA_USE_SYSTEM_DEPS` (default OFF): use installed packages instead;
+  minimum version = pinned version; too old fails configure with a clear
+  message
+- install the license texts of all static deps under
+  `share/doc/consola/licenses/`
 
 ### 0.3 Establish error handling
 
@@ -104,7 +114,9 @@ Use exceptions only at application/setup boundaries.
 
 Within core runtime code:
 
-- return explicit status/result values where practical
+- return explicit status/result values where practical: plain enums and small
+  structs (e.g. `IoStatus`/`IoResult`, `SessionError` in 1.1). C++20 has no
+  `std::expected`, and no extra dependency is added for one.
 - treat PTY/process failures as recoverable session errors
 - keep fatal startup errors visible and actionable
 
@@ -157,6 +169,9 @@ for example:
 - `cmake` configure + build (Debug and Release)
 - `ctest` (all tests)
 
+CI uses the same pinned FetchContent deps (fetch cache optional; no meson
+needed).
+
 A CI platform (e.g. GitHub Actions) runs only these targets on Linux at this
 stage. The full platform matrix stays in Stage 8.5.
 
@@ -173,7 +188,7 @@ Add the first smoke test:
 Stage 0 is complete when:
 
 - a clean build succeeds from an empty build directory
-- all four selected dependencies are linked successfully
+- all three selected dependencies are linked successfully
 - the application opens a FLTK window
 - CTest executes successfully
 - CI runs build + tests through the self-contained targets (0.7)
@@ -192,23 +207,45 @@ Create a reliable process/PTY layer and feed terminal output into libtsm.
 Create:
 
 ```cpp
+enum class IoStatus { ok, would_block, eof, error };
+
+struct IoResult {
+    std::size_t count;   // bytes moved; nonzero only with ok
+    IoStatus    status;
+};
+
+enum class SessionError { none, pty_failed, fork_failed, exec_failed,
+                          resize_failed, not_running };
+
 class TerminalSession {
 public:
     virtual ~TerminalSession() = default;
 
-    virtual bool start(const SessionOptions&) = 0;
-    virtual std::size_t read(std::span<std::byte>) = 0;
-    virtual std::size_t write(std::span<const std::byte>) = 0;
-    virtual bool resize(int cols, int rows) = 0;
+    virtual SessionError start(const SessionOptions&) = 0;
+    virtual IoResult read(std::span<std::byte>) = 0;
+    virtual IoResult write(std::span<const std::byte>) = 0;
+    virtual SessionError resize(int cols, int rows) = 0;
     virtual void terminate() = 0;
     virtual bool running() const = 0;
 };
 ```
 
-Do not expose Linux-specific types from this interface.
+Do not expose Linux-specific types from this interface. The result types live
+in the error-handling module (0.3).
 
-Return values are portable byte counts. `read` returns 0 for EOF; errors are
-reported as explicit status values, not via POSIX errno or `ssize_t`.
+Result semantics:
+
+- `read`:
+  - `ok` with `count > 0`: data was read
+  - `would_block`: no data ready (the master FD is non-blocking)
+  - `eof`: a hint only; see 1.3 #10
+  - `error`: the read failed
+- `write`:
+  - `ok`: `count` bytes were written; a short write is still `ok`
+  - `would_block`: nothing was written (`count == 0`)
+  - the caller keeps the unwritten remainder
+- OS error codes (errno, GetLastError) are logged inside the backend and never
+  cross the interface. No POSIX errno or `ssize_t` in the API.
 
 ## 1.2 Define session options
 
@@ -221,6 +258,9 @@ Include:
 - initial rows/columns
 - TERM value
 - login-shell flag
+
+Defaults: `TERM=xterm-256color`, `COLORTERM=truecolor`. Both can be
+overridden by config.
 
 Keep the representation platform-neutral.
 
@@ -238,28 +278,64 @@ Required behavior:
 6. `exec()` requested shell/program.
 7. Parent retains master FD.
 8. Set master FD non-blocking.
-9. Detect child exit via SIGCHLD + `waitpid()`; this is authoritative for the
-   exit status.
+9. Detect child exit with `waitpid(pid, WNOHANG)`; this is authoritative for
+   the exit status. How the I/O loop is notified that a child exited is
+   described in 1.4. The SIGCHLD disposition must not be `SIG_IGN`, or the
+   kernel reaps children itself and the exit status is lost.
 10. Treat EOF on the master FD as a hint only. Grandchildren can keep the
     slave FD open after the direct child exits (e.g. `screen`, daemons), so
     EOF alone must not end the session.
+11. Report exec failure synchronously. Before forking, create a pipe with
+    `O_CLOEXEC`. If `exec()` fails, the child writes its errno to the pipe
+    and calls `_exit()`. The parent reads the pipe: EOF means `exec()`
+    succeeded; data means `start()` returns `exec_failed` (errno is logged).
 
 Keep child-process setup isolated from application code.
 
 ## 1.4 Implement I/O loop
 
-Use a dedicated mechanism for reading PTY output.
+Use one application-owned I/O thread for all sessions. It starts once at
+application startup and stops at shutdown. The UI thread never blocks on PTY
+I/O.
 
-For the first implementation, use a single application-owned I/O thread.
+The loop waits in `poll()` on:
 
-Thread responsibilities:
+- each session's master FD: `POLLIN`, plus `POLLOUT` while writes are pending
+- one wake FD: `eventfd` on Linux, a self-pipe on other POSIX systems
+- one exit-notification FD per child
 
-- block waiting for PTY data
-- read batches
-- deliver byte buffers to terminal core
-- detect EOF/process termination
+Exit notification:
 
-Do not make the FLTK UI thread block on PTY I/O.
+- Linux: call `pidfd_open()` on the child right after `fork()`. This is
+  race-free: the pid cannot be reused until we reap it.
+- Fallback (other POSIX, Linux < 5.3): a SIGCHLD handler writes a byte to a
+  self-pipe; the loop then calls `waitpid(pid, WNOHANG)` for each known pid.
+- Never call `waitpid(-1)`; it would reap children the application does not
+  own.
+
+Commands from the UI arrive through a UI→loop command queue, followed by a
+signal on the wake FD:
+
+- `add`: register a session
+- `remove`: unregister a session; the loop acknowledges it
+- `terminate`: send SIGHUP and start the kill timer (1.6)
+- `write-pending`: a session has outgoing bytes (1.7)
+- `resume`: a session's inbound queue has room again (1.7)
+- `shutdown`: stop the loop
+
+Event handling:
+
+- readable: `read()` until `would_block`; push `data` messages to that
+  session's inbound queue
+- EOF: push `eof`, stop polling `POLLIN` on that FD, keep waiting for the exit
+  notification (1.3 #10)
+- exit notification: `waitpid(pid, WNOHANG)`, then push `exited{status}`
+- writable: write from the session's outgoing queue until `would_block` or
+  empty; poll `POLLOUT` only while bytes remain
+
+The implementation lives in `platform/linux`, behind a narrow, platform-neutral
+`IoLoop` interface, so the ConPTY backend (Stage 8) can work differently
+underneath.
 
 ## 1.5 Integrate libtsm
 
@@ -296,35 +372,92 @@ Exited
 Handle:
 
 - normal shell exit
-- EOF
-- failed exec
-- failed PTY creation
+- EOF (`IoStatus::eof`; hint only)
+- failed exec (`SessionError::exec_failed`, via the 1.3 #11 pipe)
+- failed PTY creation (`SessionError::pty_failed`)
+- failed fork (`SessionError::fork_failed`)
 - external termination
 - application shutdown
 
-A session only leaves `Running` when `waitpid()` confirms the direct child
-exited. EOF on the master FD does not end the session by itself.
+A session only leaves `Running` when the UI thread receives `exited{status}`
+from the I/O loop, i.e. after `waitpid()` confirmed the direct child exited
+(1.4). EOF on the master FD does not end the session by itself.
+
+`terminate()`:
+
+- returns at once; never blocks the UI
+- session goes `Running` → `Stopping`; `Exited` when `exited` arrives
+- sends the `terminate` command; the loop does
+  `kill(-pgid, SIGHUP)` on the child's process group (child is session
+  leader, 1.3 #3, so pgid = pid)
+- kill timer: if `exited` has not arrived after the timeout (default 2 s,
+  configurable in Stage 5), the loop sends `kill(-pgid, SIGKILL)`. The timer
+  uses the `poll()` timeout; no extra thread.
+- reaping stays on the normal path: pidfd → `waitpid` → `exited{status}`
+
+Application shutdown: terminate all sessions, wait until all report `exited`
+or the timeout passes, SIGKILL the rest, then quit.
 
 ## 1.7 Threading and synchronization
 
-Terminal state is owned exclusively by the UI thread.
+Ownership:
 
-The I/O thread (1.4) never touches terminal state. It:
+- Terminal state is owned exclusively by the UI thread.
+- The I/O loop (1.4) never touches terminal state.
+- No locks guard terminal state. The queues below are the only shared
+  objects.
 
-- reads PTY data
-- enqueues byte buffers into a bounded SPSC queue
-- calls `Fl::awake()` to notify the UI thread
+Inbound (loop → UI):
 
-The UI thread:
+- one bounded SPSC queue per session; messages are `data`, `eof` and
+  `exited{status}`
+- one queue per session guarantees that all of a session's output arrives
+  before its `exited` message
+- the UI thread drains the queues, calls `feed()` on the terminal core and
+  performs all rendering and input handling
+- backpressure: when a session's queue is full, the loop stops polling that FD
+  for `POLLIN`. Unread output stays in the kernel PTY buffer, and eventually
+  the child blocks on write. When the UI has drained the queue below a
+  low-water mark, it sends `resume`. Other sessions keep flowing. PTY output
+  is never buffered without bound.
 
-- drains the queue and calls `feed()` on the terminal core
-- coalesces wakeups; several notifications may trigger one redraw
-- performs all rendering and input handling
+Drain budget (UI side):
 
-No locks guard terminal state. The queue is the only shared object.
+- per wakeup, the UI calls `feed()` for at most ~8 ms, then stops
+- sessions are drained round-robin, so one flood cannot starve other panes
+- data left over: schedule the next drain with `Fl::add_timeout(0)`; FLTK
+  handles pending input and redraws in between, so keys still get through
+- one redraw per drain, not per chunk
+- backpressure unchanged: queues stay full, the loop stops reading, the child
+  blocks
 
-Queue-full policy: the reader briefly blocks. PTY output is never buffered
-without bound.
+Outbound (UI → loop):
+
+- the libtsm write callback, key input, pastes and automatic replies (device
+  attributes, cursor-position reports) all run on the UI thread
+- they append to that session's bounded SPSC byte queue, then the UI sends
+  `write-pending`
+- the loop is the only thread that writes to the master FD
+- if the outgoing queue is full, the remainder goes to a UI-side overflow
+  buffer (bounded by the paste size); the loop calls the wake callback when
+  space frees up, and the UI moves more bytes into the queue
+- byte order is preserved
+
+Wakeups:
+
+- core and platform code receive an injected `std::function<void()>` wake
+  callback. Only the UI layer implements it with `Fl::awake()`, which keeps
+  architectural rule 1.
+- `Fl::lock()` is called once at startup, before the loop starts.
+- wakeups are coalesced behind one global `std::atomic<bool>` flag, because
+  FLTK's awake queue has a fixed size. The loop calls the wake callback only
+  if it changes the flag from false to true. The UI clears the flag first and
+  then drains every non-empty queue, so no wakeup is lost. Several
+  notifications may trigger one redraw.
+
+Child exit: the decision "SIGCHLD + `waitpid()` is authoritative" stands. The
+pidfd and the SIGCHLD self-pipe (1.4) only notify the loop; `waitpid()`
+provides the exit status.
 
 ## Tests
 
@@ -337,6 +470,13 @@ Unit/integration tests:
 5. Verify terminal resize.
 6. Verify shell termination is detected.
 7. Verify repeated start/stop does not leak descriptors/processes.
+8. Run 50 sessions on the single I/O thread.
+9. Send a large paste under backpressure; verify byte order is preserved.
+10. A grandchild keeps the PTY open after the direct child exits; verify the
+    session still exits.
+11. Force the SIGCHLD self-pipe fallback in a test build; repeat tests 6–10.
+12. A child that ignores SIGHUP is killed after the kill timeout.
+13. During `cat /dev/urandom | base64`, Ctrl+C gets through promptly.
 
 ## Exit criteria
 
@@ -415,8 +555,12 @@ Render:
 3. foreground colours
 4. attributes needed by the initial feature set
 5. cursor
+6. scrollbar (2.9)
 
-Use contiguous screen traversal.
+Use contiguous screen traversal (`tsm_screen_draw2()`).
+
+Colours: the libtsm draw callback gives RGB per cell (truecolor included).
+No palette code on our side.
 
 Start with full redraws for correctness.
 
@@ -424,50 +568,72 @@ Start with full redraws for correctness.
 
 After correct full rendering works:
 
-- track modified rows/cells
+- track modified cells with libtsm ages: the draw callback reports each
+  cell's `tsm_age_t`; keep the age returned by the last draw and redraw only
+  newer cells
 - invalidate only affected areas
-- retain full-redraw fallback
+- retain full-redraw fallback (age 0 or age overflow means redraw all)
 
 Do not optimize beyond this until rendering is functional.
 
 ## 2.6 Keyboard input
 
-Map FLTK keyboard events to terminal input.
+libtsm encodes keys itself: `tsm_vte_handle_keyboard(vte, keysym, ascii,
+mods, unicode)` handles Ctrl+letter, Alt (ESC prefix), cursor-key mode, keypad
+application mode, modified arrows/F-keys, and falls back to UTF-8 for text.
+Do not write a separate encoder.
 
-Implement:
-
-- printable characters
-- Enter
-- Backspace
-- Tab
-- Escape
-- arrows
-- Home/End
-- Page Up/Page Down
-- function keys
-- modifier combinations
-
-Create a translation layer:
+Key path:
 
 ```text
-FLTK event → terminal key event → encoded terminal sequence
+FLTK event → KeyEvent{keysym, ascii, mods, unicode} → tsm_vte_handle_keyboard()
 ```
 
-Do not put key encoding logic directly inside `TerminalWidget`.
+The translation module lives outside `TerminalWidget` and contains no
+encoding logic. It only:
 
-Before finalizing the translation layer, verify FLTK's IME / non-Latin input
-support (dead keys, CJK input methods). Where FLTK delivers composed text,
-route it through the same path as printable characters.
+- passes special keys through unchanged: FLTK key codes are X11 keysym values
+  (`FL_Left` = `XKB_KEY_Left`, `FL_F + n`, `FL_KP + c`, etc.)
+- maps FLTK Shift/Ctrl/Alt/Meta state to `TSM_*_MASK`
+- sets `unicode` by decoding `Fl::event_text()` with `fl_utf8decode()`
+- sets `ascii` for Ctrl combinations, so Ctrl+C works on non-Latin layouts
+
+The keysym constants come from libtsm's bundled
+`external/xkbcommon/xkbcommon-keysyms.h`; libxkbcommon is not a runtime
+dependency.
+
+IME and dead keys: composed text from FLTK is sent with
+`keysym = XKB_KEY_NoSymbol` and the composed codepoint(s) as `unicode`.
+Verify FLTK's IME support (dead keys, CJK input methods) before finalizing.
+
+Backspace sends DEL (0x7f), like xterm, VTE and Terminator:
+`tsm_vte_set_backspace_sends_delete(vte, true)`. It becomes a config option in
+Stage 5.
+
+v1 limitation: libtsm does not support modifyOtherKeys or the kitty keyboard
+protocol.
+
+Tests: vim and less, covering arrows in both cursor-key modes, Ctrl, Alt and
+function keys.
 
 ## 2.7 Mouse input
 
 Implement:
 
 - button press/release
-- text selection
+- text selection (double-click selects a word, defined by a configurable
+  "word chars" set, as in Terminator)
 - drag
 - wheel scrolling
 - terminal mouse reporting when enabled by the terminal
+
+Mouse reporting is encoded by libtsm: check `tsm_vte_get_mouse_mode()` and
+pass events to `tsm_vte_handle_mouse()` (X10, VT200, SGR and pixel modes).
+Do not write a separate mouse encoder.
+
+Selection uses libtsm's API (`tsm_screen_selection_start/target/copy/reset`);
+no own selection store. Word boundaries for double-click are computed by us
+from the "word chars" set, then passed to `selection_start/target`.
 
 ## 2.8 Clipboard
 
@@ -477,7 +643,13 @@ Implement:
 - paste clipboard contents
 - primary selection where supported
 
-Respect bracketed paste once the terminal state supports it.
+Send pastes through `tsm_vte_paste()`. It adds the bracketed-paste markers
+itself when the program enabled mode 2004.
+
+## 2.8a Bell
+
+Register `tsm_vte_set_bell_cb()` with a no-op callback now. Audible and
+visual bell are implemented in 6.2.
 
 ## 2.9 Scrollback
 
@@ -489,25 +661,69 @@ Wrap it as follows:
 
 - call `tsm_screen_set_max_sb()` with a configurable maximum line count (see Stage 5)
 - expose scroll position and line count through the terminal model API (2.2)
-- map mouse wheel and Shift/PageUp/PageDown to `sb_up`/`sb_down`/`sb_page_up`/`sb_page_down`
-- reset the scroll position on keypress (`sb_reset`) unless the key is a scroll key
-- when scrolled up, snap back to the live screen on new output only if the user
-  has not locked the view (xterm-style behavior; keep it simple at first)
+
+Keys:
+
+- Shift+PageUp/PageDown scroll one page (`sb_page_up`/`sb_page_down`);
+  Shift+Home/End jump to the oldest line / back to live (`sb_up(count)` /
+  `sb_reset`). The terminal consumes these; the program never sees them.
+- plain PageUp/PageDown/Home/End always go to the program (vim, less, shells
+  need them)
+- any other key that sends bytes to the program first returns the view to
+  live (`sb_reset`), then is sent. Modifier-only presses and the scroll keys
+  above do not.
+
+Mouse wheel (3 lines per notch; configurable in Stage 5):
+
+| State | Wheel does |
+|---|---|
+| mouse reporting on (`tsm_vte_get_mouse_mode() != 0`) | goes to the program via `tsm_vte_handle_mouse()` (buttons 4/5); Shift+wheel scrolls our scrollback instead |
+| alternate screen, reporting off | sends plain Up/Down arrows via `tsm_vte_handle_keyboard()`, one per line (xterm "alternateScroll", as in VTE/Terminator), so less/man scroll. Can be disabled in Stage 5. |
+| normal screen, reporting off | scrolls the scrollback (`sb_up`/`sb_down`) |
+
+The alternate screen is detected with
+`tsm_screen_get_flags() & TSM_SCREEN_ALTERNATE`. It never adds lines to
+scrollback. libtsm does not parse DECSET 1007, so programs cannot toggle
+alternate scroll; only the config switch can.
+
+New output while scrolled back:
+
+- the view stays where it is. libtsm already anchors it (`sb.pos`); if the
+  scrollback cap drops the line the view is on, the view moves to the oldest
+  line. There is no auto-snap to live and no separate "locked view" setting.
+- each pane has an FLTK scrollbar showing position within scrollback;
+  dragging it scrolls. It can be hidden via config in Stage 5.
+- switching to or from the alternate screen returns the view to live
+
+Tests:
+
+- plain PageUp reaches the program; Shift+PageUp scrolls
+- a keypress while scrolled back returns to live
+- the view stays put while output streams in
+- the scrollback cap drops the line the view is on
+- wheel behaviour in each of the three states above
 
 Avoid unbounded memory growth: the maximum must be finite and configurable.
 
 ## 2.10 Wide and combining characters
 
-Rely on libtsm's cell width handling (it bundles wcwidth upstream v4) for
-double-width and combining characters.
+Character widths come from libtsm's bundled wcwidth (the termux C port of
+jquast/wcwidth).
 
 Requirements:
 
-- reserve two cells for double-width glyphs; never split them across lines
+- reserve two cells for double-width glyphs
 - cursor movement and selection skip the trailing half of a wide char
 - expose per-cell width through the terminal model API (2.2); the libtsm draw
   callback already reports it
-- tests: CJK text, combining accents, and a wide char placed at the last column
+- tests: CJK text, and a wide char placed at the last column
+
+v1 limitations (accepted):
+
+- combining characters are dropped: `tsm_screen_write()` ignores zero-width
+  codepoints. The fix is planned in the libtsm fork (see Deferred Work).
+- a wide char written at the last column is clipped, not wrapped to the next
+  line.
 
 ## 2.11 Resize flow
 
@@ -694,13 +910,25 @@ Application
  └── Window
       └── TabManager
            └── Tab
-                └── Layout
+                ├── Layout      (tree of TerminalIds only)
+                └── terminals: map<TerminalId, unique_ptr<TerminalInstance>>
                      └── TerminalInstance
                           ├── TerminalSession
                           └── TerminalEmulator
 ```
 
-A tab owns its layout and all terminal instances in that layout.
+A tab owns its layout and its terminal instances. The layout refers to
+terminals only by `TerminalId` (3.1), never by pointer.
+
+`TerminalId` is unique across the whole application, not per tab.
+
+Moving a pane to another tab (6.1):
+
+1. remove the node from the old tab's layout
+2. move the `unique_ptr` into the new tab's map
+3. insert a node in the new tab's layout
+
+The session keeps running; only the widget is re-parented.
 
 ## 4.2 Implement tabs
 
@@ -728,14 +956,14 @@ This ensures all terminal creation passes through one path.
 
 Closing a terminal must:
 
-1. stop its PTY session
-2. wait for thread shutdown
+1. call `terminate()` and wait (asynchronously) for `exited` (1.6)
+2. send `remove` to the I/O loop and wait for its acknowledgement (1.4)
 3. release terminal state
 4. destroy FLTK widget
 5. remove layout node
 6. rebalance layout
 
-No orphaned child process or reader thread is acceptable.
+No orphaned child process or stale loop registration is acceptable.
 
 ## 4.5 Window lifecycle
 
@@ -800,6 +1028,11 @@ Example structure:
 general:
   shell: /bin/bash
   scrollback: 10000
+  scrollbar: true              # 2.9
+  wheel_lines: 3               # 2.9
+  alternate_scroll: true       # 2.9: wheel sends arrows on alternate screen
+  backspace_sends_delete: true # 2.6
+  kill_timeout_ms: 2000        # 1.6: SIGHUP → SIGKILL delay
 
 font:
   family: monospace
@@ -907,14 +1140,12 @@ Implement in this order.
 
 ## 6.2 Terminal functionality
 
-- alternate screen
-- bracketed paste
-- application cursor mode
-- application keypad mode
-- bell
-- visual bell
+- audible bell and visual bell (via the 2.8a bell callback)
 - title/working-directory updates
 - environment handling
+
+Alternate screen, bracketed paste, application cursor mode and application
+keypad mode are provided by libtsm and verified in Stage 2 (2.6, 2.8).
 
 ## 6.3 Search and navigation
 
@@ -923,7 +1154,8 @@ Implement terminal search over scrollback.
 Requirements:
 
 - forward/backward search
-- case sensitivity option
+- case sensitivity option (case-insensitive matching is ASCII only; no
+  Unicode case folding)
 - wrap-around
 - highlight matches
 - keyboard navigation
@@ -1010,7 +1242,7 @@ Measure:
 
 - allocations
 - CPU hotspots
-- lock contention
+- queue-full / backpressure events and drain-budget overruns (1.7)
 - redraw frequency
 - memory growth
 
@@ -1029,13 +1261,11 @@ Use batch operations wherever possible.
 
 ## 7.5 Optimize rendering
 
-Move from full redraws to dirty-region redraws.
-
-Ensure:
+Dirty-region redraws come from 2.5. Here, ensure:
 
 - inactive terminals do not repaint continuously
 - no timer-driven redraw loop exists without need
-- PTY output schedules a redraw rather than forcing repeated redraws
+- redraws stay coalesced: one per drain (1.7), not per output chunk
 
 ## 7.6 Validate memory behavior
 
@@ -1126,6 +1356,9 @@ CI should build and test:
 - macOS
 - Windows
 
+Every OS runs the same 0.7 targets; CI platforms only wrap them. Deps come
+from pinned FetchContent (0.2).
+
 At minimum run:
 
 - unit tests
@@ -1201,24 +1434,46 @@ Maintain a small manual checklist covering:
 
 # Deferred Work
 
-## Reflow on resize
+## libtsm fork
 
-libtsm 4.8.0 does not rewrap lines on resize (`tsm_screen_resize()` extends or
-truncates lines only). v1 ships with that behavior.
+libtsm 4.8.0 lacks the two features below. Both are planned for a fork of
+libtsm in a separate repository; v1 ships without them. Integrate the fork
+once the current implementation is complete, and contribute the patches
+upstream (kmscon/libtsm is active; releases are current).
 
-Reflow is planned as a fork of libtsm in a separate repository, using the VTE
-approach:
+libtsm uses an MIT-like license. The fork is written fresh: it follows VTE's
+approach, but no VTE code (LGPL-3) is copied.
 
-- add a per-line soft-wrap flag to `struct line`, set when autowrap continues
-  a line, cleared by hard newline, CR, EL, CUP, and ICH/DCH at the last column
+### Reflow on resize
+
+libtsm does not rewrap lines on resize (`tsm_screen_resize()` extends or
+truncates lines only).
+
+Follow the VTE approach:
+
+- add a per-line soft-wrap flag to `struct line`
+- set the flag only when a printed character actually wraps onto the next
+  line; a newline arriving at the right margin does not set it
+- clear the flag on EL of that line; cursor moves (CUP, CR), overprinting,
+  ICH and ECH do not clear it
 - on width change, walk screen and scrollback lines and re-wrap them, merging
   soft-wrapped lines and preserving hard-wrapped ones
 - skip reflow on the alternate screen
 - restore the cursor best-effort
-- test with the libvterm reflow case catalogue plus wide/combining characters
+- tests: the libvterm reflow case catalogue A–I with VTE's results (reflow A,
+  C, E–I; no reflow B, D), plus wide characters
 
-Contribute the patch upstream (kmscon/libtsm is active; releases are current)
-and integrate the fork once the current implementation is complete.
+### Combining characters
+
+`tsm_screen_write()` returns early for zero-width codepoints
+(`tsm-screen.c:1107`), so combining marks are dropped. `tsm_symbol_append()`
+exists but nothing calls it.
+
+Fix: append a zero-width codepoint to the previous cell's symbol with
+`tsm_symbol_append()` and mark that cell changed.
+
+Tests: single accent (`e` + U+0301), multiple marks on one base, a mark after
+a wide char.
 
 # Dependency Policy
 
@@ -1229,9 +1484,14 @@ C++20
 CMake
 FLTK
 libtsm
-utf8proc
 rapidyaml
 ```
+
+utf8proc was dropped: libtsm does UTF-8 decoding and character widths itself.
+Add it back only if a concrete need appears (e.g. Unicode case folding).
+
+All deps: fetched by the build, pinned to a commit hash, built from source,
+linked statically by default. See `docs/dependencies.md`.
 
 Do not add another library until:
 

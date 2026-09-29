@@ -93,8 +93,42 @@ first-pass fixes.
     repeats 2.5; 8.5 should point at the 0.7 targets; issue #2 in
     `REVIEW_FIRST.md` still says "unmaintained / no scrollback".
 
+## Library choice
+
+Decision: keep libtsm. Alternatives checked and rejected:
+
+- **TragicWarrior/libvterm 10.9.1**: requires ncurses (unconditional
+  includes, ncurses types in cells), stores colours as ncurses colour-pair
+  indices, shares global state across instances, no reflow, no combining
+  characters, no Windows support.
+- **LeoNerd libvterm 0.3.3**: has reflow (marked experimental) and combining
+  characters, but upstream is barely active, and scrollback and selection
+  would have to be written by us.
+
+Reflow and combining characters go into the planned libtsm fork (see
+"Deferred Work" in the detailed plan).
+
 ## Status
 
 | # | Item | State |
 |---|------|-------|
-| 1–18 | all | open |
+| 1 | Combining characters dropped | done — fork scope (Deferred Work); v1 limitation in 2.10 |
+| 2 | Reflow rules / license | done — Deferred Work corrected |
+| 12 | wcwidth wording; last-column clipping | done — 2.10; clipping accepted in v1 |
+| 3 | `read`/`start`/`resize` return types | done — 1.1 `IoResult`/`SessionError`; 0.3; 1.3 #11 exec pipe; 1.6 |
+| 4 | 1.4 vs 1.7; thread model | done — 1.4 single poll loop + wake FD |
+| 5 | Shared SIGCHLD | done — 1.4 pidfd, SIGCHLD self-pipe fallback, no `waitpid(-1)`; 1.3 #9 |
+| 6 | `Fl::awake` breaks rule 1 | done — 1.7 injected wake callback, `Fl::lock()`, atomic coalescing |
+| 7 | Write path | done — 1.7 outbound queue + overflow buffer; loop is sole writer |
+| 8 | libtsm already encodes keys; 6.2 stale | done — 2.6 keysym pass-through to `tsm_vte_handle_keyboard`; 2.7 mouse; 2.8 paste; 2.8a bell; 6.2 trimmed |
+| 9 | Scrollback keys, wheel routing, locked view | done — 2.9 Shift+PgUp/Home/End, 3-state wheel table (alternate scroll + switch), view anchoring, scrollbar; 2.4; 5.2 keys |
+| 11 | utf8proc has no job | done — dropped; add back if a real need appears |
+| 10 | Dependency sourcing | done — 0.2 FetchContent, pinned hashes, static; `docs/dependencies.md` |
+| 14 | Pin FLTK 1.4 | done — 0.2 |
+| 13 | Reuse libtsm features; TERM/COLORTERM | done — 2.7 selection API, 2.5 ages, 2.4 RGB/draw2, 1.2 defaults |
+| 15 | Tab owns terminals | done — 4.1 map by `TerminalId`, app-wide IDs, pane move steps |
+| 16 | `terminate()` semantics | done — 1.6 SIGHUP to pgid, SIGKILL after 2 s (config); 1.4 `terminate` cmd; 4.4 order; test 12 |
+| 17 | Drain budget | done — 1.7 ~8 ms time budget, round-robin, `Fl::add_timeout(0)`; test 13 |
+| 18 | Stale text | done — 7.3, 7.5, 8.5; correction note in REVIEW_FIRST #2 |
+
+All 18 items closed.

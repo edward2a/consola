@@ -8,8 +8,8 @@
 - Dependency integration:
   - FLTK
   - libtsm
-  - utf8proc
   - rapidyaml
+  - fetched + pinned (FetchContent), built from source, static
 - Establish core/module boundaries
 - CI: self-contained build/test targets
 
@@ -18,7 +18,9 @@
 - Linux implementation: `forkpty`/`openpty`
 - Shell/process lifecycle
 - Non-blocking I/O
-- UI-thread ownership of terminal state: bounded SPSC queue + `Fl::awake()`
+- UI-thread ownership of terminal state
+- Single poll I/O thread (pidfd/wake FD); per-session queues both directions;
+  injected wake callback
 - SIGCHLD-based child exit detection (EOF is a hint only)
 - Terminal resize
 - Wire PTY → libtsm
@@ -32,11 +34,11 @@
 - Colours/attributes
 - Cursor
 - Basic scrolling
-- Scrollback (libtsm built-in, bounded)
+- Scrollback (libtsm built-in, bounded); Shift+PageUp, wheel routing, scrollbar
 - OSC 0/2 window title
-- Wide/combining characters
-- Keyboard/mouse input
-- Clipboard
+- Wide characters (combining characters and reflow: libtsm fork, deferred)
+- Keyboard/mouse input via libtsm encoders (keysyms, mouse modes)
+- Clipboard; bracketed paste via libtsm; alternate screen
 
 **Milestone:** usable standalone terminal.
 
@@ -76,9 +78,7 @@ Implement remaining high-value functionality:
 - title handling
 - URL detection
 - search
-- alternate screen
-- bracketed paste
-- bells
+- bells (audible/visual)
 - environment configuration
 - session/layout restore
 
@@ -118,6 +118,6 @@ FLTK remains the common UI layer.
 
 Start with exactly:
 
-**C++20 + FLTK + libtsm + utf8proc + rapidyaml**
+**C++20 + FLTK + libtsm + rapidyaml**
 
 Add dependencies only when a concrete requirement cannot reasonably be met by those components or the standard library.

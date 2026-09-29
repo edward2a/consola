@@ -14,6 +14,8 @@ Solid, disciplined plan. The layering rule (`FLTK UI → Application model → T
    - **Scrollback is not provided by libtsm** — Stage 2.9 is actually a new subsystem (a line snapshot store above the screen), not a configuration knob. It's the single largest piece of Stage 2 and should be its own numbered task.
    - **Resize/reflow behavior** — whether text reflows on resize is a libtsm limitation you'll either accept or have to implement. The plan silently assumes it works.
 
+   **Correction (second review):** libtsm (kmscon/libtsm) is active (4.8.0) and has built-in scrollback. License is MIT-like. Reflow is still missing; planned in the libtsm fork (see "Deferred Work").
+
 3. **`ssize_t` in a "platform-neutral" interface.** `TerminalSession::read/write` (detailed plan, 1.1) return `ssize_t` — a POSIX type that contradicts "Do not expose Linux-specific types from this interface" and complicates the Windows ConPTY backend in Stage 8. Use `std::size_t` counts / a result enum instead.
 
 4. **Child-exit detection strategy unspecified.** 1.3 lists "Detect EOF and child exit" but EOF on the master is *not* reliably equivalent to child exit (grandchildren keep the slave open — e.g., `screen`, daemons started from the shell). The plan needs a decision: SIGCHLD + `waitpid` handling, or explicit policy for the EOF-but-still-running case. Terminator-family users will hit this immediately.
