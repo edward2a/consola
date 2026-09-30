@@ -21,6 +21,12 @@ first-pass fixes.
    Licensing: libtsm uses an MIT-like license (not LGPL); VTE is LGPL-3. The
    fork must be written fresh, with no VTE code copied.
 
+   **Dependency verification follow-up:** the "not LGPL" claim above is
+   incomplete: `shl-htable.c/.h` are LGPL-licensed and compiled into libtsm
+   4.8.0. Source-only distribution now settles the current policy; binary
+   compliance requires a separate decision. See
+   [`../dependencies.md`](../dependencies.md#bundled-licenses-and-distribution).
+
 3. **`read()` returning `std::size_t` can't signal "no data yet" or an
    error.** 1.1 says errors are "explicit status values" but gives them
    nowhere to go. `start` and `resize` still return `bool`, which goes against
@@ -125,10 +131,14 @@ Reflow and combining characters go into the planned libtsm fork (see
 | 11 | utf8proc has no job | done — dropped; add back if a real need appears |
 | 10 | Dependency sourcing | done — 0.2 FetchContent, pinned hashes, static; `docs/dependencies.md` |
 | 14 | Pin FLTK 1.4 | done — 0.2 |
-| 13 | Reuse libtsm features; TERM/COLORTERM | done — 2.7 selection API, 2.5 ages, 2.4 RGB/draw2, 1.2 defaults |
+| 13 | Reuse libtsm features; TERM/COLORTERM | done — 2.7 selection API, 2.5 ages, 2.4 RGB/callback draw (corrected in third pass), 1.2 defaults |
 | 15 | Tab owns terminals | done — 4.1 map by `TerminalId`, app-wide IDs, pane move steps |
 | 16 | `terminate()` semantics | done — 1.6 SIGHUP to pgid, SIGKILL after 2 s (config); 1.4 `terminate` cmd; 4.4 order; test 12 |
 | 17 | Drain budget | done — 1.7 ~8 ms time budget, round-robin, `Fl::add_timeout(0)`; test 13 |
 | 18 | Stale text | done — 7.3, 7.5, 8.5; correction note in REVIEW_FIRST #2 |
 
 All 18 items closed.
+
+Third-pass follow-up is tracked in [`REVIEW_THIRD.md`](REVIEW_THIRD.md).
+Search is now wishlist-only. Original findings and section references above
+are retained as the record of this review, not the current feature schedule.

@@ -16,6 +16,12 @@ Solid, disciplined plan. The layering rule (`FLTK UI → Application model → T
 
    **Correction (second review):** libtsm (kmscon/libtsm) is active (4.8.0) and has built-in scrollback. License is MIT-like. Reflow is still missing; planned in the libtsm fork (see "Deferred Work").
 
+   **Dependency verification follow-up:** the MIT-like description applies to
+   libtsm's own code, not all bundled code. Its compiled hash table is
+   LGPL-licensed. Source-only distribution now settles the current policy;
+   binary compliance requires a separate decision. See
+   [`../dependencies.md`](../dependencies.md#bundled-licenses-and-distribution).
+
 3. **`ssize_t` in a "platform-neutral" interface.** `TerminalSession::read/write` (detailed plan, 1.1) return `ssize_t` — a POSIX type that contradicts "Do not expose Linux-specific types from this interface" and complicates the Windows ConPTY backend in Stage 8. Use `std::size_t` counts / a result enum instead.
 
 4. **Child-exit detection strategy unspecified.** 1.3 lists "Detect EOF and child exit" but EOF on the master is *not* reliably equivalent to child exit (grandchildren keep the slave open — e.g., `screen`, daemons started from the shell). The plan needs a decision: SIGCHLD + `waitpid` handling, or explicit policy for the EOF-but-still-running case. Terminator-family users will hit this immediately.
