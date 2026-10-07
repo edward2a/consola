@@ -185,6 +185,8 @@ Make/CMake targets. The repository itself must provide runnable entry points,
 for example:
 
 - `cmake` configure + build (Debug and Release)
+- `cmake` configure + build with ASan/UBSan enabled (a `CONSOLA_SANITIZERS`
+  option), then `ctest` under the sanitizer build
 - `ctest` (all tests)
 
 CI uses the same pinned FetchContent deps (fetch cache optional; no meson
@@ -192,6 +194,14 @@ needed).
 
 A CI platform (e.g. GitHub Actions) runs only these targets on Linux at this
 stage. The full platform matrix stays in Stage 8.5.
+
+### 0.8 Documentation
+
+Create `README.md` and `CONTRIBUTING.md`:
+
+- build and run instructions
+- license reference (MIT, see root `LICENSE`)
+- contribution workflow (coding rules from 0.6, test expectations)
 
 ## Tests
 
@@ -275,6 +285,12 @@ Result semantics:
 Initial dimensions must be positive before PTY creation. `resize()` rejects
 non-positive columns/rows with `resize_failed`, without issuing an OS resize.
 
+`resize()` runs on the UI thread and issues a direct `ioctl(TIOCSWINSZ)` on
+the master FD; it does not route through the UI→loop command queue (1.4 has no
+`resize` command). `ioctl(TIOCSWINSZ)` is thread-safe and safe to call while
+the loop polls/reads/writes the same FD. The FD stays valid during resize
+because both resize and session removal run on the UI thread.
+
 ## 1.2 Define session options
 
 Include:
@@ -345,6 +361,11 @@ Required behavior:
     and partial I/O. Abnormal pre-exec child death may also close the pipe;
     normal exit detection handles it rather than claiming the program ran.
 
+The application ignores SIGPIPE at startup (`SIG_IGN`), so writes to a pipe
+whose read end is closed return `EPIPE` instead of terminating the process.
+This covers the exec-error pipe here, the SIGCHLD self-pipe (1.4) and the
+future ConPTY pipes (8.4).
+
 Post-fork child contract:
 
 - use only async-signal-safe operations such as `setsid`, `dup2`, `close`,
@@ -385,6 +406,8 @@ Exit notification:
   race-free: the pid cannot be reused until we reap it.
 - Fallback (other POSIX, Linux < 5.3): a SIGCHLD handler writes a byte to a
   self-pipe; the loop then calls `waitpid(pid, WNOHANG)` for each known pid.
+  The handler writes non-blocking and treats `EPIPE`/`EAGAIN` as a coalesced
+  wake, since the loop scans all known PIDs regardless.
 - on every `add`, first take ownership and insert the session in the
   registry, then immediately call `waitpid(pid, WNOHANG)` (retry `EINTR`).
   SIGCHLD may have been consumed before registration, especially for an
@@ -515,7 +538,14 @@ public:
 };
 ```
 
-Initialize libtsm with the required callbacks/state.
+Initialize libtsm with the required callbacks/state. Wire the `tsm_log_t`
+callback to the 0.4 logger: format via `vsnprintf` and map libtsm's
+kernel-style severity to `LogLevel` (0–3 → Error, 4 → Warning, 5–6 → Info,
+7 → Debug), then pass the message to `log()`.
+
+`TerminalEmulator` is the single class owning libtsm state. This section
+defines its write surface; the read surface the renderer consumes is defined
+in 2.2. Both surfaces are UI-thread-only (1.4), so no locking is needed.
 
 The first implementation only needs output processing; rendering comes later.
 
@@ -638,7 +668,11 @@ Startup (UI -> worker -> UI):
 Inbound (loop → UI):
 
 - one bounded SPSC queue per session; messages are `data`, `eof`,
-  `exited{status}` and `paste_finished{status}` (1.7)
+  `exited{status}` and `paste_finished{status}` (1.7). The queue holds a
+  fixed 16 `data` slots per session; each `data` message is at most one
+  64 KiB read batch (1.4), so buffered output is bounded at 16 × 64 KiB.
+  Lifecycle events (`eof`, `exited`, `paste_finished`) are reserved outside
+  the `data` slot count and are never dropped by backpressure.
 - one queue per session orders accepted output before `exited`; the
   post-exit drain (1.4) covers unread PTY output, subject to the documented
   descendant-output limit
@@ -650,8 +684,8 @@ Inbound (loop → UI):
   master poll entry (1.4). Unread output stays in the kernel PTY buffer, and
   eventually the child blocks on write. Pending input waits until `resume`;
   child-exit monitoring and termination timers stay active. When the UI has
-  drained the queue below a low-water mark, it sends `resume`. Other sessions
-  keep flowing. PTY output is never buffered without bound.
+  drained the queue below the low-water mark (8 slots), it sends `resume`.
+  Other sessions keep flowing. PTY output is never buffered without bound.
 
 Drain budget (UI side):
 
@@ -723,9 +757,11 @@ Streaming paste:
 
 Wakeups:
 
-- core and platform code receive an injected `std::function<void()>` wake
-  callback. Only the UI layer implements it with `Fl::awake()`, which keeps
-  architectural rule 1.
+- core and platform code receive an injected wake callback as a function
+  pointer plus a `void*` context (`using WakeCallback = void (*)(void*)`),
+  not a `std::function`, to avoid allocation in the per-wakeup hot path. Only
+  the UI layer implements it with `Fl::awake()`, which keeps architectural
+  rule 1.
 - `Fl::lock()` is called once at startup, before the loop starts.
 - wakeups are coalesced behind one global `std::atomic<bool>` flag, because
   FLTK's awake queue has a fixed size. The loop calls the wake callback only
@@ -868,16 +904,20 @@ It must not own the PTY.
 
 ## 2.2 Define terminal model API
 
-Expose only the data the renderer requires:
+`TerminalEmulator` (1.5) exposes a read surface for the renderer. Expose only
+the data the renderer requires:
 
 - visible rows
 - visible columns
 - cell attributes
-- cursor state
+- cursor state (position, style, blink rate, hidden flag)
 - content dirty state; presentation/pixel damage remains widget-owned (2.5)
 - scroll position
 
-Avoid exposing libtsm structures throughout the application.
+Avoid exposing libtsm structures throughout the application. Provide a
+traversal method (e.g. `draw(callback)`) that wraps `tsm_screen_draw()` and
+invokes the callback with our own `Cell` type (codepoint, attributes, width,
+age), so libtsm types stay inside the emulator.
 
 ## 2.3 Implement font setup
 
@@ -889,6 +929,12 @@ Requirements:
 - configurable font size
 - high-DPI aware cell sizing
 - fallback to a known system monospace font
+
+Obtain cell metrics from FLTK's current font:
+
+- `cell_w = fl_width("M")` (reference advance for the monospace face)
+- `cell_h = fl_height()` (ascent + descent)
+- `ascent = fl_height() - fl_descent()` (baseline offset)
 
 Do not add HarfBuzz/FreeType as dependencies at this stage.
 
@@ -907,12 +953,26 @@ Render:
 5. cursor
 6. scrollbar (2.9)
 
-Use contiguous screen traversal via the `tsm_screen_draw()` callback, which
-supplies cell widths and ages. `tsm_screen_draw2()` does not expose those
-fields; do not use it for the age/width-based renderer.
+Use contiguous screen traversal via `TerminalEmulator`'s `draw()` method
+(2.2), which wraps `tsm_screen_draw()` and supplies cell widths and ages.
+`tsm_screen_draw2()` does not expose those fields; do not use it for the
+age/width-based renderer.
 
 Colours: the libtsm draw callback gives RGB per cell (truecolor included).
 No palette code on our side.
+
+Draw glyphs per cell with FLTK's text path: set the face and size once with
+`fl_font()`, then draw each cell's text with `fl_draw()` at its grid origin
+(`x = col * cell_w`, `y = row * cell_h + ascent`). Reserve one or two cells
+per glyph using the callback's per-cell `width`; do not re-measure each glyph.
+
+Cursor: the block cursor is the inverse cell produced by the draw callback
+(tsm-render.c:133-135); do not draw a second block. Only underline and vbar
+styles draw a separate overlay at the cursor position
+(`tsm_screen_get_cursor_x/y()`), using the cell metrics from 2.3. Blink is
+timer-driven from `tsm_screen_get_cursor_blinking_rate_ms()`: `*_BLINK` styles
+toggle visibility, steady styles are always shown, and `TSM_SCREEN_HIDE_CURSOR`
+draws nothing.
 
 Start with full redraws for correctness.
 
@@ -1109,7 +1169,7 @@ Use one canonical order:
 widget resize
   → compute positive cols/rows from the logical content rectangle and cell metrics
   → resize libtsm screen
-  → PTY resize (SIGWINCH to child)
+  → PTY resize (SIGWINCH to child; direct UI-thread ioctl, not a queued command)
   → full redraw
 ```
 
@@ -1809,6 +1869,9 @@ Dirty-region redraws come from 2.5. Here, ensure:
 - inactive terminals do not repaint continuously
 - no timer-driven redraw loop exists without need
 - redraws stay coalesced: one per drain (1.7), not per output chunk
+- if profiling shows FLTK's per-cell `fl_draw()` text path is the bottleneck,
+  consider a glyph atlas or direct FreeType rasterization; this is an
+  evidence-gated change, not a Stage 2 concern
 
 ## 7.6 Validate memory behavior
 
@@ -1888,7 +1951,9 @@ Implement:
 - process termination
 - Windows-specific environment handling
 
-Do not introduce Windows-specific behavior into terminal parsing.
+Do not introduce Windows-specific behavior into terminal parsing. Avoid the
+Windows equivalent of broken-pipe termination on the ConPTY pipes; the
+process-wide SIGPIPE policy (1.3) does not apply on Windows.
 
 ## 8.5 Build matrix
 

@@ -38,3 +38,10 @@ Before promoting this idea into the plan:
 
 A future upstream API or a separately approved fork accessor may help. No
 history-access extension or extra dependency is scheduled for search now.
+
+## Lock Indicators
+
+Display Scroll Lock, Num Lock and Caps Lock state by wiring
+`tsm_vte_set_led_cb` (DECLL, `CSI q`) to a status indicator. Not required for
+v1; the callback is available in libtsm 4.8.0 but is not part of the current
+implementation stages.

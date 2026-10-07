@@ -239,6 +239,9 @@ Native Wayland dependencies and bundled libdecor are outside v1.
 
 ## Licenses
 
+consola's own code is licensed under the MIT License; see the root `LICENSE`.
+Source files carry an `SPDX-License-Identifier: MIT` header line.
+
 Static linking: install the license text of every static dep under
 `share/doc/consola/licenses/`.
 

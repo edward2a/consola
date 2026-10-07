@@ -5,6 +5,8 @@ desktops require XWayland; native Wayland support is wishlist-only.
 
 Distribution is source-only for now, with static linking for local builds.
 Binary releases/packaging require separate approval and licensing compliance.
+consola's own code is MIT-licensed (see the root `LICENSE`); dependency
+licenses are recorded in [`dependencies.md`](../dependencies.md).
 Implementation requires all reviews to be settled and explicit user
 authorization.
 
