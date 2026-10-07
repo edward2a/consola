@@ -210,6 +210,8 @@ Add the first smoke test:
 - executable starts
 - executable exits cleanly
 - test target builds under CTest
+- unit-test the libtsm severity → `LogLevel` mapping from 1.5 (0–3 → Error,
+  4 → Warning, 5–6 → Info, 7 → Debug)
 
 ## Exit criteria
 
@@ -288,8 +290,9 @@ non-positive columns/rows with `resize_failed`, without issuing an OS resize.
 `resize()` runs on the UI thread and issues a direct `ioctl(TIOCSWINSZ)` on
 the master FD; it does not route through the UI→loop command queue (1.4 has no
 `resize` command). `ioctl(TIOCSWINSZ)` is thread-safe and safe to call while
-the loop polls/reads/writes the same FD. The FD stays valid during resize
-because both resize and session removal run on the UI thread.
+the loop polls/reads/writes the same FD. The FD stays valid for the whole
+session: the loop only retires it after a removal acknowledgement (1.4), and
+the UI thread closes it afterwards, so resize never races a close.
 
 ## 1.2 Define session options
 
@@ -337,8 +340,9 @@ Required behavior:
    close-on-exec before forking.
 2. Fork child.
 3. Establish a new session and controlling terminal in the child.
-4. Connect the slave to stdin/stdout/stderr, restore child signal dispositions
-   and mask, and change to the prepared working directory.
+4. Connect the slave to stdin/stdout/stderr, reset the child's signal
+   dispositions and mask (explicitly `SIGPIPE` and `SIGCHLD` to `SIG_DFL`,
+   and unmask all signals), and change to the prepared working directory.
 5. Use the prepared argv and envp; no `setenv()` or argument construction in
    the child.
 6. `execve()` the prepared executable.
@@ -364,7 +368,10 @@ Required behavior:
 The application ignores SIGPIPE at startup (`SIG_IGN`), so writes to a pipe
 whose read end is closed return `EPIPE` instead of terminating the process.
 This covers the exec-error pipe here, the SIGCHLD self-pipe (1.4) and the
-future ConPTY pipes (8.4).
+future ConPTY pipes (8.4). `SIG_IGN` survives `execve`, so the child setup
+above resets `SIGPIPE` (and `SIGCHLD`) to `SIG_DFL`; otherwise the shell and
+its jobs would inherit the ignore, and pipelines such as `yes | head` would
+not terminate when their read end closes.
 
 Post-fork child contract:
 
@@ -424,7 +431,10 @@ signal on the wake FD:
 
 - `add`: register a session and probe for an already-exited child as above
 - `remove`: unregister a session; acknowledge only after any pending
-  termination signal sequence (1.6) completes
+  termination signal sequence (1.6) completes. The acknowledgement means the
+  session's master and exit-notification poll entries are retired and no
+  further I/O, timer or callback will touch its FDs; the UI thread releases the
+  backend and closes the FDs only after it.
 - `terminate`: capture the foreground group, send SIGHUP to the termination
   targets and start the kill timer; apply the session's close-output policy
   (1.6)
@@ -730,9 +740,16 @@ Streaming paste:
   separate finite limit, not part of the 1 MiB transport budget. This permits
   pastes larger than the queue while bounding their retained memory.
 - reject oversized source input before capture; call `tsm_vte_paste()` once
-  into a size-limited capture buffer, not once per transport chunk. Admit
-  only after capture succeeds within the encoded-size limit, before sending
-  any bytes. Retain the encoded image rather than a second owned source copy.
+  into a size-limited capture buffer, not once per transport chunk. It takes a
+  NUL-terminated string, so embedded NULs truncate the paste, and it allocates
+  a transient `strlen(source)+framing` copy that it frees afterwards; peak
+  memory for one paste is therefore source + that copy + the captured image.
+  Accumulate every write-callback invocation for the duration of the call (a
+  prepended ESC byte may arrive before the payload). Admit only after the
+  capture holds bytes within the encoded-size limit, before sending any bytes;
+  an empty capture is a paste failure, not an empty paste, because
+  `tsm_vte_paste()` returns silently on null data or allocation failure.
+  Retain the encoded image rather than a second owned source copy.
 - captured libtsm-generated framing belongs to one transaction. Stream its
   bytes as queue credits become available; a stalled reader retains only
   this one bounded paste, bounded transport/deferred data and bounded metadata.
@@ -863,6 +880,10 @@ Unit/integration tests:
     periodic 1 ms wakeups. With a termination deadline, verify `poll()` uses
     the nearest actual deadline; ready work resumes without an artificial
     inter-batch delay, and `would_block` does not cause a spin.
+30. Unit-test the wakeup coalescing helper from 1.7: many notifications while
+    the flag is set invoke the wake callback once; after the UI clears the flag
+    and drains every queue, a later notification wakes again, with no lost or
+    duplicated wakeup.
 
 ## Exit criteria
 
@@ -912,12 +933,35 @@ the data the renderer requires:
 - cell attributes
 - cursor state (position, style, blink rate, hidden flag)
 - content dirty state; presentation/pixel damage remains widget-owned (2.5)
-- scroll position
+- scroll position and scrollback line count (`tsm_screen_sb_get_line_count()` /
+  `tsm_screen_sb_get_line_pos()`), used by the scrollbar (2.9) and cursor
+  visibility (2.4)
+- window title, updated from OSC 0/2 (2.12)
 
 Avoid exposing libtsm structures throughout the application. Provide a
 traversal method (e.g. `draw(callback)`) that wraps `tsm_screen_draw()` and
-invokes the callback with our own `Cell` type (codepoint, attributes, width,
-age), so libtsm types stay inside the emulator.
+invokes the callback with our own `Cell` type, so libtsm types stay inside the
+emulator.
+
+`Cell` carries:
+
+- `text`: the cell's symbol as one or more codepoints (a `std::span<const
+  uint32_t>` valid only for the duration of the draw callback, or a small
+  inline buffer). libtsm supplies a base codepoint plus any combining marks,
+  so a single codepoint is not enough.
+- attributes: foreground/background RGB, bold, italic, underline, inverse,
+  blink and dim.
+- `width`: `1`, `2` for a wide glyph, or `0` for the trailing half of a wide
+  glyph.
+- `age`.
+
+Render rules for the two zero-length cases:
+
+- `width == 0`: skip the cell; the preceding wide glyph already covers it.
+- `width > 0` and an empty `text`: paint the background only (blank cell).
+
+Do not use `tsm_screen_draw2()`: besides lacking `age`/`width`, it flattens
+each symbol to a single codepoint and drops inverse/dim attributes.
 
 ## 2.3 Implement font setup
 
@@ -942,6 +986,13 @@ Font and colour values come from a plain styling struct with defaults
 centralized in C++ from day one. Stage 5 only changes where the struct is
 filled from, not the widget code.
 
+The styling struct's colours (16 ANSI colours plus foreground/background) are
+applied to each VTE with `tsm_vte_set_custom_palette()` when the emulator is
+constructed, before any output is fed: libtsm resolves palette codes to RGB at
+write time (`to_rgb()`, tsm-vte.c:447). A named preset may use
+`tsm_vte_set_palette()` instead. Changing colours for existing content is not
+required here; profile application for new panes is 6.4.
+
 ## 2.4 Implement basic rendering
 
 Render:
@@ -954,25 +1005,36 @@ Render:
 6. scrollbar (2.9)
 
 Use contiguous screen traversal via `TerminalEmulator`'s `draw()` method
-(2.2), which wraps `tsm_screen_draw()` and supplies cell widths and ages.
-`tsm_screen_draw2()` does not expose those fields; do not use it for the
-age/width-based renderer.
+(2.2), which wraps `tsm_screen_draw()` and supplies cell symbols, widths and
+ages. Do not use `tsm_screen_draw2()` (2.2).
 
 Colours: the libtsm draw callback gives RGB per cell (truecolor included).
 No palette code on our side.
 
 Draw glyphs per cell with FLTK's text path: set the face and size once with
 `fl_font()`, then draw each cell's text with `fl_draw()` at its grid origin
-(`x = col * cell_w`, `y = row * cell_h + ascent`). Reserve one or two cells
-per glyph using the callback's per-cell `width`; do not re-measure each glyph.
+(`x = round(col * cell_w)`, `y = round(row * cell_h) + ascent`). Compute
+origins absolutely and round them; never accumulate `x += cell_w`, which would
+drift. Convert the cell's symbol (one or more codepoints) to UTF-8. Reserve one
+or two cells per glyph using the callback's per-cell `width`; do not re-measure
+each glyph. Clip each glyph to its cell rectangle (or the two-cell span for a
+wide glyph) so it cannot bleed into neighbours; revisit the clipping cost in
+7.5 if profiling shows it matters. Apply the `Cell` rules from 2.2: skip
+`width == 0` cells and paint only the background for `width > 0` cells with
+empty text.
 
-Cursor: the block cursor is the inverse cell produced by the draw callback
-(tsm-render.c:133-135); do not draw a second block. Only underline and vbar
-styles draw a separate overlay at the cursor position
-(`tsm_screen_get_cursor_x/y()`), using the cell metrics from 2.3. Blink is
-timer-driven from `tsm_screen_get_cursor_blinking_rate_ms()`: `*_BLINK` styles
-toggle visibility, steady styles are always shown, and `TSM_SCREEN_HIDE_CURSOR`
-draws nothing.
+Cursor: the renderer owns cursor drawing for every style. libtsm inverts the
+cursor cell for all styles, not just block (tsm-render.c:133-135), so do not
+rely on that inversion: during traversal, XOR `attr.inverse` back on the
+cursor cell to neutralise libtsm's flip, then draw the cursor yourself. Compute
+the cursor's viewport row as
+`tsm_screen_sb_get_line_count() - tsm_screen_sb_get_line_pos()` plus
+`tsm_screen_get_cursor_y()`; draw only when that row is visible and
+`TSM_SCREEN_HIDE_CURSOR` is clear. Draw block as the cell filled with its
+foreground colour and its glyph in the background colour, underline as a line
+at the baseline, and vbar as a vertical line, using the cell metrics from 2.3.
+Blink is timer-driven from `tsm_screen_get_cursor_blinking_rate_ms()`:
+`*_BLINK` styles toggle visibility, steady styles are always shown.
 
 Start with full redraws for correctness.
 
@@ -1208,6 +1270,9 @@ Add:
   correctly even when cell ages do not advance
 - cursor/selection move or removal restores underlying pixels; use a test
   presentation overlay in Stage 2 and repeat with visual bell in Stage 6
+- each cursor style (block/underline/vbar, blink and steady, hidden via
+  DECTCEM) renders without a stray inverted block, and the cursor is not drawn
+  when scrolled off-screen
 - deterministic screenshot/render tests if practical
 
 ## Exit criteria
@@ -1538,7 +1603,7 @@ Create strongly typed C++ configuration structures:
 ```cpp
 struct GeneralConfig;
 struct FontConfig;
-struct ColourConfig;
+struct ColourConfig;   // 16 ANSI colours + foreground/background (+ cursor)
 struct ShortcutConfig;
 struct ProfileConfig;
 struct LayoutConfig;
@@ -1574,6 +1639,10 @@ profiles:
   default:
     foreground: "#ffffff"
     background: "#000000"
+    palette:            # 16 ANSI colours (2.3); applied via tsm_vte_set_custom_palette
+      black: "#000000"
+      red: "#cd0000"
+      # ... remaining colours and bright variants
 
 shortcuts:
   new_tab: "Ctrl+Shift+T"
@@ -1749,7 +1818,7 @@ Resolve it into the existing styling/session options before calling the shared
 factory (4.3); do not introduce another schema or loader here. Settings cover:
 
 - font
-- colours
+- colours (palette applied to the new VTE per 2.3)
 - shell
 - environment
 - cursor
