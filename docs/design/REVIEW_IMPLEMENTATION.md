@@ -24,10 +24,10 @@ does not authorize implementation; that still requires explicit user approval.
 
 | # | Finding | Crit. | Summary | Reference | Review at | State |
 |---|---|---|---|---|---|---|
-| 1 | CI smoke test needs a display | P3 | The test "executable starts / opens a FLTK window" needs an X server in CI. 0.7 names no virtual display (e.g. Xvfb) and no no-window smoke mode. The sanitizer build will probably report X11/fontconfig leaks and need suppressions. | DIP §0.7 CI; DIP Stage 0 › Tests | Stage 0 | Pending |
-| 2 | Stage 0 test depends on Stage 1 code | Minor | The libtsm log-level mapping test is listed in Stage 0, but the code it tests is specified in 1.5. Either build the mapping as a plain function in the 0.4 logger, or move the test to Stage 1. | DIP Stage 0 › Tests; §1.5 | Stage 0 | Pending |
-| 3 | Build prerequisites and FLTK attribution | Minor | The README (0.8) must list: X11/Xft/fontconfig dev packages for building FLTK; `libutil` for `openpty()` on glibc < 2.34; FLTK's required "based in part on the work of the FLTK project" sentence. | DIP §0.8; DEP › FLTK pin and build, Always dynamic | Stage 0 | Pending |
-| 4 | System-dependency mode checks | P3 | When `CONSOLA_USE_SYSTEM_DEPS` is on, the plan doesn't say how configure detects an FLTK built with Wayland/Cairo, or a rapidyaml built without exception callbacks. A system libtsm is a shared library and won't have the fork's features. | DIP §0.2, §5.3; DEP › FLTK, rapidyaml | Stage 0 / 5 | Pending |
+| 1 | CI smoke test needs a display | P3 | The test "executable starts / opens a FLTK window" needs an X server in CI. 0.7 names no virtual display (e.g. Xvfb) and no no-window smoke mode. The sanitizer build will probably report X11/fontconfig leaks and need suppressions. | DIP §0.7 CI; DIP Stage 0 › Tests | Stage 0 | Settled |
+| 2 | Stage 0 test depends on Stage 1 code | Minor | The libtsm log-level mapping test is listed in Stage 0, but the code it tests is specified in 1.5. Either build the mapping as a plain function in the 0.4 logger, or move the test to Stage 1. | DIP Stage 0 › Tests; §1.5 | Stage 0 | Settled |
+| 3 | Build prerequisites and FLTK attribution | Minor | The README (0.8) must list: X11/Xft/fontconfig dev packages for building FLTK; `libutil` for `openpty()` on glibc < 2.34; FLTK's required "based in part on the work of the FLTK project" sentence. | DIP §0.8; DEP › FLTK pin and build, Always dynamic | Stage 0 | Settled |
+| 4 | System-dependency mode checks | P3 | When `CONSOLA_USE_SYSTEM_DEPS` is on, the plan doesn't say how configure detects an FLTK built with Wayland/Cairo, or a rapidyaml built without exception callbacks. A system libtsm is a shared library and won't have the fork's features. | DIP §0.2, §5.3; DEP › FLTK, rapidyaml | Stage 0 / 5 | Settled |
 | 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Pending |
 | 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Pending |
 | 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Pending |
@@ -59,8 +59,26 @@ does not authorize implementation; that still requires explicit user approval.
 ## Totals
 
 - 8 × P2, 17 × P3, 6 × Minor.
-- 24 Pending, 7 Reviewed, 0 Settled.
+- 20 Pending, 7 Reviewed, 4 Settled.
 - Source-checked against pinned libtsm: #8, #9, #10, #21, #24, #25.
 - Documented-behaviour assumptions to confirm: #11, #14, #27, #28.
 
-No build or runtime test was run, and no dependency source was modified.
+## Stage 0 resolutions
+
+- **#1 CI display**: `helper-scripts/run-headless.sh` starts a private `Xvfb`
+  display for the smoke test; `.github/workflows/ci.yml` installs `xvfb`, a
+  font and the X11 dev packages. The fontconfig process-global leaks are
+  suppressed narrowly in `tests/lsan.supp` (applied to the smoke test only).
+- **#2 Stage 0 severity test**: the mapping lives in the Stage 0 logger as
+  `log_level_from_libtsm_severity()` and is unit-tested by `tests/log_test.cpp`;
+  libtsm's callback will call it in Stage 1.
+- **#3 prerequisites/attribution**: `docs/dependencies-dev.md` lists the system
+  packages (including the conditional `libutil` note); `README.md` carries the
+  required FLTK attribution and the bundled-font attribution.
+- **#4 system-dependency mode**: `cmake/deps.cmake` fails closed, probing
+  FLTK's exported link libraries for X11/Xft and rejecting Wayland/Cairo/Pango,
+  and requiring rapidyaml's exception-callback definitions.
+
+Stage 0 implementation status: the fetched build configures, compiles and
+passes CTest (link check, logger, headless smoke test) in Debug, Release and
+ASan/UBSan configurations on Linux/X11. Dependency source was not modified.

@@ -1,28 +1,30 @@
 # Dependencies
 
-Planned build: deps are fetched by CMake `FetchContent`, pinned to a git
-commit hash, built from source and linked statically by default. Pins live in
-the planned `cmake/deps.cmake`.
+Build: dependencies are fetched by CMake `FetchContent`, pinned to a git
+commit hash, built from source and linked statically by default. The pins and
+build options live in `cmake/deps.cmake` and `cmake/libtsm.cmake`.
 
-Build integration is not implemented or authorized. Exact pins are recorded
-here as planning decisions, not tested build integration. The planned
-`cmake/deps.cmake` and `cmake/libtsm.cmake` have not been created.
+The integration is implemented and verified for the fetched build: FLTK and
+rapidyaml via `FetchContent_MakeAvailable`, and libtsm built from source
+without Meson. The Stage 0 build was configured, compiled and smoke-tested
+with these pins; the `CONSOLA_USE_SYSTEM_DEPS` mode is fail-closed and less
+exercised. Exact pins are recorded below and in `cmake/deps.cmake`.
 
 Distribution is **source-only for now**. Users build locally; distributing
 executables, compiled libraries or installers is outside the current scope
-and requires a separate compliance decision. This does not authorize
-implementation.
+and requires a separate compliance decision. This does not authorize binary
+distribution.
 
 ## Table
 
 | Dep | Purpose | First used | Pin | License | Build | Link | System mode |
 |---|---|---|---|---|---|---|---|
 | FLTK | GUI toolkit | Stage 0 | 1.4.5 (exact hash below) | LGPL-2 with FLTK exceptions | `FetchContent_MakeAvailable`; core target `fltk::fltk`; options below | static | `find_package(FLTK 1.4.5 CONFIG REQUIRED)` |
-| libtsm | VT state machine, scrollback, selection, key/mouse encoding | Stage 1 | 4.8.0 (exact hash below) | MIT core + LGPL hash table; bundled notices below | fetch sources; compiled by planned `cmake/libtsm.cmake` (no meson) | static for local source builds | pkg-config `libtsm`, >= 4.8.0 |
+| libtsm | VT state machine, scrollback, selection, key/mouse encoding | Stage 1 | 4.8.0 (exact hash below) | MIT core + LGPL hash table; bundled notices below | fetch sources; compiled by `cmake/libtsm.cmake` (no meson) | static for local source builds | pkg-config `libtsm`, >= 4.8.0 |
 | rapidyaml (+ bundled c4core) | YAML config | Stage 5 | rapidyaml 0.16.0 / c4core 0.6.0 (exact hashes below) | MIT + bundled notices/provenance caveats below | `FetchContent_MakeAvailable`; standalone `ryml::ryml`; dev targets off | static for local source builds | `find_package(ryml 0.16.0 CONFIG REQUIRED)` |
 
-Pin column shows the version target; once implementation is authorized,
-record the selected exact hashes in `cmake/deps.cmake`.
+Pin column shows the version target; the exact hashes are recorded in
+`cmake/deps.cmake`.
 
 ## FLTK pin and build
 
@@ -37,17 +39,17 @@ Read-only upstream verification on September 30, 2026:
   consumption. Link the static core target `fltk::fltk`; use CONFIG mode for
   system packages, not CMake's legacy `FindFLTK` module. Upstream's package
   version check accepts compatible 1.4.x releases >= 1.4.5.
-- planned OFF options: `FLTK_BUILD_SHARED_LIBS`, `FLTK_BUILD_TEST`,
+- OFF options used: `FLTK_BUILD_SHARED_LIBS`, `FLTK_BUILD_TEST`,
   `FLTK_BUILD_EXAMPLES`, `FLTK_BUILD_FLUID`, `FLTK_BUILD_FLTK_OPTIONS`,
   `FLTK_BUILD_FORMS`, `FLTK_BUILD_GL`, `FLTK_BUILD_HTML_DOCS`,
   `FLTK_BUILD_PDF_DOCS` and `FLTK_BUILD_FLUID_DOCS`. Keep
-  `FLTK_USE_PTHREADS=ON` on Linux for the planned `Fl::lock()`/`Fl::awake()`
+  `FLTK_USE_PTHREADS=ON` on Linux for the `Fl::lock()`/`Fl::awake()`
   path. Generic `BUILD_SHARED_LIBS` does not control FLTK.
 - the image library is still an upstream build target; it is not needed by
-  the planned renderer and is not linked into consola. Do not describe the
+  the renderer and is not linked into consola. Do not describe the
   upstream build as producing only the core library.
-- v1 Linux is X11-only: plan `FLTK_BACKEND_X11=ON`, `FLTK_USE_XFT=ON` and
-  `FLTK_BACKEND_WAYLAND=OFF`. Also set `FLTK_USE_PANGO=OFF`,
+- v1 Linux is X11-only: `FLTK_BACKEND_X11=ON`, `FLTK_USE_XFT=ON` and
+  `FLTK_BACKEND_WAYLAND=OFF` are set. Also set `FLTK_USE_PANGO=OFF`,
   `FLTK_GRAPHICS_CAIRO=OFF`, `FLTK_OPTION_CAIRO_WINDOW=OFF` and
   `FLTK_OPTION_CAIRO_EXT=OFF`. Use FLTK's Xlib/Xft drawing path; no native
   Wayland, Cairo/Pango, libdecor or Wayland-specific libxkbcommon dependency
@@ -68,7 +70,8 @@ Sources: [release](https://github.com/fltk/fltk/releases/tag/release-1.4.5),
 [tag resolution](https://api.github.com/repos/fltk/fltk/git/tags/0d28470949323dedff75444d0011f0b5d38064f1),
 [pinned source](https://github.com/fltk/fltk/tree/a9b1113516ffd15fc7602a6d425a317df30f4720)
 (`CMakeLists.txt`, `CMake/options.cmake`, `src/CMakeLists.txt`,
-`README.CMake.txt`, `COPYING`). No configure, build or runtime test was run.
+`README.CMake.txt`, `COPYING`). The fetched FLTK build was later configured
+and compiled during Stage 0 with the X11/Xft backend (no Wayland/Cairo/Pango).
 
 ## libtsm pin and build
 
@@ -80,7 +83,8 @@ This is the planned revision. Source-only distribution settles the current
 licensing-policy blocker; binary distribution is not approved.
 
 Read-only source verification on September 30, 2026: upstream builds with
-Meson and creates a shared `libtsm`. Our planned CMake adapter creates a static
+Meson and creates a shared `libtsm`. Our CMake adapter
+(`cmake/libtsm.cmake`) creates a static
 target instead, without running Meson or building the optional GTK test
 terminal. The verified source list is:
 
@@ -136,8 +140,8 @@ Sources: [tag resolution](https://api.github.com/repos/kmscon/libtsm/git/ref/tag
 [pinned source](https://github.com/kmscon/libtsm/tree/ef2365d0f9f1a370d721a82470d69c3646fe97f0)
 (`meson.build`, `meson.options`, `src/tsm/meson.build`,
 `src/shared/meson.build`, `external/wcwidth/meson.build`, and the notices
-listed above). No configure, build or runtime test was run; dependency source
-was not modified.
+listed above). The Stage 0 build compiles these sources via
+`cmake/libtsm.cmake`; dependency source was not modified.
 
 The planned libtsm fork (reflow, combining chars) replaces the URL/hash only.
 Search is [wishlist-only](design/WISHLIST.md); the current plan does not need
@@ -160,17 +164,18 @@ c4core copy or run upstream's developer synchronization scripts.
 Read-only upstream verification on September 30, 2026:
 
 - upstream requires CMake >= 3.13 and supports C++11 or later. Keep the
-  application's C++20 setting; plan `RYML_CXX_STANDARD=20` as well
-- plan `RYML_STANDALONE=ON`, `RYML_SYSTEM_C4CORE=OFF`,
-  `C4_LIBRARY_TYPE=STATIC` and `BUILD_SHARED_LIBS=OFF` for the fetched build.
+  application's C++20 setting; `RYML_CXX_STANDARD=20` is set as well
+- `RYML_STANDALONE=ON`, `RYML_SYSTEM_C4CORE=OFF`,
+  `C4_LIBRARY_TYPE=STATIC` and `BUILD_SHARED_LIBS=OFF` are set for the fetched
+  build.
   Link `ryml::ryml`; standalone mode compiles the runtime c4core manifest
   directly into that target, without a separate c4core library
-- plan `RYML_DEV`, `RYML_BUILD_TESTS`, `RYML_BUILD_BENCHMARKS`,
+- `RYML_DEV`, `RYML_BUILD_TESTS`, `RYML_BUILD_BENCHMARKS`,
   `RYML_BUILD_TOOLS`, `RYML_BUILD_API`, `RYML_FUZZ_DRIVERS`,
-  `RYML_EXTRA_ALL` and all `RYML_EXTRA_INTS*` options OFF. Do not pull
+  `RYML_EXTRA_ALL` and all `RYML_EXTRA_INTS*` options are OFF. Do not pull
   upstream's test/benchmark dependencies or language bindings into consola
-- plan `RYML_DEFAULT_CALLBACKS=ON` and
-  `RYML_DEFAULT_CALLBACK_USES_EXCEPTIONS=ON`, with compiler exceptions
+- `RYML_DEFAULT_CALLBACKS=ON` and
+  `RYML_DEFAULT_CALLBACK_USES_EXCEPTIONS=ON` are set, with compiler exceptions
   enabled. Default error callbacks otherwise call `abort()`; catch ryml
   errors at the configuration loader boundary (5.3), not in terminal hot
   paths. A malformed configuration must remain a recoverable error
@@ -215,8 +220,8 @@ Sources: [release](https://github.com/biojppm/rapidyaml/releases/tag/v0.16.0),
 (`CMakeLists.txt`, `proj/c4proj/c4Project.cmake`, `ext/README.md`,
 `ext/c4core.mk`, `ext/c4core.cmake`, `ext/c4core.src.txt`,
 `src/c4/yml/common.cpp`, `src/c4/yml/error.hpp`, and the notices above).
-No configure, build or runtime test was run; no dependency checkout was
-created or modified.
+The Stage 0 fetched build configured and compiled rapidyaml; no dependency
+checkout was modified.
 
 ## Always dynamic
 
@@ -250,6 +255,22 @@ Static linking: install the license text of every static dep under
 1. Bump the hash in `cmake/deps.cmake`.
 2. Run all tests.
 3. Update this table.
+
+## Bundled font
+
+consola bundles a default terminal font as a project resource.
+
+| Resource | Source | License | Notes |
+|---|---|---|---|
+| Inconsolata Condensed (`resources/fonts/Inconsolata-Condensed.ttf`) | Google Fonts `ofl/inconsolata` (`https://github.com/google/fonts`) | SIL Open Font License 1.1 (`resources/fonts/OFL.txt`) | Copyright 2006 The Inconsolata Project Authors. Registered at runtime with fontconfig; installed under `share/consola/fonts/` and its license under `share/doc/consola/licenses/inconsolata/`. |
+
+The vendored file hash is recorded here for provenance. It is a project
+resource, not a `FetchContent` dependency.
+
+- `Inconsolata-Condensed.ttf` SHA-256:
+  `7081063a7270dc315d46d55564165b2e134b18f5f82e61c7b8693c819a3d4cda`
+- `OFL.txt` SHA-256:
+  `29bd0cfd0fb2a45f9b057c834a057724bae1f63b525a8ac83d3e7525706d9f80`
 
 ## Dropped
 

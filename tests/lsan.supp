@@ -1,0 +1,3 @@
+# LeakSanitizer suppressions for third-party libraries.
+# fontconfig keeps process-global caches that are not released before exit.
+leak:libfontconfig

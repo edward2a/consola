@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake pkg-config \
+            libx11-dev libxft-dev libfontconfig1-dev libfreetype-dev \
+            libxext-dev libxrender-dev libxinerama-dev libxcursor-dev \
+            libxfixes-dev libxrandr-dev libxi-dev libxpm-dev \
+            zlib1g-dev libpng-dev libjpeg-dev \
+            xvfb xauth fonts-dejavu-core
+
+      - name: Configure, build and test (Debug, Release, sanitizers)
+        run: helper-scripts/ci-linux.sh
