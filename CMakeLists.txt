@@ -64,6 +64,7 @@ endif()
 
 add_library(terminal_core STATIC
     src/app/log.cpp
+    src/terminal/emulator.cpp
 )
 target_include_directories(terminal_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

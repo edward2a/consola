@@ -11,6 +11,11 @@ target_link_libraries(consola_log_test PRIVATE terminal_core)
 
 add_test(NAME log_test COMMAND consola_log_test)
 
+add_executable(consola_emulator_test emulator_test.cpp)
+target_link_libraries(consola_emulator_test PRIVATE terminal_core)
+
+add_test(NAME emulator_test COMMAND consola_emulator_test)
+
 add_test(NAME smoke_test
     COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
             $<TARGET_FILE:terminal_app> --smoke-test)
