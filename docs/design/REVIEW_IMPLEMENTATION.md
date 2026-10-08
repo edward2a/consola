@@ -1,0 +1,66 @@
+# Design Review — Implementation Watchlist
+
+Post-review register of items to re-check during or after implementation.
+Produced after the fifth review round (commit `306acfa`), with read-only
+spot-checks against the pinned libtsm 4.8.0 source in `tmp/libtsm`.
+
+None of these blocks Stage 0. Each is a check to make at the stage named in
+**Review at**, and where possible after the relevant code exists. This file
+does not authorize implementation; that still requires explicit user approval.
+
+## Key
+
+- **Files:** `DIP` = [`detailed-implementation-plan.md`](detailed-implementation-plan.md),
+  `DEP` = [`../dependencies.md`](../dependencies.md). References use section
+  headings, so they stay valid when lines move.
+- **Criticality:** the same P2 / P3 / Minor scale as the earlier reviews.
+- **State:**
+  - **Pending** — new, not yet discussed.
+  - **Reviewed** — already in the docs with an explicit "verify" or "defer"
+    note; only the check remains.
+  - **Settled** — checked and closed. Nothing is in this state yet.
+
+## Watchlist
+
+| # | Finding | Crit. | Summary | Reference | Review at | State |
+|---|---|---|---|---|---|---|
+| 1 | CI smoke test needs a display | P3 | The test "executable starts / opens a FLTK window" needs an X server in CI. 0.7 names no virtual display (e.g. Xvfb) and no no-window smoke mode. The sanitizer build will probably report X11/fontconfig leaks and need suppressions. | DIP §0.7 CI; DIP Stage 0 › Tests | Stage 0 | Pending |
+| 2 | Stage 0 test depends on Stage 1 code | Minor | The libtsm log-level mapping test is listed in Stage 0, but the code it tests is specified in 1.5. Either build the mapping as a plain function in the 0.4 logger, or move the test to Stage 1. | DIP Stage 0 › Tests; §1.5 | Stage 0 | Pending |
+| 3 | Build prerequisites and FLTK attribution | Minor | The README (0.8) must list: X11/Xft/fontconfig dev packages for building FLTK; `libutil` for `openpty()` on glibc < 2.34; FLTK's required "based in part on the work of the FLTK project" sentence. | DIP §0.8; DEP › FLTK pin and build, Always dynamic | Stage 0 | Pending |
+| 4 | System-dependency mode checks | P3 | When `CONSOLA_USE_SYSTEM_DEPS` is on, the plan doesn't say how configure detects an FLTK built with Wayland/Cairo, or a rapidyaml built without exception callbacks. A system libtsm is a shared library and won't have the fork's features. | DIP §0.2, §5.3; DEP › FLTK, rapidyaml | Stage 0 / 5 | Pending |
+| 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Pending |
+| 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Pending |
+| 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Pending |
+| 8 | Bracketed-paste injection | P2 | `tsm_vte_paste()` wraps the pasted text without filtering it. Pasted text containing `ESC[201~` ends the bracketing early, and the rest runs as if typed (source-checked). Decide whether to neutralise that marker before encoding. | DIP §1.7 › Streaming paste; §2.8 | Stage 2 | Pending |
+| 9 | Paste framing and mode visibility | P3 | Extends the existing 2.8 "verify" note. Source check: bracketed-paste mode (2004) is a private flag with no getter and is not in `tsm_vte_get_flags()`. Framing can be inferred from capture length = source + 12 bytes, plus an optional leading ESC. | DIP §2.8 | Stage 2 | Reviewed |
+| 10 | Cursor must use libtsm's clamped position | P3 | `tsm_screen_get_cursor_x()` returns the raw value, which equals the column count after writing the last column. `tsm_screen_draw()` clamps it to the last column (y likewise). If our cursor code uses the raw value, libtsm's inverted cell is left on screen (source-checked). | DIP §2.4 › Cursor | Stage 2 | Pending |
+| 11 | Missing glyphs without Pango | P2 | With Xft and no Pango, FLTK probably draws with a single font and no per-glyph fallback, so CJK, symbols and emoji the font lacks would show as boxes. Verify with 2.10's CJK test. If confirmed, record it as a v1 limitation / font requirement; no new dependencies. | DIP §2.3, §2.10; DEP › FLTK pin and build | Stage 2 | Pending |
+| 12 | Fractional display scaling | P3 | Cell origins are rounded in FLTK units, and FLTK then applies the screen scale. At 1.25× or 1.5×, cell backgrounds may show gaps or overlaps. | DIP §2.3, §2.4 | Stage 2 | Pending |
+| 13 | Bold/italic font switching | Minor | 2.4 says set the font face once, but bold and italic text need face changes. Check the cost of switching; overly wide bold glyphs are already handled by clipping. | DIP §2.4; §2.2 › Cell | Stage 2 / 7 | Pending |
+| 14 | FLTK default window and keyboard behaviour | P2 | By default, FLTK hides a window when its close button is pressed or an unhandled Escape reaches it, and `Fl::run()` returns once no window is shown. That would stop event processing before 1.6's shutdown steps finish. Unhandled Tab/arrow keys move widget focus instead of reaching the terminal. | DIP §2.6; §1.6 › Application shutdown; §4.5 | Stage 2 / 4 | Pending |
+| 15 | libtsm types leak into UI code | Minor | 2.6's key translator (UI side) uses `TSM_*_MASK` and libtsm's keysym header. That contradicts 2.2's rule that libtsm types stay inside the emulator. | DIP §2.6, §2.2 | Stage 2 | Pending |
+| 16 | Input methods and keyboard layouts | P3 | Existing note: verify FLTK input methods and dead keys on X11, and Ctrl+letter on non-Latin layouts. | DIP §2.6 | Stage 2 | Reviewed |
+| 17 | `TERM=xterm-256color` vs what libtsm supports | P3 | The advertised terminal type promises more than libtsm does: no modifyOtherKeys or kitty keyboard protocol, no strikethrough attribute, DECSET 1007 not parsed. Check vim/nvim, tmux, less, htop and mc. | DIP §1.2; §2.6 › v1 limitation; Cross-Stage › Manual test matrix | After Stage 2 / Stage 6 | Pending |
+| 18 | Cursor display details | Minor | `ColourConfig` has a cursor colour that 2.4 never uses. How the cursor looks in unfocused panes is not specified. Blink timers should run only for the focused, visible pane to keep idle CPU low. | DIP §2.4 › Cursor; §5.1; §7.5 | Stage 5 / 7 | Pending |
+| 19 | Config schema is incomplete | P3 | Settings promised as configurable elsewhere are missing from 5.2: TERM/COLORTERM, login shell, word chars, cancel-paste shortcut, bell mode, cursor style. Precedence between general and profile settings (shell, font, scrollback) is undefined. | DIP §5.2; §1.2, §2.7, §2.8, §6.2, §6.4 | Stage 5 | Pending |
+| 20 | Startup worker head-of-line blocking | Minor | There is one sequential startup worker. A launch stuck before exec (e.g. a hung NFS working directory) delays every queued launch until it is cancelled. Most visible when 6.5 restores many panes. | DIP §1.3 › Startup execution; §6.5 | Stage 6 / 7 | Pending |
+| 21 | How URL detection reads screen text | P3 | 6.3 doesn't say how text is read. `tsm_screen_draw()` is the only reader and resets libtsm's "redraw everything" flag on first call, so an extra pass can swallow it. This only matters after the age counter overflows, which is realistic on macOS/Windows where it is 32-bit. URLs that wrap across lines are not addressed. | DIP §6.3, §2.5 | Stage 6 | Pending |
+| 22 | Fixed tuning constants | P3 | The plan already marks these starting values for verification: 64 KiB / 1 ms I/O batches; 16 inbound slots, resume at 8; ~8 ms UI drain; 100 ms post-exit drain; 2 s kill timeout; 1 MiB outgoing limit with 16 KiB reserve; 16 MiB paste limit. | DIP §1.4 › I/O fairness, Post-exit output drain; §1.6; §1.7 | Stage 7 | Reviewed |
+| 23 | Memory per session | P3 | Up to 1 MiB inbound plus 1 MiB outgoing per session. Whether that is allocated up front or on demand is not specified; at 50 sessions, up-front allocation could reach ~100 MiB. A broadcast paste keeps one encoded copy per receiving pane (up to 16 MiB each). | DIP §1.7 › Inbound, Outbound, Streaming paste; §6.1 | Stage 7 | Pending |
+| 24 | Reply-overflow rule may kill sessions on binary output | P3 | Binary or random output contains terminal queries libtsm answers, such as `ESC Z` (DECID) and status requests. If the running program doesn't read its input, those replies fill the 1 MiB limit and 1.7 fails the session. Check with the "large cat" workload. | DIP §1.7 › Outbound | Stage 7 | Pending |
+| 25 | Scrollback memory | P3 | Each libtsm cell is 32 bytes on x86-64. The default 10,000 lines at 120 columns is about 37 MiB per terminal with full scrollback, which works against the "lightweight footprint" goal. Measure and adjust the default. | DIP §2.9, §5.2, §7.4 | Stage 7 | Pending |
+| 26 | Rendering performance checks | P3 | Existing "only if profiling shows it" checks: cost of per-cell clipping, per-cell `fl_draw()`, and a possible glyph atlas. | DIP §2.4, §7.5 | Stage 7 | Reviewed |
+| 27 | Windows I/O model | P2 | The `IoLoop` and `TerminalSession` interfaces assume polling for readiness with non-blocking reads. Windows ConPTY uses anonymous pipes, which support neither, and `WaitForMultipleObjects` handles at most 64 objects (the plan tests 50 sessions). Review the interfaces before starting Stage 8. | DIP §1.1, §1.4, §8.2, §8.4 | Stage 8 start | Pending |
+| 28 | macOS PTY polling | P3 | macOS `poll(2)` documents that devices are not supported, so the PTY may need `select()` or kqueue. macOS has no eventfd/pidfd, so the self-pipe and SIGCHLD fallbacks become the main path. | DIP §1.4, §8.3 | Stage 8 | Pending |
+| 29 | Compiler and build portability | P3 | libtsm's build flags are GCC-style and its `shl-macro.h` uses GCC-specific attributes, `__builtin_expect` and `<unistd.h>`. Building with Microsoft's `cl` is unverified, so Windows needs a MinGW or clang-cl decision. The FLTK options and the "Always dynamic" list cover X11 only. | DEP › libtsm pin and build, Always dynamic; DIP §8.5 | Stage 8 | Pending |
+| 30 | Distribution licensing compliance | P2 | Existing deferral: binary releases (libtsm's LGPL hash table needs corresponding source and relinking materials) and any bundle of dependency source (c4core provenance caveats) need separate approval. | DEP › Bundled licenses and distribution, Bundled notices and source redistribution; DIP §8.6 | After v1 | Reviewed |
+| 31 | Integrating the libtsm fork | P3 | Existing deferral: reflow on resize and combining characters. When the fork lands, recheck the multi-codepoint `Cell` handling, the 2.10 limitations, render/selection tests and license notices. | DIP Deferred Work › libtsm fork; §2.2, §2.10 | After v1 | Reviewed |
+
+## Totals
+
+- 8 × P2, 17 × P3, 6 × Minor.
+- 24 Pending, 7 Reviewed, 0 Settled.
+- Source-checked against pinned libtsm: #8, #9, #10, #21, #24, #25.
+- Documented-behaviour assumptions to confirm: #11, #14, #27, #28.
+
+No build or runtime test was run, and no dependency source was modified.
