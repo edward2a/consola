@@ -45,8 +45,8 @@ void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size
 CellAttributes to_attributes(const tsm_screen_attr &attr)
 {
     CellAttributes out;
-    out.foreground = Rgb{.r = attr.fr, .g = attr.fg, .b = attr.fb};
-    out.background = Rgb{.r = attr.br, .g = attr.bg, .b = attr.bb};
+    out.foreground = Rgb{attr.fr, attr.fg, attr.fb};
+    out.background = Rgb{attr.br, attr.bg, attr.bb};
     out.bold = attr.bold != 0;
     out.italic = attr.italic != 0;
     out.underline = attr.underline != 0;
@@ -82,6 +82,19 @@ struct DrawBridge {
     void *context;
 };
 
+void apply_palette(tsm_vte *vte, const TerminalStyle &style)
+{
+    std::array<std::array<uint8_t, 3>, TSM_COLOR_NUM> palette{};
+    for (std::size_t i = 0; i < style.ansi.size(); ++i) {
+        palette[i] = {style.ansi[i].r, style.ansi[i].g, style.ansi[i].b};
+    }
+    palette[TSM_COLOR_FOREGROUND] = {style.foreground.r, style.foreground.g, style.foreground.b};
+    palette[TSM_COLOR_BACKGROUND] = {style.background.r, style.background.g, style.background.b};
+    // libtsm requires uint8_t(*)[3]; std::array has the same contiguous layout.
+    // NOLINTNEXTLINE(modernize-avoid-c-arrays)
+    tsm_vte_set_custom_palette(vte, reinterpret_cast<uint8_t (*)[3]>(palette.data()));
+}
+
 int draw_trampoline([[maybe_unused]] tsm_screen *screen, [[maybe_unused]] uint64_t id,
                     const uint32_t *ch, size_t len, unsigned int width, unsigned int posx,
                     unsigned int posy, const tsm_screen_attr *attr, tsm_age_t age, void *data)
@@ -98,7 +111,8 @@ int draw_trampoline([[maybe_unused]] tsm_screen *screen, [[maybe_unused]] uint64
 
 } // namespace
 
-TerminalEmulator::TerminalEmulator() : impl_(std::make_unique<TerminalEmulatorImpl>())
+TerminalEmulator::TerminalEmulator(const TerminalStyle &style)
+    : impl_(std::make_unique<TerminalEmulatorImpl>())
 {
     if (tsm_screen_new(&impl_->screen, &log_callback, nullptr) < 0) {
         throw std::runtime_error("failed to create libtsm screen");
@@ -109,6 +123,8 @@ TerminalEmulator::TerminalEmulator() : impl_(std::make_unique<TerminalEmulatorIm
         impl_->screen = nullptr;
         throw std::runtime_error("failed to create libtsm vte");
     }
+    // Apply the palette before any output is fed (DIP 2.3).
+    apply_palette(impl_->vte, style);
 }
 
 TerminalEmulator::~TerminalEmulator()

@@ -3,15 +3,18 @@
 #include <app/application.hpp>
 
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#include <span>
 #include <vector>
 
 #include <FL/Fl.H>
-#include <FL/Fl_Box.H>
 #include <FL/Fl_Window.H>
 #include <fontconfig/fontconfig.h>
 
+#include <app/emulator.hpp>
 #include <app/log.hpp>
+#include <ui/terminal_widget.hpp>
 
 namespace consola {
 namespace {
@@ -75,7 +78,14 @@ int run_application(int argc, char **argv, bool smoke_test)
     Fl::set_font(FL_HELVETICA, "Inconsolata Condensed");
 
     Fl_Window window(640, 400, "consola");
-    Fl_Box placeholder(0, 0, 640, 400, "consola");
+
+    TerminalEmulator emulator;
+    const char *banner = "consola\r\n";
+    emulator.feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(banner),
+                                             std::strlen(banner)));
+
+    TerminalWidget terminal(0, 0, 640, 400, emulator);
+    window.resizable(terminal);
     window.end();
     window.show(argc, argv);
 

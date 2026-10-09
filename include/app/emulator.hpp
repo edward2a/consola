@@ -7,6 +7,8 @@
 #include <memory>
 #include <span>
 
+#include <app/terminal_style.hpp>
+
 namespace consola {
 
 struct TerminalEmulatorImpl;
@@ -15,15 +17,9 @@ struct TerminalEmulatorImpl;
 // comparisons do not wrap early (DIP 2.5).
 using ContentAge = std::uint_fast32_t;
 
-struct Rgb {
-    std::uint8_t r = 0;
-    std::uint8_t g = 0;
-    std::uint8_t b = 0;
-};
-
 struct CellAttributes {
-    Rgb foreground{};
-    Rgb background{};
+    Rgb foreground;
+    Rgb background;
     bool bold = false;
     bool italic = false;
     bool underline = false;
@@ -70,7 +66,7 @@ public:
     using OutputCallback = void (*)(void *context, std::span<const std::byte> bytes);
     using CellCallback = void (*)(void *context, int column, int row, const Cell &cell);
 
-    TerminalEmulator();
+    explicit TerminalEmulator(const TerminalStyle &style = default_terminal_style());
     ~TerminalEmulator();
     TerminalEmulator(const TerminalEmulator &) = delete;
     TerminalEmulator &operator=(const TerminalEmulator &) = delete;

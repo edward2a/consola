@@ -223,3 +223,17 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   us in §2.12 (no separate raw escape parser needed).
   **Deferred**: font setup/basic rendering (S2-CS2), dirty regions (S2-CS3),
   input (S2-CS4/5), paste (§2.8), scrollback/title/bell (S2-CS7).
+- **S2-CS2 — font setup and basic rendering (§2.3–§2.4)**:
+  `include/app/terminal_style.hpp` adds `TerminalStyle` (16 ANSI colours +
+  foreground/background/cursor, font family/size) with C++ defaults; the
+  emulator applies it via `tsm_vte_set_custom_palette()` at construction, before
+  output. `TerminalWidget` derives cell metrics from FLTK
+  (`fl_width("M")`, `fl_height()`, ascent) and renders the background, cells
+  (absolute rounded grid origins, per-cell clipping, UTF-8 via `fl_utf8encode`,
+  inverse/dim/underline and bold/italic face selection) and the cursor
+  (block/underline/vbar; libtsm's cursor-cell inversion neutralised; viewport
+  row from scrollback + clamped raw cursor position — watchlist **#10**).
+  `application.cpp` now hosts a `TerminalWidget` fed by a `TerminalEmulator`, so
+  the Xvfb smoke test exercises rendering. **Carry**: #11 (glyph fallback),
+  #12 (fractional scaling), #13 (bold/italic face cost/fallback) are checked in
+  rendering; blink timing and the scrollbar land in S2-CS3/S2-CS7.
