@@ -101,8 +101,10 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   (no deadlock on a full result queue); cancellation is published before the
   dequeue-time re-check so a pre-dequeue cancel is not lost, and the handshake
   resolves exec success before a simultaneous cancel; `fcntl` and child
-  `setsid`/`TIOCSCTTY`/`dup2` failures are checked and reported; PATH search
-  resolves relative components against the requested working directory.
+  `setsid`/`TIOCSCTTY`/`dup2`/signal-setup failures are checked and reported;
+  PATH search resolves relative components against an absolute base for the
+  requested working directory, so a relative working directory plus a relative
+  PATH entry produces a path valid after the child's `chdir`.
   `running()` is documented as backend I/O/stop state, not process liveness,
   and `StartupResult`'s descriptors are documented as borrowed views owned by
   the session.
@@ -111,7 +113,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   master reports `IoStatus::eof` after the child exits. Additional Stage 1
   tests cover shell I/O, `exec_failed`, invalid dimensions, termination,
   `stop()` resolution and descriptor-leak checks, plus deterministic
-  pre-dequeue cancellation and `stop()` with a saturated result queue.
+  pre-dequeue cancellation and `stop()` with a saturated result queue, and a
+  relative-working-directory + relative-PATH launch.
 - **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
   #5's thread ownership needs documenting once the I/O loop and UI exist, and
   #7 belongs to the terminate/kill-timer work (§1.6).

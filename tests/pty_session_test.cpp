@@ -16,6 +16,8 @@
 #include <utility>
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -421,6 +423,62 @@ bool test_stop_with_full_results()
     return submitted > 0 && resolved == submitted;
 }
 
+bool test_relative_path_resolution()
+{
+    const std::string base = "consola-path-test";
+    const std::string work = base + "/work";
+    const std::string bin = work + "/bin";
+    const std::string script = bin + "/greet.sh";
+
+    ::mkdir(base.c_str(), 0700);
+    ::mkdir(work.c_str(), 0700);
+    ::mkdir(bin.c_str(), 0700);
+
+    int fd = ::open(script.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0700);
+    if (fd < 0) {
+        return false;
+    }
+    const char *contents = "#!/bin/sh\necho path-ok\n";
+    std::size_t length = std::strlen(contents);
+    ssize_t written = ::write(fd, contents, length);
+    ::close(fd);
+    if (!std::cmp_equal(written, length)) {
+        return false;
+    }
+    ::chmod(script.c_str(), 0700);
+
+    consola::StartupWorker worker(nullptr, nullptr);
+    consola::LaunchRequest request;
+    request.id.value = 500;
+    request.options.executable = "greet.sh";
+    request.options.working_directory = work;
+    request.options.environment = {"PATH=bin"};
+    if (!worker.submit(std::move(request))) {
+        return false;
+    }
+    consola::StartupResult result;
+    if (!wait_result(worker, result, 5000)) {
+        return false;
+    }
+    bool ok = result.error == consola::SessionError::none && result.session != nullptr;
+    std::string collected;
+    if (ok) {
+        ok = read_until(*result.session, "path-ok", collected, 5000);
+    }
+    if (result.session) {
+        result.session->terminate();
+        wait_exit(result.process_id, 5000);
+        result.session.reset();
+    }
+    worker.stop();
+
+    ::unlink(script.c_str());
+    ::rmdir(bin.c_str());
+    ::rmdir(work.c_str());
+    ::rmdir(base.c_str());
+    return ok;
+}
+
 } // namespace
 
 int main()
@@ -429,7 +487,7 @@ int main()
         const char *name;
         bool (*run)();
     };
-    std::array<Case, 10> cases{{
+    std::array<Case, 11> cases{{
         {.name = "echo_and_eof", .run = &test_echo_and_eof},
         {.name = "shell_io", .run = &test_shell_io},
         {.name = "exec_failed", .run = &test_exec_failed},
@@ -440,6 +498,7 @@ int main()
         {.name = "cancel_before_dequeue", .run = &test_cancel_before_dequeue},
         {.name = "cancel_unknown", .run = &test_cancel_unknown},
         {.name = "stop_with_full_results", .run = &test_stop_with_full_results},
+        {.name = "relative_path_resolution", .run = &test_relative_path_resolution},
     }};
 
     int failures = 0;

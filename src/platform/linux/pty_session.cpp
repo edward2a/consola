@@ -30,8 +30,9 @@ enum class SetupStage : std::uint8_t {
     setsid = 1,
     setctty = 2,
     dup = 3,
-    chdir = 4,
-    exec = 5,
+    signal = 4,
+    chdir = 5,
+    exec = 6,
 };
 
 struct SetupError {
@@ -89,6 +90,23 @@ const std::string *find_environment(const std::vector<std::string> &environment,
         }
     }
     return nullptr;
+}
+
+std::string absolute_directory(const std::string &directory)
+{
+    if (!directory.empty() && directory.front() == '/') {
+        return directory;
+    }
+    std::array<char, 4096> cwd{};
+    if (::getcwd(cwd.data(), cwd.size()) == nullptr) {
+        return directory;
+    }
+    std::string base = cwd.data();
+    if (!directory.empty()) {
+        base += '/';
+        base += directory;
+    }
+    return base;
 }
 
 std::string search_path(const std::string &name, const std::string &path,
@@ -169,7 +187,8 @@ SessionError prepare_launch(const SessionOptions &options, PreparedLaunch &out)
         if (const std::string *found = find_environment(out.environment_storage, "PATH")) {
             path = found->substr(std::strlen("PATH="));
         }
-        out.executable = search_path(options.executable, path, out.working_directory);
+        out.executable =
+            search_path(options.executable, path, absolute_directory(out.working_directory));
         if (out.executable.empty()) {
             log(LogLevel::Error, "executable not found on PATH: " + options.executable);
             return SessionError::exec_failed;
@@ -242,12 +261,15 @@ void report_setup_error(int fd, SetupStage stage, int error) noexcept
     action.sa_handler = SIG_DFL;
     ::sigemptyset(&action.sa_mask);
     action.sa_flags = 0;
-    ::sigaction(SIGPIPE, &action, nullptr);
-    ::sigaction(SIGCHLD, &action, nullptr);
 
     sigset_t empty_mask;
     ::sigemptyset(&empty_mask);
-    ::sigprocmask(SIG_SETMASK, &empty_mask, nullptr);
+    if (::sigaction(SIGPIPE, &action, nullptr) != 0 ||
+        ::sigaction(SIGCHLD, &action, nullptr) != 0 ||
+        ::sigprocmask(SIG_SETMASK, &empty_mask, nullptr) != 0) {
+        report_setup_error(error_fd, SetupStage::signal, errno);
+        ::_exit(127);
+    }
 
     if (!launch.working_directory.empty() && ::chdir(launch.working_directory.c_str()) != 0) {
         report_setup_error(error_fd, SetupStage::chdir, errno);
