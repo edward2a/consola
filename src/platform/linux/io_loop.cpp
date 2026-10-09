@@ -129,17 +129,20 @@ std::optional<pid_t> proc_session_id(pid_t pid)
 }
 
 // Verify that a process group still belongs to this terminal's session before
-// signaling it. The foreground group is confirmed through the controlling
-// terminal; other groups through the group leader's session id (DIP 1.6,
-// watchlist #7). A group whose identity cannot be established is not signaled.
+// signaling it (DIP 1.6, watchlist #7). A group whose identity cannot be
+// established is not signaled.
 bool group_in_session(pid_t pgid, pid_t session_id, int master_fd)
 {
     if (pgid <= 0) {
         return false;
     }
-    if (master_fd >= 0 && ::tcgetpgrp(master_fd) == pgid) {
+    // The controlling terminal still belongs to our session and reports this
+    // group as its foreground group. That is live kernel state, not a saved
+    // number, so a reused PGID cannot masquerade as our foreground group.
+    if (master_fd >= 0 && ::tcgetsid(master_fd) == session_id && ::tcgetpgrp(master_fd) == pgid) {
         return true;
     }
+    // Otherwise confirm through the group leader's session id.
     const std::optional<pid_t> sid = proc_session_id(pgid);
     return sid.has_value() && *sid == session_id;
 }
