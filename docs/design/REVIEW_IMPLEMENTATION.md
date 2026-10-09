@@ -187,7 +187,14 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `reply_overflow` failure path, because §2.8 must verify libtsm framing before
   implementing capture and cancellation; Stage 1's exit criteria do not require
   paste.
-- **#5 (concurrency)** remains open; it needs a TSan run and a short written
+- **Stage 1 exit verification**: `io_loop_test` adds an end-to-end case that
+  feeds loop-delivered PTY output into `TerminalEmulator` and checks the libtsm
+  cursor, covering the "output reaches libtsm" criterion; the remaining
+  criteria (shell start, command execution, resize, exit detection, no
+  UI-thread PTY blocking) are covered by the PTY/loop tests and the dedicated
+  I/O thread. A `CONSOLA_TSAN` option and `tsan` preset were added for the
+  watchlist #5 concurrency check; the TSan run itself is still owed.
+- **#5 (concurrency)** remains open; it needs the TSan run and a short written
   ownership note (UI owns terminal state, loop owns registered-session I/O and
   termination, startup worker owns unregistered backends; only the queues and
   wake flag are shared).

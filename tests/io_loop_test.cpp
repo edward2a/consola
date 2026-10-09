@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include <app/emulator.hpp>
 #include <app/message.hpp>
 #include <app/session.hpp>
 #include <app/session_queue.hpp>
@@ -432,8 +433,10 @@ bool test_terminate_escalates_sigkill()
 
     const consola::TerminalId id{6};
     // The shell ignores SIGHUP and the ignored disposition is inherited across
-    // exec, so only the SIGKILL escalation can end the session.
-    if (!harness.launch(id, "/bin/sh", {"-c", "trap '' HUP; sleep 10"})) {
+    // exec, so only the SIGKILL escalation can end the session. Wait for the
+    // trap to be installed before terminating, or the initial SIGHUP could
+    // kill the shell first.
+    if (!harness.launch(id, "/bin/sh", {"-c", "trap '' HUP; printf ready; sleep 10"})) {
         std::printf("launch failed\n");
         return false;
     }
@@ -443,6 +446,24 @@ bool test_terminate_escalates_sigkill()
     }
     consola::LoopEvent event;
     if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+    if (!wait_for(
+            [&] {
+                consola::InboundMessage message;
+                while (harness.inbound.try_pop(message)) {
+                    if (message.kind == consola::InboundMessage::Kind::data) {
+                        const std::string text(reinterpret_cast<const char *>(message.bytes.data()),
+                                               message.bytes.size());
+                        if (text.find("ready") != std::string::npos) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            },
+            5000)) {
+        std::printf("shell never became ready\n");
         return false;
     }
     if (!harness.loop->terminate(id)) {
@@ -645,6 +666,61 @@ bool test_outbound_credits_release()
     return true;
 }
 
+bool test_output_reaches_emulator()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{11};
+    if (!harness.launch(id, "/bin/sh", {"-c", "printf abc"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+
+    // Stage 1 exit criterion: PTY output reaches libtsm.
+    consola::TerminalEmulator emulator;
+    bool exited = false;
+    const auto deadline = Clock::now() + std::chrono::milliseconds(5000);
+    while (!exited && Clock::now() < deadline) {
+        consola::InboundMessage message;
+        bool popped = false;
+        while (harness.inbound.try_pop(message)) {
+            popped = true;
+            if (message.kind == consola::InboundMessage::Kind::data) {
+                emulator.feed(message.bytes);
+            } else if (message.kind == consola::InboundMessage::Kind::exited) {
+                exited = true;
+            }
+        }
+        if (!exited && !popped) {
+            harness.loop->resume(id);
+        }
+        sleep_ms(1);
+    }
+    if (!exited) {
+        std::printf("emulator session did not exit\n");
+        return false;
+    }
+    if (emulator.cursor_x_raw() != 3) {
+        std::printf("libtsm cursor at %d, expected 3\n", emulator.cursor_x_raw());
+        return false;
+    }
+
+    harness.loop->remove(id);
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -687,6 +763,10 @@ int main()
     }
     if (!test_outbound_credits_release()) {
         std::printf("test_outbound_credits_release failed\n");
+        return 1;
+    }
+    if (!test_output_reaches_emulator()) {
+        std::printf("test_output_reaches_emulator failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");

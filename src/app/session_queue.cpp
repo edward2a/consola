@@ -105,7 +105,8 @@ bool SessionOutboundQueue::try_push(std::span<const std::byte> bytes, OutboundAd
     }
     const std::size_t limit =
         admission == OutboundAdmission::reserved ? byte_limit_ : byte_limit_ - reserve_bytes_;
-    if (pending_.load(std::memory_order_relaxed) + bytes.size() > limit) {
+    const std::size_t pending = pending_.load(std::memory_order_relaxed);
+    if (pending > limit || bytes.size() > limit - pending) {
         return false;
     }
     slot->bytes.assign(bytes.begin(), bytes.end());

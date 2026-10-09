@@ -33,6 +33,16 @@
         "CONSOLA_SANITIZERS": "ON",
         "CONSOLA_WARNINGS_AS_ERRORS": "ON"
       }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "binaryDir": "${sourceDir}/build/tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CONSOLA_TSAN": "ON",
+        "CONSOLA_WARNINGS_AS_ERRORS": "ON"
+      }
     }
   ],
   "buildPresets": [

@@ -25,8 +25,13 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(CONSOLA_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(CONSOLA_TSAN "Enable ThreadSanitizer" OFF)
 option(CONSOLA_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 option(CONSOLA_USE_SYSTEM_DEPS "Use system-installed dependencies instead of FetchContent" OFF)
+
+if(CONSOLA_TSAN AND CONSOLA_SANITIZERS)
+    message(FATAL_ERROR "CONSOLA_TSAN and CONSOLA_SANITIZERS are mutually exclusive")
+endif()
 
 include(CTest)
 
@@ -62,6 +67,21 @@ if(CONSOLA_SANITIZERS)
     )
 endif()
 
+add_library(consola_tsan INTERFACE)
+if(CONSOLA_TSAN)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        message(FATAL_ERROR "CONSOLA_TSAN is only supported with GNU, Clang, or AppleClang")
+    endif()
+    target_compile_options(consola_tsan INTERFACE
+        $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-fsanitize=thread;-fno-omit-frame-pointer>
+        $<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-fsanitize=thread;-fno-omit-frame-pointer>
+    )
+    target_link_options(consola_tsan INTERFACE
+        $<$<LINK_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-fsanitize=thread>
+        $<$<LINK_LANG_AND_ID:C,GNU,Clang,AppleClang>:-fsanitize=thread>
+    )
+endif()
+
 add_library(terminal_core STATIC
     src/app/log.cpp
     src/app/session_queue.cpp
@@ -70,7 +90,7 @@ add_library(terminal_core STATIC
 target_include_directories(terminal_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(terminal_core PUBLIC consola_warnings consola_sanitizers)
+target_link_libraries(terminal_core PUBLIC consola_warnings consola_sanitizers consola_tsan)
 
 add_library(terminal_platform STATIC
     src/platform/linux/io_loop.cpp
