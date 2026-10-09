@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <span>
@@ -17,9 +19,35 @@ std::span<const std::byte> as_bytes(const char *text)
 
 std::string g_output;
 
-void collect_output(void *, std::span<const std::byte> bytes)
+void collect_output(void *context, std::span<const std::byte> bytes)
 {
+    static_cast<void>(context);
     g_output.append(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+}
+
+struct DrawnCell {
+    std::vector<std::uint32_t> text;
+    std::uint8_t width = 0;
+};
+
+struct DrawGrid {
+    int columns = 0;
+    std::vector<DrawnCell> cells;
+};
+
+void collect_cell(void *context, int column, int row, const consola::Cell &cell)
+{
+    auto *grid = static_cast<DrawGrid *>(context);
+    if (column < 0 || row < 0) {
+        return;
+    }
+    const auto index = (static_cast<std::size_t>(row) * static_cast<std::size_t>(grid->columns)) +
+                       static_cast<std::size_t>(column);
+    if (index >= grid->cells.size()) {
+        return;
+    }
+    grid->cells[index].text.assign(cell.text.begin(), cell.text.end());
+    grid->cells[index].width = cell.width;
 }
 
 } // namespace
@@ -56,6 +84,41 @@ int main()
     emulator.set_output_callback(&collect_output, nullptr);
     emulator.feed(as_bytes("\x1b[c"));
     if (g_output.empty()) {
+        return EXIT_FAILURE;
+    }
+
+    const consola::CursorState cursor = emulator.cursor();
+    if (cursor.x != 5 || cursor.y != 1 || cursor.hidden) {
+        return EXIT_FAILURE;
+    }
+
+    DrawGrid grid;
+    grid.columns = emulator.columns();
+    grid.cells.resize(static_cast<std::size_t>(grid.columns) *
+                      static_cast<std::size_t>(emulator.rows()));
+    const std::uint32_t age = emulator.draw(&collect_cell, &grid);
+    static_cast<void>(age);
+
+    const auto cell_text = [&](int column, int row) {
+        const auto index =
+            (static_cast<std::size_t>(row) * static_cast<std::size_t>(grid.columns)) +
+            static_cast<std::size_t>(column);
+        std::string text;
+        for (const std::uint32_t codepoint : grid.cells[index].text) {
+            text.push_back(static_cast<char>(codepoint));
+        }
+        return text;
+    };
+    const auto cell_width = [&](int column, int row) {
+        const auto index =
+            (static_cast<std::size_t>(row) * static_cast<std::size_t>(grid.columns)) +
+            static_cast<std::size_t>(column);
+        return grid.cells[index].width;
+    };
+    if (cell_text(0, 0) != "h" || cell_text(4, 0) != "o" || cell_text(0, 1) != "w") {
+        return EXIT_FAILURE;
+    }
+    if (cell_width(0, 0) != 1) {
         return EXIT_FAILURE;
     }
 

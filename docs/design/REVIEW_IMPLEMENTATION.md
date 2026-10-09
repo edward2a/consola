@@ -205,3 +205,21 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `CONSOLA_TSAN` option and `tsan` preset were added (also run from
   `helper-scripts/ci-linux.sh`); the full CTest suite passes under TSan
   (8/8, including the loop/queue/PTY tests and the Xvfb smoke test).
+
+## Stage 2 progress
+
+- **S2-CS1 — widget boundary and terminal model API**: `include/app/emulator.hpp`
+  exposes the renderer read surface without leaking libtsm types: `Rgb`,
+  `CellAttributes`, `Cell` (codepoints + width 1/2/0 + age), `CursorStyle`,
+  `CursorState`, and `TerminalEmulator::draw(CellCallback, void*)` wrapping
+  `tsm_screen_draw()` (not `draw2()`), plus `cursor()`, `scrollback_line_count()`
+  and `scrollback_line_pos()`. `include/ui/terminal_widget.hpp` +
+  `src/ui/terminal_widget.cpp` add a presentation-only `TerminalWidget` with a
+  model reference and stub `draw()`/`handle()`; cell rendering lands in S2-CS2.
+  `tests/emulator_test.cpp` now traverses the screen and checks cell text/width
+  and cursor state.
+  **Finding**: pinned libtsm 4.8.0 has no window-title (OSC 0/2) API — there is
+  no title callback or stored title in `libtsm.h`/`tsm-vte.c`, so §2.12 will
+  need our own OSC parsing (or the libtsm fork) rather than a libtsm accessor.
+  **Deferred**: font setup/basic rendering (S2-CS2), dirty regions (S2-CS3),
+  input (S2-CS4/5), paste (§2.8), scrollback/title/bell (S2-CS7).

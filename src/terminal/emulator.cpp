@@ -42,6 +42,60 @@ void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size
     }
 }
 
+CellAttributes to_attributes(const tsm_screen_attr &attr)
+{
+    CellAttributes out;
+    out.foreground = Rgb{.r = attr.fr, .g = attr.fg, .b = attr.fb};
+    out.background = Rgb{.r = attr.br, .g = attr.bg, .b = attr.bb};
+    out.bold = attr.bold != 0;
+    out.italic = attr.italic != 0;
+    out.underline = attr.underline != 0;
+    out.inverse = attr.inverse != 0;
+    out.blink = attr.blink != 0;
+    out.dim = attr.dim != 0;
+    return out;
+}
+
+CursorStyle to_cursor_style(tsm_screen_cursor_style style)
+{
+    switch (style) {
+    case TSM_SCREEN_CURSOR_BLOCK_BLINK:
+        return CursorStyle::block_blink;
+    case TSM_SCREEN_CURSOR_BLOCK_STEADY:
+        return CursorStyle::block_steady;
+    case TSM_SCREEN_CURSOR_UNDERLINE_BLINK:
+        return CursorStyle::underline_blink;
+    case TSM_SCREEN_CURSOR_UNDERLINE_STEADY:
+        return CursorStyle::underline_steady;
+    case TSM_SCREEN_CURSOR_VBAR_BLINK:
+        return CursorStyle::vbar_blink;
+    case TSM_SCREEN_CURSOR_VBAR_STEADY:
+        return CursorStyle::vbar_steady;
+    case TSM_SCREEN_CURSOR_DEFAULT:
+    default:
+        return CursorStyle::default_style;
+    }
+}
+
+struct DrawBridge {
+    TerminalEmulator::CellCallback callback;
+    void *context;
+};
+
+int draw_trampoline([[maybe_unused]] tsm_screen *screen, [[maybe_unused]] uint64_t id,
+                    const uint32_t *ch, size_t len, unsigned int width, unsigned int posx,
+                    unsigned int posy, const tsm_screen_attr *attr, tsm_age_t age, void *data)
+{
+    auto *bridge = static_cast<DrawBridge *>(data);
+    Cell cell;
+    cell.text = std::span<const std::uint32_t>(ch, len);
+    cell.attributes = to_attributes(*attr);
+    cell.width = static_cast<std::uint8_t>(width);
+    cell.age = static_cast<std::uint32_t>(age);
+    bridge->callback(bridge->context, static_cast<int>(posx), static_cast<int>(posy), cell);
+    return 0;
+}
+
 } // namespace
 
 TerminalEmulator::TerminalEmulator() : impl_(std::make_unique<TerminalEmulatorImpl>())
@@ -93,6 +147,15 @@ void TerminalEmulator::set_output_callback(OutputCallback callback, void *contex
     impl_->output_context = context;
 }
 
+std::uint32_t TerminalEmulator::draw(CellCallback callback, void *context)
+{
+    if (callback == nullptr) {
+        return 0;
+    }
+    DrawBridge bridge{.callback = callback, .context = context};
+    return static_cast<std::uint32_t>(tsm_screen_draw(impl_->screen, &draw_trampoline, &bridge));
+}
+
 int TerminalEmulator::columns() const
 {
     return static_cast<int>(tsm_screen_get_width(impl_->screen));
@@ -101,6 +164,27 @@ int TerminalEmulator::columns() const
 int TerminalEmulator::rows() const
 {
     return static_cast<int>(tsm_screen_get_height(impl_->screen));
+}
+
+CursorState TerminalEmulator::cursor() const
+{
+    CursorState state;
+    state.x = static_cast<int>(tsm_screen_get_cursor_x(impl_->screen));
+    state.y = static_cast<int>(tsm_screen_get_cursor_y(impl_->screen));
+    state.style = to_cursor_style(tsm_screen_get_cursor_style(impl_->screen));
+    state.blink_rate_ms = tsm_screen_get_cursor_blinking_rate_ms(impl_->screen);
+    state.hidden = (tsm_screen_get_flags(impl_->screen) & TSM_SCREEN_HIDE_CURSOR) != 0;
+    return state;
+}
+
+int TerminalEmulator::scrollback_line_count() const
+{
+    return static_cast<int>(tsm_screen_sb_get_line_count(impl_->screen));
+}
+
+int TerminalEmulator::scrollback_line_pos() const
+{
+    return static_cast<int>(tsm_screen_sb_get_line_pos(impl_->screen));
 }
 
 int TerminalEmulator::cursor_x_raw() const
