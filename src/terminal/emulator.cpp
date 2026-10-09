@@ -2,6 +2,7 @@
 
 #include <app/emulator.hpp>
 
+#include <array>
 #include <cstdarg>
 #include <cstdio>
 #include <stdexcept>
@@ -26,9 +27,9 @@ void log_callback([[maybe_unused]] void *data, [[maybe_unused]] const char *file
                   [[maybe_unused]] const char *subs, unsigned int severity, const char *format,
                   va_list args)
 {
-    char buffer[512];
-    std::vsnprintf(buffer, sizeof(buffer), format, args);
-    log(log_level_from_libtsm_severity(static_cast<int>(severity)), buffer);
+    std::array<char, 512> buffer{};
+    std::vsnprintf(buffer.data(), buffer.size(), format, args);
+    log(log_level_from_libtsm_severity(static_cast<int>(severity)), buffer.data());
 }
 
 void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size_t len, void *data)

@@ -42,7 +42,7 @@ public:
     virtual IoResult write(std::span<const std::byte> buffer) = 0;
     virtual SessionError resize(int cols, int rows) = 0;
     virtual void terminate() = 0;
-    virtual bool running() const = 0;
+    [[nodiscard]] virtual bool running() const = 0;
 };
 
 } // namespace consola

@@ -28,10 +28,10 @@ public:
     // duration of the call, and the callback must not throw.
     void set_output_callback(OutputCallback callback, void *context);
 
-    int columns() const;
-    int rows() const;
-    int cursor_x_raw() const;
-    int cursor_y_raw() const;
+    [[nodiscard]] int columns() const;
+    [[nodiscard]] int rows() const;
+    [[nodiscard]] int cursor_x_raw() const;
+    [[nodiscard]] int cursor_y_raw() const;
 
 private:
     std::unique_ptr<TerminalEmulatorImpl> impl_;

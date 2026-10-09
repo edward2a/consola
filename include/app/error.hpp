@@ -3,10 +3,11 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 namespace consola {
 
-enum class IoStatus { ok, would_block, eof, error };
+enum class IoStatus : std::uint8_t { ok, would_block, eof, error };
 
 struct IoResult {
     // count is nonzero only when status is IoStatus::ok.
@@ -14,7 +15,7 @@ struct IoResult {
     IoStatus status = IoStatus::ok;
 };
 
-enum class SessionError {
+enum class SessionError : std::uint8_t {
     none,
     pty_failed,
     fork_failed,
