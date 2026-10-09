@@ -1022,8 +1022,11 @@ void LinuxIoLoop::maybe_ack_remove(Registered &session)
     if (session.termination.active && !session.termination.completed) {
         return; // removal must not cancel the pending signal sequence
     }
-    if (!session.reaped) {
-        return; // keep reaping the direct child before releasing the backend
+    if (!session.exit_notified) {
+        // Keep the session until `exited` has been published; otherwise an
+        // early removal could erase it before its lifecycle events are
+        // delivered (DIP 1.6). This also keeps reaping the direct child.
+        return;
     }
     session.remove_acked = true;
     LoopEvent event;

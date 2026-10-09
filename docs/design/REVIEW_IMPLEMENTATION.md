@@ -162,12 +162,18 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   completes and the direct child is reaped, then acknowledged. With
   `drain_output_on_close == false`, `terminate` discards newly read output and
   skips the post-exit drain. Tests add SIGHUP-ignoring SIGKILL escalation and
-  close-policy discard. **#7 Settled**: `group_in_session()` verifies the
-  foreground group via `tcgetpgrp()` and other groups via the group leader's
-  session id from `/proc/<pid>/stat`; an unverifiable group is skipped and
-  logged. **Deferred**: streaming paste/outbound budget/reply overflow (§1.7),
-  and the UI-side asynchronous shutdown orchestration (steps 1–4) belongs to
-  the application layer.
+  close-policy discard, plus an early-removal regression (removal is
+  acknowledged only after `exited` is published, so output is not truncated)
+  and a shell-exits-while-a-foreground-group-ignores-SIGHUP escalation case.
+  **#7 Settled (best-effort)**: `group_in_session()` requires the controlling
+  terminal to still report this session via `tcgetsid()` before trusting
+  `tcgetpgrp()`, else the group leader's session id from `/proc/<pid>/stat`;
+  an unverifiable group is skipped and logged. Verification is not atomic with
+  `kill()`, and a leaderless non-foreground group is skipped, so this is a
+  fail-closed best effort, not an absolute no-reuse guarantee. **Deferred**:
+  streaming paste/outbound budget/reply overflow (§1.7); the UI-side
+  asynchronous shutdown orchestration (steps 1–4); and reconciling
+  `TerminalSession::running()` with loop-owned termination.
 - **#5 (concurrency)** remains open; it needs a TSan run and a short written
   ownership note (UI owns terminal state, loop owns registered-session I/O and
   termination, startup worker owns unregistered backends; only the queues and

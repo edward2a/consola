@@ -53,7 +53,10 @@ public:
     virtual bool terminate(TerminalId id) = 0;
 
     // Unregister a session. Acknowledged through LoopEvent::removed once its
-    // poll entries are retired; the UI may then release the backend.
+    // `exited` event has been published, any pending termination signal
+    // sequence has completed and its poll entries are retired; the UI may then
+    // release the backend. Each session has one outstanding remove request: a
+    // remove for an unknown id is acknowledged as a no-op.
     virtual bool remove(TerminalId id) = 0;
 
     // The session has outgoing bytes; monitor POLLOUT until drained.

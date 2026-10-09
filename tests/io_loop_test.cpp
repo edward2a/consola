@@ -6,6 +6,7 @@
 #include <platform/io_loop.hpp>
 #include <platform/startup.hpp>
 
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
@@ -504,6 +505,97 @@ bool test_close_discards_output()
     return true;
 }
 
+bool test_remove_before_exited_preserves_output()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{8};
+    if (!harness.launch(id, "/bin/sh", {"-c", "dd if=/dev/zero bs=1024 count=2000 2>/dev/null"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        return false;
+    }
+    // Request removal before the child has exited or its output has drained;
+    // the acknowledgement must wait for `exited`.
+    if (!harness.loop->remove(id)) {
+        return false;
+    }
+    if (!wait_for([&] { return harness.inbound.data_full(); }, 5000)) {
+        std::printf("inbound queue never filled\n");
+        return false;
+    }
+
+    const Drain drained = drain_session(harness, id, 30000, true);
+    if (!drained.exited || drained.bytes != std::size_t{1024} * 2000U) {
+        std::printf("early remove truncated output (bytes=%zu)\n", drained.bytes);
+        return false;
+    }
+
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event)) {
+        std::printf("early remove was not acknowledged\n");
+        return false;
+    }
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
+bool test_shell_exit_foreground_sigkill()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{9};
+    // The shell exits immediately while a background job in the same group
+    // ignores SIGHUP; only the deadline SIGKILL can remove the group.
+    if (!harness.launch(id, "/bin/sh", {"-c", "sh -c 'trap \"\" HUP; sleep 10' & exit 0"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+
+    const Drain drained = drain_session(harness, id, 5000, true);
+    if (!drained.exited) {
+        std::printf("shell did not exit\n");
+        return false;
+    }
+    if (!harness.loop->terminate(id)) {
+        return false;
+    }
+
+    const auto pgid = static_cast<pid_t>(harness.result.process_id);
+    bool group_gone = false;
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        if (::kill(-pgid, 0) != 0 && errno == ESRCH) {
+            group_gone = true;
+            break;
+        }
+        sleep_ms(20);
+    }
+    if (!group_gone) {
+        std::printf("foreground group survived SIGKILL escalation\n");
+        return false;
+    }
+
+    harness.loop->remove(id);
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -534,6 +626,14 @@ int main()
     }
     if (!test_close_discards_output()) {
         std::printf("test_close_discards_output failed\n");
+        return 1;
+    }
+    if (!test_remove_before_exited_preserves_output()) {
+        std::printf("test_remove_before_exited_preserves_output failed\n");
+        return 1;
+    }
+    if (!test_shell_exit_foreground_sigkill()) {
+        std::printf("test_shell_exit_foreground_sigkill failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");
