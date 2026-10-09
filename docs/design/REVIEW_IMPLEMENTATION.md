@@ -115,6 +115,27 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `stop()` resolution and descriptor-leak checks, plus deterministic
   pre-dequeue cancellation and `stop()` with a saturated result queue, and a
   relative-working-directory + relative-PATH launch.
+- **S1-CS3 — shared I/O loop and session queues**: `include/app/spsc_ring.hpp`,
+  `message.hpp`, `session_queue.hpp`, `wakeup.hpp`, `src/app/session_queue.cpp`,
+  `include/platform/io_loop.hpp`, `src/platform/linux/io_loop.cpp`. One
+  application-owned loop thread polls a wake `eventfd`, a SIGCHLD self-pipe and
+  each session's master FD; `pidfd` is the primary exit notification with the
+  SIGCHLD scan as fallback. Commands (`add`, `remove`, `write_pending`,
+  `resume`, `shutdown`) arrive through a bounded SPSC ring and are acknowledged
+  through a separate ring. Read/write batches stop at 64 KiB or 1 ms, sessions
+  are serviced round-robin, a full inbound queue suspends the whole master poll
+  entry until `resume`, `POLLHUP`/`POLLERR` drive the read path, EOF retires the
+  master, and reaping drains buffered output (100 ms active cap) before
+  `exited`. The loop→UI `WakeupFlag` coalesces wakeups; the queues carry data
+  batches plus reserved `eof`/`exited` lifecycle events ordered by a shared
+  sequence. Tests: `wakeup_test` (coalescing), `session_queue_test` (ordering,
+  bounds, SPSC stress), `io_loop_test` (shell exit ordering, write round-trip,
+  backpressure suspension/resume, premature-shutdown rejection).
+  **Deferred**: the `terminate`/kill-timer/process-group lifecycle (§1.6) and
+  streaming paste/outbound budget/reply overflow (§1.7) are later change sets,
+  so the loop does not yet expose `terminate`/`cancel-paste` commands.
 - **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
-  #5's thread ownership needs documenting once the I/O loop and UI exist, and
-  #7 belongs to the terminate/kill-timer work (§1.6).
+  #5's thread ownership now needs a TSan run and a short written ownership
+  note (UI owns terminal state, loop owns session I/O, startup worker owns
+  unregistered backends; only the queues and wake flag are shared), and #7
+  belongs to the terminate/kill-timer work (§1.6).

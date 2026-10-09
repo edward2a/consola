@@ -64,6 +64,7 @@ endif()
 
 add_library(terminal_core STATIC
     src/app/log.cpp
+    src/app/session_queue.cpp
     src/terminal/emulator.cpp
 )
 target_include_directories(terminal_core PUBLIC
@@ -72,6 +73,7 @@ target_include_directories(terminal_core PUBLIC
 target_link_libraries(terminal_core PUBLIC consola_warnings consola_sanitizers)
 
 add_library(terminal_platform STATIC
+    src/platform/linux/io_loop.cpp
     src/platform/linux/pty_session.cpp
     src/platform/linux/startup_worker.cpp
 )

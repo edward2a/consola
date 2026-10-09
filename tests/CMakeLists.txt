@@ -22,6 +22,22 @@ target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 add_test(NAME pty_session_test COMMAND consola_pty_session_test)
 set_tests_properties(pty_session_test PROPERTIES TIMEOUT 60)
 
+add_executable(consola_wakeup_test wakeup_test.cpp)
+target_link_libraries(consola_wakeup_test PRIVATE terminal_core)
+
+add_test(NAME wakeup_test COMMAND consola_wakeup_test)
+
+add_executable(consola_session_queue_test session_queue_test.cpp)
+target_link_libraries(consola_session_queue_test PRIVATE terminal_core)
+
+add_test(NAME session_queue_test COMMAND consola_session_queue_test)
+
+add_executable(consola_io_loop_test io_loop_test.cpp)
+target_link_libraries(consola_io_loop_test PRIVATE terminal_platform)
+
+add_test(NAME io_loop_test COMMAND consola_io_loop_test)
+set_tests_properties(io_loop_test PROPERTIES TIMEOUT 60)
+
 add_test(NAME smoke_test
     COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
             $<TARGET_FILE:terminal_app> --smoke-test)
