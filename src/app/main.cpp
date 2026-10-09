@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -19,6 +20,7 @@ bool is_smoke_test_flag(const char *arg)
 
 int main(int argc, char **argv)
 {
+    std::signal(SIGPIPE, SIG_IGN);
     try {
         bool smoke_test = false;
         std::vector<char *> fltk_args;

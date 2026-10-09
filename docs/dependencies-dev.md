@@ -52,7 +52,7 @@ found ZLIB, PNG and JPEG.
 
 | Capability | Needed by | Package | Status |
 |---|---|---|---|
-| `openpty()` on glibc < 2.34 | Stage 1 PTY backend | `libutil` (part of libc on newer glibc) | not needed here (glibc 2.41) |
+| `openpty()` on glibc < 2.34 | Stage 1 PTY backend | `libutil` (part of libc on newer glibc) | not needed here (glibc 2.41); CMake probes with `check_symbol_exists(openpty)` and links `util` only when absent |
 | Ninja generator | optional build speed | `ninja` | not required |
 
 ## Notes
@@ -72,3 +72,10 @@ found ZLIB, PNG and JPEG.
   `Xvfb` display (no `xvfb-run` package required).
 - Wayland, Cairo, Pango, libdecor, GTK and libxkbcommon are intentionally not
   required for v1; see `docs/dependencies.md`.
+- The Linux PTY backend issues `pidfd_open` through the raw `SYS_pidfd_open`
+  syscall rather than the glibc wrapper: on this Void toolchain the versioned
+  `pidfd_open@@GLIBC_2.36` symbol exists in `libc.so.6` but is not resolved by
+  the linker, so a direct libc call fails to link. The syscall path also keeps
+  working on glibc < 2.36, where the loop falls back to SIGCHLD.
+- `src/platform/linux` is compiled with `_GNU_SOURCE` (needed for `openpty`,
+  `pipe2`, `pidfd_open`/`SYS_pidfd_open` and `environ`).

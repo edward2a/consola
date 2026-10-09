@@ -29,7 +29,7 @@ does not authorize implementation; that still requires explicit user approval.
 | 3 | Build prerequisites and FLTK attribution | Minor | The README (0.8) must list: X11/Xft/fontconfig dev packages for building FLTK; `libutil` for `openpty()` on glibc < 2.34; FLTK's required "based in part on the work of the FLTK project" sentence. | DIP §0.8; DEP › FLTK pin and build, Always dynamic | Stage 0 | Settled |
 | 4 | System-dependency mode checks | P3 | When `CONSOLA_USE_SYSTEM_DEPS` is on, the plan doesn't say how configure detects an FLTK built with Wayland/Cairo, or a rapidyaml built without exception callbacks. A system libtsm is a shared library and won't have the fork's features. | DIP §0.2, §5.3; DEP › FLTK, rapidyaml | Stage 0 / 5 | Settled |
 | 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Pending |
-| 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Pending |
+| 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Settled |
 | 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Pending |
 | 8 | Bracketed-paste injection | P2 | `tsm_vte_paste()` wraps the pasted text without filtering it. Pasted text containing `ESC[201~` ends the bracketing early, and the rest runs as if typed (source-checked). Decide whether to neutralise that marker before encoding. | DIP §1.7 › Streaming paste; §2.8 | Stage 2 | Pending |
 | 9 | Paste framing and mode visibility | P3 | Extends the existing 2.8 "verify" note. Source check: bracketed-paste mode (2004) is a private flag with no getter and is not in `tsm_vte_get_flags()`. Framing can be inferred from capture length = source + 12 bytes, plus an optional leading ESC. | DIP §2.8 | Stage 2 | Reviewed |
@@ -82,3 +82,26 @@ does not authorize implementation; that still requires explicit user approval.
 Stage 0 implementation status: the fetched build configures, compiles and
 passes CTest (link check, logger, headless smoke test) in Debug, Release and
 ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
+
+## Stage 1 progress
+
+- **S1-CS1 — session interfaces and libtsm emulator**: `include/app/error.hpp`,
+  `session.hpp`, `emulator.hpp` and `src/terminal/emulator.cpp`; pimpl hides
+  libtsm, `terminal_core` has no FLTK dependency. Unit test covers default
+  size, valid/invalid resize, cursor movement and a device-attributes reply.
+- **S1-CS2 — Linux PTY backend and startup worker**: `include/platform/startup.hpp`,
+  `src/platform/linux/pty_session.{hpp,cpp}`, `startup_worker.cpp`. `openpty`
+  in the parent, explicit `fork` + audited child setup (`setsid`, `TIOCSCTTY`,
+  `dup2`, signal reset, `chdir`, `execve`), `O_CLOEXEC` error pipe handshake
+  with cancellation wake FD, master set non-blocking, `pidfd_open` via
+  `SYS_pidfd_open` with SIGCHLD fallback. One startup worker with bounded
+  request/result queues, cancellation and `stop()` resolving every request.
+  Application ignores `SIGPIPE` at startup (`src/app/main.cpp`).
+- **#6 Settled**: the parent closes its copy of the slave immediately after
+  `fork()` (`pty_session.cpp`); `tests/pty_session_test.cpp` verifies the
+  master reports `IoStatus::eof` after the child exits. Additional Stage 1
+  tests cover shell I/O, `exec_failed`, invalid dimensions, termination,
+  `stop()` resolution and descriptor-leak checks.
+- **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
+  #5's thread ownership needs documenting once the I/O loop and UI exist, and
+  #7 belongs to the terminate/kill-timer work (§1.6).

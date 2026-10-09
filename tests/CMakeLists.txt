@@ -16,6 +16,12 @@ target_link_libraries(consola_emulator_test PRIVATE terminal_core)
 
 add_test(NAME emulator_test COMMAND consola_emulator_test)
 
+add_executable(consola_pty_session_test pty_session_test.cpp)
+target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
+
+add_test(NAME pty_session_test COMMAND consola_pty_session_test)
+set_tests_properties(pty_session_test PROPERTIES TIMEOUT 60)
+
 add_test(NAME smoke_test
     COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
             $<TARGET_FILE:terminal_app> --smoke-test)

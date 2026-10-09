@@ -71,8 +71,27 @@ target_include_directories(terminal_core PUBLIC
 )
 target_link_libraries(terminal_core PUBLIC consola_warnings consola_sanitizers)
 
-add_library(terminal_platform INTERFACE)
-target_link_libraries(terminal_platform INTERFACE terminal_core)
+add_library(terminal_platform STATIC
+    src/platform/linux/pty_session.cpp
+    src/platform/linux/startup_worker.cpp
+)
+target_include_directories(terminal_platform PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_include_directories(terminal_platform PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_definitions(terminal_platform PRIVATE _GNU_SOURCE)
+target_link_libraries(terminal_platform PUBLIC terminal_core)
+
+include(CheckSymbolExists)
+set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+check_symbol_exists(openpty "pty.h" CONSOLA_OPENPTY_IN_LIBC)
+unset(CMAKE_REQUIRED_DEFINITIONS)
+if(NOT CONSOLA_OPENPTY_IN_LIBC)
+    find_library(CONSOLA_LIBUTIL util REQUIRED)
+    target_link_libraries(terminal_platform PRIVATE ${CONSOLA_LIBUTIL})
+endif()
 
 add_library(terminal_ui STATIC
     src/ui/application.cpp
