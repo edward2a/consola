@@ -242,3 +242,17 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   the `tsm_vte_set_custom_palette()` result is checked. **Carry**: #11 (glyph
   fallback), #12 (fractional scaling), #13 (bold/italic face cost/fallback) are
   checked in rendering; blink timing and the scrollbar land in S2-CS3/S2-CS7.
+- **S2-CS3 — dirty-region tracking (§2.5)**: `TerminalWidget` keeps the last
+  painted content age and repaints only damaged areas. Content damage comes
+  from cells whose age exceeds the saved age (a collect pass computes their
+  bounding box); explicit invalidation covers the old and new cursor cells,
+  FLTK's exposed region, viewport/scrollback changes and resize/style changes,
+  which force a full repaint. Damaged regions are cleared to the background
+  before cells and overlays are redrawn, so unchanged cells in a damaged area
+  are repainted too. The saved age advances only after the paint pass; an age
+  reset or overflow (libtsm returns 0) keeps the full-redraw fallback.
+  `set_style()`/`resize()` request full repaints. The Xvfb smoke test now feeds
+  a second line and triggers a partial redraw so the age-driven path runs under
+  sanitizers. **Carry**: selection invalidation (S2-CS5) and visual-bell
+  overlays (Stage 6) must invalidate old and new areas; blink timing is still
+  to come.

@@ -28,7 +28,11 @@ public:
                    TerminalStyle style = default_terminal_style());
 
     void draw() override;
+    void resize(int x, int y, int w, int h) override;
     int handle(int event) override;
+
+    // Apply a new style (font/theme/DPI). Forces a full repaint (DIP 2.5).
+    void set_style(TerminalStyle style);
 
     [[nodiscard]] TerminalEmulator &emulator() noexcept
     {
@@ -40,15 +44,47 @@ public:
     }
 
 private:
+    struct Rect {
+        int x0 = 0;
+        int y0 = 0;
+        int x1 = 0;
+        int y1 = 0;
+        bool valid = false;
+
+        constexpr Rect() = default;
+        constexpr Rect(int left, int top, int right, int bottom, bool is_valid)
+            : x0(left), y0(top), x1(right), y1(bottom), valid(is_valid)
+        {}
+    };
+
     void apply_font_family() const;
     void update_metrics();
-    void draw_cell(int column, int row, const Cell &cell);
+    [[nodiscard]] Rect cell_rect(int column, int row, int width) const;
+    [[nodiscard]] static Rect union_rect(Rect a, Rect b);
+    [[nodiscard]] static bool intersects(Rect a, Rect b);
+    void paint_cell(int column, int row, const Cell &cell);
+    void collect_cell(int column, int row, const Cell &cell);
     void draw_cursor();
-    static void cell_callback(void *context, int column, int row, const Cell &cell);
+    static void paint_callback(void *context, int column, int row, const Cell &cell);
+    static void collect_callback(void *context, int column, int row, const Cell &cell);
 
     TerminalEmulator &emulator_;
     TerminalStyle style_;
     FontMetrics metrics_;
+
+    // Dirty-region state (DIP 2.5).
+    ContentAge last_painted_age_ = 0;
+    bool full_redraw_requested_ = true;
+    int last_scrollback_pos_ = 0;
+    int last_cursor_column_ = -1;
+    int last_cursor_row_ = -1;
+    bool last_cursor_visible_ = false;
+
+    // Per-paint state.
+    bool full_ = false;
+    Rect paint_region_;
+    Rect content_region_;
+    bool cursor_repaint_ = false;
     int cursor_column_ = 0;
     int cursor_row_ = 0;
     bool cursor_visible_ = false;

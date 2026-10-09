@@ -83,12 +83,70 @@ void TerminalWidget::update_metrics()
     }
 }
 
+void TerminalWidget::set_style(TerminalStyle style)
+{
+    style_ = std::move(style);
+    apply_font_family();
+    update_metrics();
+    full_redraw_requested_ = true;
+    redraw();
+}
+
+void TerminalWidget::resize(int x, int y, int w, int h)
+{
+    Fl_Widget::resize(x, y, w, h);
+    update_metrics();
+    full_redraw_requested_ = true;
+}
+
+TerminalWidget::Rect TerminalWidget::cell_rect(int column, int row, int width) const
+{
+    const int span = std::max(1, width);
+    const int x0 = x() + static_cast<int>(std::lround(column * metrics_.cell_width));
+    const int x1 = x() + static_cast<int>(std::lround((column + span) * metrics_.cell_width));
+    const int y0 =
+        y() + static_cast<int>(std::lround(row * static_cast<double>(metrics_.cell_height)));
+    const int y1 = y0 + metrics_.cell_height;
+    return Rect{x0, y0, x1, y1, true};
+}
+
+TerminalWidget::Rect TerminalWidget::union_rect(Rect a, Rect b)
+{
+    if (!a.valid) {
+        return b;
+    }
+    if (!b.valid) {
+        return a;
+    }
+    return Rect{std::min(a.x0, b.x0), std::min(a.y0, b.y0), std::max(a.x1, b.x1),
+                std::max(a.y1, b.y1), true};
+}
+
+bool TerminalWidget::intersects(Rect a, Rect b)
+{
+    return a.valid && b.valid && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+}
+
 void TerminalWidget::draw()
 {
     update_metrics();
 
-    fl_color(style_.background.r, style_.background.g, style_.background.b);
-    fl_rectf(x(), y(), w(), h());
+    const char damage = static_cast<char>(this->damage());
+    full_ = full_redraw_requested_ || last_painted_age_ == 0 || (damage & FL_DAMAGE_ALL) != 0;
+    paint_region_ = Rect{};
+    content_region_ = Rect{};
+    cursor_repaint_ = false;
+
+    if (!full_ && (damage & FL_DAMAGE_EXPOSE) != 0) {
+        int clip_x = 0;
+        int clip_y = 0;
+        int clip_w = 0;
+        int clip_h = 0;
+        if (fl_clip_box(x(), y(), w(), h(), clip_x, clip_y, clip_w, clip_h) != 0) {
+            paint_region_ = union_rect(
+                paint_region_, Rect{clip_x, clip_y, clip_x + clip_w, clip_y + clip_h, true});
+        }
+    }
 
     const CursorState cursor = emulator_.cursor();
     cursor_style_ = cursor.style;
@@ -101,17 +159,74 @@ void TerminalWidget::draw()
     cursor_foreground_ = style_.foreground;
     cursor_background_ = style_.background;
 
-    emulator_.draw(&TerminalWidget::cell_callback, this);
-    draw_cursor();
+    const int scroll_pos = emulator_.scrollback_line_pos();
+    if (scroll_pos != last_scrollback_pos_) {
+        full_ = true;
+        last_scrollback_pos_ = scroll_pos;
+    }
+
+    if (!full_) {
+        // Moving or toggling the cursor invalidates both old and new areas.
+        if (last_cursor_visible_) {
+            paint_region_ =
+                union_rect(paint_region_, cell_rect(last_cursor_column_, last_cursor_row_, 1));
+        }
+        if (cursor_visible_) {
+            paint_region_ = union_rect(paint_region_, cell_rect(cursor_column_, cursor_row_, 1));
+        }
+
+        // Ages select content damage; expand the paint region to cover it.
+        const ContentAge collected = emulator_.draw(&collect_callback, this);
+        if (collected == 0) {
+            full_ = true;
+        } else if (content_region_.valid) {
+            paint_region_ = union_rect(paint_region_, content_region_);
+        }
+    }
+
+    if (full_) {
+        fl_color(style_.background.r, style_.background.g, style_.background.b);
+        fl_rectf(x(), y(), w(), h());
+    } else if (paint_region_.valid) {
+        fl_color(style_.background.r, style_.background.g, style_.background.b);
+        fl_rectf(paint_region_.x0, paint_region_.y0, paint_region_.x1 - paint_region_.x0,
+                 paint_region_.y1 - paint_region_.y0);
+    }
+
+    last_painted_age_ = emulator_.draw(&paint_callback, this);
+    full_redraw_requested_ = false;
+
+    if (full_ || cursor_repaint_) {
+        draw_cursor();
+    }
+
+    last_cursor_column_ = cursor_column_;
+    last_cursor_row_ = cursor_row_;
+    last_cursor_visible_ = cursor_visible_;
 }
 
-void TerminalWidget::cell_callback(void *context, int column, int row, const Cell &cell)
+void TerminalWidget::paint_callback(void *context, int column, int row, const Cell &cell)
 {
-    static_cast<TerminalWidget *>(context)->draw_cell(column, row, cell);
+    static_cast<TerminalWidget *>(context)->paint_cell(column, row, cell);
 }
 
-void TerminalWidget::draw_cell(int column, int row, const Cell &cell)
+void TerminalWidget::collect_callback(void *context, int column, int row, const Cell &cell)
 {
+    static_cast<TerminalWidget *>(context)->collect_cell(column, row, cell);
+}
+
+void TerminalWidget::collect_cell(int column, int row, const Cell &cell)
+{
+    if (cell.age > last_painted_age_) {
+        content_region_ = union_rect(content_region_, cell_rect(column, row, cell.width));
+    }
+}
+
+void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
+{
+    if (!full_ && !intersects(cell_rect(column, row, cell.width), paint_region_)) {
+        return;
+    }
     if (cell.width == 0) {
         return; // trailing half of a wide glyph
     }
@@ -121,6 +236,7 @@ void TerminalWidget::draw_cell(int column, int row, const Cell &cell)
     if (is_cursor) {
         // Neutralise libtsm's cursor-cell inversion; the renderer draws it.
         attr.inverse = !attr.inverse;
+        cursor_repaint_ = true;
     }
 
     Rgb foreground = attr.inverse ? attr.background : attr.foreground;
@@ -129,16 +245,15 @@ void TerminalWidget::draw_cell(int column, int row, const Cell &cell)
         foreground = dim(foreground);
     }
 
-    const int x0 = x() + static_cast<int>(std::lround(column * metrics_.cell_width));
-    const int x1 = x() + static_cast<int>(std::lround((column + cell.width) * metrics_.cell_width));
-    const int py =
-        y() + static_cast<int>(std::lround(row * static_cast<double>(metrics_.cell_height)));
-    const int pw = std::max(1, x1 - x0);
-    const int ph = metrics_.cell_height;
+    const Rect rect = cell_rect(column, row, cell.width);
+    const int px = rect.x0;
+    const int py = rect.y0;
+    const int pw = std::max(1, rect.x1 - rect.x0);
+    const int ph = rect.y1 - rect.y0;
 
     if (!same(background, style_.background)) {
         fl_color(background.r, background.g, background.b);
-        fl_rectf(x0, py, pw, ph);
+        fl_rectf(px, py, pw, ph);
     }
 
     utf8_scratch_.assign((cell.text.size() * 4) + 1, '\0');
@@ -150,11 +265,11 @@ void TerminalWidget::draw_cell(int column, int row, const Cell &cell)
 
     if (out != utf8_scratch_.data()) {
         fl_font(face_for(attr), style_.font_size);
-        fl_push_clip(x0, py, pw, ph);
+        fl_push_clip(px, py, pw, ph);
         fl_color(foreground.r, foreground.g, foreground.b);
-        fl_draw(utf8_scratch_.data(), x0, py + metrics_.ascent);
+        fl_draw(utf8_scratch_.data(), px, py + metrics_.ascent);
         if (attr.underline) {
-            fl_line(x0, py + metrics_.ascent + 1, x0 + pw - 1, py + metrics_.ascent + 1);
+            fl_line(px, py + metrics_.ascent + 1, px + pw - 1, py + metrics_.ascent + 1);
         }
         fl_pop_clip();
     }
@@ -172,37 +287,36 @@ void TerminalWidget::draw_cursor()
     if (!cursor_visible_) {
         return;
     }
-    const int x0 = x() + static_cast<int>(std::lround(cursor_column_ * metrics_.cell_width));
-    const int x1 = x() + static_cast<int>(std::lround((cursor_column_ + 1) * metrics_.cell_width));
-    const int py = y() + static_cast<int>(
-                             std::lround(cursor_row_ * static_cast<double>(metrics_.cell_height)));
-    const int pw = std::max(1, x1 - x0);
-    const int ph = metrics_.cell_height;
+    const Rect rect = cell_rect(cursor_column_, cursor_row_, 1);
+    const int px = rect.x0;
+    const int py = rect.y0;
+    const int pw = std::max(1, rect.x1 - rect.x0);
+    const int ph = rect.y1 - rect.y0;
 
     switch (cursor_style_) {
     case CursorStyle::underline_blink:
     case CursorStyle::underline_steady:
         fl_color(cursor_foreground_.r, cursor_foreground_.g, cursor_foreground_.b);
-        fl_line(x0, py + ph - 1, x0 + pw - 1, py + ph - 1);
+        fl_line(px, py + ph - 1, px + pw - 1, py + ph - 1);
         break;
     case CursorStyle::vbar_blink:
     case CursorStyle::vbar_steady:
         fl_color(cursor_foreground_.r, cursor_foreground_.g, cursor_foreground_.b);
-        fl_line(x0, py, x0, py + ph - 1);
+        fl_line(px, py, px, py + ph - 1);
         break;
     case CursorStyle::default_style:
     case CursorStyle::block_blink:
     case CursorStyle::block_steady:
     default:
         fl_color(cursor_foreground_.r, cursor_foreground_.g, cursor_foreground_.b);
-        fl_rectf(x0, py, pw, ph);
+        fl_rectf(px, py, pw, ph);
         if (!cursor_text_.empty()) {
             fl_font(face_for(cursor_attributes_), style_.font_size);
             fl_color(cursor_background_.r, cursor_background_.g, cursor_background_.b);
-            fl_push_clip(x0, py, pw, ph);
-            fl_draw(cursor_text_.c_str(), x0, py + metrics_.ascent);
+            fl_push_clip(px, py, pw, ph);
+            fl_draw(cursor_text_.c_str(), px, py + metrics_.ascent);
             if (cursor_attributes_.underline) {
-                fl_line(x0, py + metrics_.ascent + 1, x0 + pw - 1, py + metrics_.ascent + 1);
+                fl_line(px, py + metrics_.ascent + 1, px + pw - 1, py + metrics_.ascent + 1);
             }
             fl_pop_clip();
         }

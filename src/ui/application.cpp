@@ -27,6 +27,21 @@ void smoke_test_exit([[maybe_unused]] void *data)
     Fl::hide_all_windows();
 }
 
+struct SmokeFeedContext {
+    TerminalEmulator *emulator;
+    TerminalWidget *terminal;
+};
+
+void smoke_test_feed(void *data)
+{
+    auto *context = static_cast<SmokeFeedContext *>(data);
+    const char *more = "second line\r\n";
+    context->emulator->feed(
+        std::span<const std::byte>(reinterpret_cast<const std::byte *>(more), std::strlen(more)));
+    // Trigger a partial (age-driven) redraw rather than a full one.
+    context->terminal->damage(FL_DAMAGE_EXPOSE);
+}
+
 std::vector<std::filesystem::path> bundled_font_candidates()
 {
     std::vector<std::filesystem::path> candidates;
@@ -93,7 +108,9 @@ int run_application(int argc, char **argv, bool smoke_test)
         return EXIT_FAILURE;
     }
 
+    SmokeFeedContext smoke_context{.emulator = &emulator, .terminal = &terminal};
     if (smoke_test) {
+        Fl::add_timeout(0.05, smoke_test_feed, &smoke_context);
         Fl::add_timeout(0.1, smoke_test_exit, nullptr);
     }
 
