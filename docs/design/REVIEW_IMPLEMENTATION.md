@@ -174,6 +174,19 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   streaming paste/outbound budget/reply overflow (§1.7); the UI-side
   asynchronous shutdown orchestration (steps 1–4); and reconciling
   `TerminalSession::running()` with loop-owned termination.
+- **S1-CS5 — outbound budget (§1.7, loop side)**: `SessionOutboundQueue`
+  gains an `OutboundAdmission` class and a reserve (`kDefaultReserve` = 16 KiB):
+  `user` bytes (keys, paste payload) are admitted only up to
+  `byte_limit - reserve`, while `reserved` bytes (required replies, framing)
+  may use the whole limit, so a full user queue cannot make a small reply fail.
+  Credits now return only as bytes are written or discarded (`release()`), not
+  merely on `pop_front()`; the loop releases each written count and wakes the
+  UI when credits free so it can admit deferred input. Tests cover the reserve
+  boundary and loop-side credit return. **Deferred to Stage 2 §2.8**: the
+  streaming-paste transaction (capture/framing/cancel/`paste_finished`) and the
+  `reply_overflow` failure path, because §2.8 must verify libtsm framing before
+  implementing capture and cancellation; Stage 1's exit criteria do not require
+  paste.
 - **#5 (concurrency)** remains open; it needs a TSan run and a short written
   ownership note (UI owns terminal state, loop owns registered-session I/O and
   termination, startup worker owns unregistered backends; only the queues and

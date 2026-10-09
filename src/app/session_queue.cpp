@@ -2,6 +2,7 @@
 
 #include <app/session_queue.hpp>
 
+#include <algorithm>
 #include <utility>
 
 namespace consola {
@@ -89,11 +90,11 @@ bool SessionInboundQueue::has_data() const noexcept
     return !data_.empty();
 }
 
-SessionOutboundQueue::SessionOutboundQueue(std::size_t byte_limit) noexcept
-    : byte_limit_(byte_limit)
+SessionOutboundQueue::SessionOutboundQueue(std::size_t byte_limit, std::size_t reserve) noexcept
+    : byte_limit_(byte_limit), reserve_bytes_(std::min(reserve, byte_limit))
 {}
 
-bool SessionOutboundQueue::try_push(std::span<const std::byte> bytes)
+bool SessionOutboundQueue::try_push(std::span<const std::byte> bytes, OutboundAdmission admission)
 {
     if (bytes.empty()) {
         return true;
@@ -102,10 +103,13 @@ bool SessionOutboundQueue::try_push(std::span<const std::byte> bytes)
     if (slot == nullptr) {
         return false;
     }
-    if (pending_.load(std::memory_order_relaxed) + bytes.size() > byte_limit_) {
+    const std::size_t limit =
+        admission == OutboundAdmission::reserved ? byte_limit_ : byte_limit_ - reserve_bytes_;
+    if (pending_.load(std::memory_order_relaxed) + bytes.size() > limit) {
         return false;
     }
     slot->bytes.assign(bytes.begin(), bytes.end());
+    slot->released = 0;
     pending_.fetch_add(bytes.size(), std::memory_order_release);
     ring_.commit_push();
     return true;
@@ -117,13 +121,26 @@ const std::vector<std::byte> *SessionOutboundQueue::front() const noexcept
     return slot == nullptr ? nullptr : &slot->bytes;
 }
 
-void SessionOutboundQueue::pop_front() noexcept
+void SessionOutboundQueue::release(std::size_t count) noexcept
 {
-    const Slot *slot = ring_.front();
+    Slot *slot = ring_.front_mut();
     if (slot == nullptr) {
         return;
     }
-    pending_.fetch_sub(slot->bytes.size(), std::memory_order_release);
+    const std::size_t remaining = slot->bytes.size() - slot->released;
+    const std::size_t amount = std::min(count, remaining);
+    slot->released += amount;
+    pending_.fetch_sub(amount, std::memory_order_release);
+}
+
+void SessionOutboundQueue::pop_front() noexcept
+{
+    Slot *slot = ring_.front_mut();
+    if (slot == nullptr) {
+        return;
+    }
+    pending_.fetch_sub(slot->bytes.size() - slot->released, std::memory_order_release);
+    slot->released = 0;
     ring_.pop();
 }
 

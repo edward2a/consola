@@ -596,6 +596,55 @@ bool test_shell_exit_foreground_sigkill()
     return true;
 }
 
+bool test_outbound_credits_release()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{10};
+    if (!harness.launch(id, "/bin/cat", {})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+
+    const std::vector<std::byte> payload(1000, std::byte{'x'});
+    if (!harness.outbound.try_push(payload)) {
+        std::printf("outbound push failed\n");
+        return false;
+    }
+    if (harness.outbound.pending_bytes() != payload.size()) {
+        return false;
+    }
+    if (!harness.loop->write_pending(id)) {
+        return false;
+    }
+    // Credits return only as the loop writes the bytes.
+    if (!wait_for([&] { return harness.outbound.pending_bytes() == 0; }, 5000)) {
+        std::printf("outbound credits did not return (pending=%zu)\n",
+                    harness.outbound.pending_bytes());
+        return false;
+    }
+
+    harness.loop->terminate(id);
+    const Drain drained = drain_session(harness, id, 5000, true);
+    if (!drained.exited) {
+        return false;
+    }
+    harness.loop->remove(id);
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -634,6 +683,10 @@ int main()
     }
     if (!test_shell_exit_foreground_sigkill()) {
         std::printf("test_shell_exit_foreground_sigkill failed\n");
+        return 1;
+    }
+    if (!test_outbound_credits_release()) {
+        std::printf("test_outbound_credits_release failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");

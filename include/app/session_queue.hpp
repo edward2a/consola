@@ -53,21 +53,42 @@ private:
     std::uint64_t next_sequence_ = 0; // producer only
 };
 
+// Admission class for the outbound budget (DIP 1.7). `user` bytes (keys, paste
+// payload) cannot consume the reserve kept for required replies and
+// cancellation framing; `reserved` bytes (automatic replies, framing) may.
+enum class OutboundAdmission : std::uint8_t { user, reserved };
+
 // UI -> loop outgoing bytes for one session (DIP 1.7). Bounded by slot count
 // and total pending bytes. The UI is the only producer; the I/O loop is the
 // only consumer and the only thread that writes to the master FD.
+//
+// Credits return only as bytes are written or explicitly discarded, never
+// merely by popping a chunk: the loop calls release() for each byte it writes
+// and pop_front() when the front chunk is fully written. A `reserved` class of
+// `reserve_bytes()` is kept for required replies and cancellation framing so a
+// full user queue cannot make a small reply fail immediately.
 class SessionOutboundQueue {
 public:
     static constexpr std::size_t kSlots = 16;
+    static constexpr std::size_t kDefaultReserve = std::size_t{16} * 1024;
 
-    explicit SessionOutboundQueue(std::size_t byte_limit) noexcept;
+    explicit SessionOutboundQueue(std::size_t byte_limit,
+                                  std::size_t reserve = kDefaultReserve) noexcept;
 
     // Producer (UI). Returns false if the slot or byte bound would be
     // exceeded, in which case nothing is queued.
-    [[nodiscard]] bool try_push(std::span<const std::byte> bytes);
+    [[nodiscard]] bool try_push(std::span<const std::byte> bytes,
+                                OutboundAdmission admission = OutboundAdmission::user);
 
     // Consumer (loop). Returns the front chunk, or nullptr if empty.
     [[nodiscard]] const std::vector<std::byte> *front() const noexcept;
+
+    // Consumer (loop). Return credit for bytes written or discarded. Clamped to
+    // the front chunk's unreleased bytes.
+    void release(std::size_t count) noexcept;
+
+    // Consumer (loop). Remove the front chunk, releasing any bytes not already
+    // released.
     void pop_front() noexcept;
 
     [[nodiscard]] bool empty() const noexcept;
@@ -76,14 +97,20 @@ public:
     {
         return byte_limit_;
     }
+    [[nodiscard]] std::size_t reserve_bytes() const noexcept
+    {
+        return reserve_bytes_;
+    }
 
 private:
     struct Slot {
         std::vector<std::byte> bytes;
+        std::size_t released = 0;
     };
 
     SpscRing<Slot, kSlots> ring_;
     std::size_t byte_limit_;
+    std::size_t reserve_bytes_;
     std::atomic<std::size_t> pending_{0};
 };
 

@@ -822,6 +822,7 @@ void LinuxIoLoop::service_write(Registered &session)
                                                    std::min(available, allowance));
         const IoResult result = session.session->write(remaining);
         if (result.status == IoStatus::ok && result.count > 0) {
+            session.outbound->release(result.count);
             session.write_offset += result.count;
             moved += result.count;
             if (session.write_offset == chunk->size()) {
@@ -840,6 +841,11 @@ void LinuxIoLoop::service_write(Registered &session)
         retire_master(session);
         queue_eof(session);
         break;
+    }
+    // Credits were returned; wake the UI so it can admit deferred input (DIP
+    // 1.7). The flag coalesces, so this is one wake per batch at most.
+    if (moved > 0) {
+        wakeup_.notify();
     }
 }
 

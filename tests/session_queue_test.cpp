@@ -93,7 +93,7 @@ bool test_inbound_bounds()
 
 bool test_outbound_bounds()
 {
-    consola::SessionOutboundQueue queue(10);
+    consola::SessionOutboundQueue queue(10, 0);
     const std::array<std::byte, 8> buffer{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4},
                                           std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8}};
     if (!queue.try_push(std::span<const std::byte>(buffer.data(), 4))) {
@@ -114,17 +114,59 @@ bool test_outbound_bounds()
     if (queue.front() == nullptr || queue.front()->size() != 4) {
         return false;
     }
-    queue.pop_front();
+    // Credits return as bytes are released, not on pop alone.
+    queue.release(4);
     if (queue.pending_bytes() != 6) {
         return false;
     }
     queue.pop_front();
+    if (queue.pending_bytes() != 6) {
+        return false;
+    }
+    queue.release(6);
+    queue.pop_front();
     return queue.empty() && queue.pending_bytes() == 0;
+}
+
+bool test_outbound_reserve()
+{
+    consola::SessionOutboundQueue queue(100, 40);
+    const std::array<std::byte, 80> buffer{};
+    // User admission is limited to byte_limit - reserve.
+    if (!queue.try_push(std::span<const std::byte>(buffer.data(), 60))) {
+        return false;
+    }
+    if (queue.try_push(std::span<const std::byte>(buffer.data(), 1))) {
+        return false;
+    }
+    // A required reply may use the reserve.
+    if (!queue.try_push(std::span<const std::byte>(buffer.data(), 40),
+                        consola::OutboundAdmission::reserved)) {
+        return false;
+    }
+    if (queue.pending_bytes() != 100) {
+        return false;
+    }
+    if (queue.try_push(std::span<const std::byte>(buffer.data(), 1),
+                       consola::OutboundAdmission::reserved)) {
+        return false;
+    }
+    // Releasing the first chunk leaves only the reserved bytes counted, so user
+    // admission is bounded by limit - reserve again.
+    queue.release(60);
+    queue.pop_front();
+    if (queue.pending_bytes() != 40) {
+        return false;
+    }
+    if (!queue.try_push(std::span<const std::byte>(buffer.data(), 20))) {
+        return false;
+    }
+    return !queue.try_push(std::span<const std::byte>(buffer.data(), 1));
 }
 
 bool test_outbound_slots()
 {
-    consola::SessionOutboundQueue queue(1024);
+    consola::SessionOutboundQueue queue(1024, 0);
     const auto a = std::byte{7};
     for (std::size_t i = 0; i < consola::SessionOutboundQueue::kSlots; ++i) {
         if (!queue.try_push(std::span<const std::byte>(&a, 1))) {
@@ -237,6 +279,10 @@ int main()
     }
     if (!test_outbound_bounds()) {
         std::printf("test_outbound_bounds failed\n");
+        return 1;
+    }
+    if (!test_outbound_reserve()) {
+        std::printf("test_outbound_reserve failed\n");
         return 1;
     }
     if (!test_outbound_slots()) {
