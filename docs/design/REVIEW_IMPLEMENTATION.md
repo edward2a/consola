@@ -255,4 +255,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   a second line and triggers a partial redraw so the age-driven path runs under
   sanitizers. **Carry**: selection invalidation (S2-CS5) and visual-bell
   overlays (Stage 6) must invalidate old and new areas; blink timing is still
-  to come.
+  to come. Review fixes: an unclipped `fl_clip_box()` now means the whole
+  widget is drawable; damage that extends beyond FLTK's clip is kept pending
+  (the age is not advanced and a full repaint is requested); the cursor cell is
+  flagged for repaint before the wide-glyph continuation early-out; a metric
+  change (DPI/font) forces a full repaint; `set_style()` documents that runtime
+  palette changes for existing content are out of scope (DIP 2.3).

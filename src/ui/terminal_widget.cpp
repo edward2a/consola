@@ -71,6 +71,7 @@ void TerminalWidget::apply_font_family() const
 
 void TerminalWidget::update_metrics()
 {
+    const FontMetrics previous = metrics_;
     fl_font(FL_HELVETICA, style_.font_size);
     metrics_.cell_width = fl_width("M");
     metrics_.cell_height = fl_height();
@@ -80,6 +81,11 @@ void TerminalWidget::update_metrics()
     }
     if (metrics_.cell_height <= 0) {
         metrics_.cell_height = 1;
+    }
+    if (previous.cell_width != metrics_.cell_width ||
+        previous.cell_height != metrics_.cell_height || previous.ascent != metrics_.ascent) {
+        // A DPI/font change moves every cell; force a full repaint (DIP 2.5).
+        full_redraw_requested_ = true;
     }
 }
 
@@ -127,6 +133,11 @@ bool TerminalWidget::intersects(Rect a, Rect b)
     return a.valid && b.valid && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 }
 
+bool TerminalWidget::inside(Rect a, Rect b)
+{
+    return a.valid && b.valid && a.x0 >= b.x0 && a.y0 >= b.y0 && a.x1 <= b.x1 && a.y1 <= b.y1;
+}
+
 void TerminalWidget::draw()
 {
     update_metrics();
@@ -137,15 +148,15 @@ void TerminalWidget::draw()
     content_region_ = Rect{};
     cursor_repaint_ = false;
 
-    if (!full_ && (damage & FL_DAMAGE_EXPOSE) != 0) {
-        int clip_x = 0;
-        int clip_y = 0;
-        int clip_w = 0;
-        int clip_h = 0;
-        if (fl_clip_box(x(), y(), w(), h(), clip_x, clip_y, clip_w, clip_h) != 0) {
-            paint_region_ = union_rect(
-                paint_region_, Rect{clip_x, clip_y, clip_x + clip_w, clip_y + clip_h, true});
-        }
+    // FLTK clips draw() to the damage region; fl_clip_box() returns 0 when the
+    // widget is not clipped, in which case the whole widget is drawable.
+    Rect clip{x(), y(), x() + w(), y() + h(), true};
+    int clip_x = 0;
+    int clip_y = 0;
+    int clip_w = 0;
+    int clip_h = 0;
+    if (fl_clip_box(x(), y(), w(), h(), clip_x, clip_y, clip_w, clip_h) != 0) {
+        clip = Rect{clip_x, clip_y, clip_x + clip_w, clip_y + clip_h, true};
     }
 
     const CursorState cursor = emulator_.cursor();
@@ -165,7 +176,12 @@ void TerminalWidget::draw()
         last_scrollback_pos_ = scroll_pos;
     }
 
-    if (!full_) {
+    if (full_) {
+        paint_region_ = Rect{x(), y(), x() + w(), y() + h(), true};
+    } else {
+        if ((damage & FL_DAMAGE_EXPOSE) != 0) {
+            paint_region_ = union_rect(paint_region_, clip);
+        }
         // Moving or toggling the cursor invalidates both old and new areas.
         if (last_cursor_visible_) {
             paint_region_ =
@@ -179,22 +195,19 @@ void TerminalWidget::draw()
         const ContentAge collected = emulator_.draw(&collect_callback, this);
         if (collected == 0) {
             full_ = true;
+            paint_region_ = Rect{x(), y(), x() + w(), y() + h(), true};
         } else if (content_region_.valid) {
             paint_region_ = union_rect(paint_region_, content_region_);
         }
     }
 
-    if (full_) {
-        fl_color(style_.background.r, style_.background.g, style_.background.b);
-        fl_rectf(x(), y(), w(), h());
-    } else if (paint_region_.valid) {
+    if (paint_region_.valid) {
         fl_color(style_.background.r, style_.background.g, style_.background.b);
         fl_rectf(paint_region_.x0, paint_region_.y0, paint_region_.x1 - paint_region_.x0,
                  paint_region_.y1 - paint_region_.y0);
     }
 
-    last_painted_age_ = emulator_.draw(&paint_callback, this);
-    full_redraw_requested_ = false;
+    const ContentAge painted = emulator_.draw(&paint_callback, this);
 
     if (full_ || cursor_repaint_) {
         draw_cursor();
@@ -203,6 +216,16 @@ void TerminalWidget::draw()
     last_cursor_column_ = cursor_column_;
     last_cursor_row_ = cursor_row_;
     last_cursor_visible_ = cursor_visible_;
+
+    if (inside(paint_region_, clip)) {
+        last_painted_age_ = painted;
+        full_redraw_requested_ = false;
+    } else {
+        // Some damage lies outside FLTK's clip; keep it pending and force a
+        // full repaint instead of advancing the age and losing it (DIP 2.5).
+        full_redraw_requested_ = true;
+        redraw();
+    }
 }
 
 void TerminalWidget::paint_callback(void *context, int column, int row, const Cell &cell)
@@ -227,16 +250,18 @@ void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
     if (!full_ && !intersects(cell_rect(column, row, cell.width), paint_region_)) {
         return;
     }
+    const bool is_cursor = cursor_visible_ && column == cursor_column_ && row == cursor_row_;
+    if (is_cursor) {
+        cursor_repaint_ = true;
+    }
     if (cell.width == 0) {
         return; // trailing half of a wide glyph
     }
 
     CellAttributes attr = cell.attributes;
-    const bool is_cursor = cursor_visible_ && column == cursor_column_ && row == cursor_row_;
     if (is_cursor) {
         // Neutralise libtsm's cursor-cell inversion; the renderer draws it.
         attr.inverse = !attr.inverse;
-        cursor_repaint_ = true;
     }
 
     Rgb foreground = attr.inverse ? attr.background : attr.foreground;

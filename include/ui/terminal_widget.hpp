@@ -31,7 +31,9 @@ public:
     void resize(int x, int y, int w, int h) override;
     int handle(int event) override;
 
-    // Apply a new style (font/theme/DPI). Forces a full repaint (DIP 2.5).
+    // Apply a new style (font/DPI). Forces a full repaint (DIP 2.5). Palette
+    // changes for existing content are out of scope (DIP 2.3); the emulator
+    // palette is fixed at construction, so this only affects font metrics.
     void set_style(TerminalStyle style);
 
     [[nodiscard]] TerminalEmulator &emulator() noexcept
@@ -62,6 +64,7 @@ private:
     [[nodiscard]] Rect cell_rect(int column, int row, int width) const;
     [[nodiscard]] static Rect union_rect(Rect a, Rect b);
     [[nodiscard]] static bool intersects(Rect a, Rect b);
+    [[nodiscard]] static bool inside(Rect a, Rect b);
     void paint_cell(int column, int row, const Cell &cell);
     void collect_cell(int column, int row, const Cell &cell);
     void draw_cursor();
