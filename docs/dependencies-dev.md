@@ -63,6 +63,9 @@ found ZLIB, PNG and JPEG.
   and `libsanitizer-devel` (the unversioned `libasan.so` symlink and
   `libasan_preinit.o` that GCC links). Both are present; the
   `CONSOLA_SANITIZERS=ON` build now links and runs.
+- ThreadSanitizer (`CONSOLA_TSAN=ON`) links GCC's `libtsan` runtime, which is
+  provided by the same GCC 14 package here. It is mutually exclusive with
+  `CONSOLA_SANITIZERS`.
 - CMake 3.28 is the minimum because `FetchContent_Declare(... EXCLUDE_FROM_ALL)`
   (used to keep dependency install rules out of consola's install) requires it.
 - FLTK's Xft backend needs at least one fontconfig-visible font. A bare system

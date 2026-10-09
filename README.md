@@ -44,6 +44,14 @@ cmake --build build-asan
 ctest --test-dir build-asan --output-on-failure
 ```
 
+Build with ThreadSanitizer (mutually exclusive with the sanitizer build above):
+
+```sh
+cmake -S . -B build-tsan -DCONSOLA_TSAN=ON
+cmake --build build-tsan
+ctest --test-dir build-tsan --output-on-failure
+```
+
 ## License
 
 consola is licensed under the MIT License; see `LICENSE`. The license texts

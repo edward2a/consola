@@ -28,7 +28,7 @@ does not authorize implementation; that still requires explicit user approval.
 | 2 | Stage 0 test depends on Stage 1 code | Minor | The libtsm log-level mapping test is listed in Stage 0, but the code it tests is specified in 1.5. Either build the mapping as a plain function in the 0.4 logger, or move the test to Stage 1. | DIP Stage 0 › Tests; §1.5 | Stage 0 | Settled |
 | 3 | Build prerequisites and FLTK attribution | Minor | The README (0.8) must list: X11/Xft/fontconfig dev packages for building FLTK; `libutil` for `openpty()` on glibc < 2.34; FLTK's required "based in part on the work of the FLTK project" sentence. | DIP §0.8; DEP › FLTK pin and build, Always dynamic | Stage 0 | Settled |
 | 4 | System-dependency mode checks | P3 | When `CONSOLA_USE_SYSTEM_DEPS` is on, the plan doesn't say how configure detects an FLTK built with Wayland/Cairo, or a rapidyaml built without exception callbacks. A system libtsm is a shared library and won't have the fork's features. | DIP §0.2, §5.3; DEP › FLTK, rapidyaml | Stage 0 / 5 | Settled |
-| 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Pending |
+| 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Settled |
 | 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Settled |
 | 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Settled |
 | 8 | Bracketed-paste injection | P2 | `tsm_vte_paste()` wraps the pasted text without filtering it. Pasted text containing `ESC[201~` ends the bracketing early, and the rest runs as if typed (source-checked). Decide whether to neutralise that marker before encoding. | DIP §1.7 › Streaming paste; §2.8 | Stage 2 | Pending |
@@ -59,7 +59,7 @@ does not authorize implementation; that still requires explicit user approval.
 ## Totals
 
 - 8 × P2, 17 × P3, 6 × Minor.
-- 18 Pending, 7 Reviewed, 6 Settled.
+- 17 Pending, 7 Reviewed, 7 Settled.
 - Source-checked against pinned libtsm: #8, #9, #10, #21, #24, #25.
 - Documented-behaviour assumptions to confirm: #11, #14, #27, #28.
 
@@ -194,7 +194,14 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   UI-thread PTY blocking) are covered by the PTY/loop tests and the dedicated
   I/O thread. A `CONSOLA_TSAN` option and `tsan` preset were added for the
   watchlist #5 concurrency check; the TSan run itself is still owed.
-- **#5 (concurrency)** remains open; it needs the TSan run and a short written
-  ownership note (UI owns terminal state, loop owns registered-session I/O and
-  termination, startup worker owns unregistered backends; only the queues and
-  wake flag are shared).
+- **#5 Settled (concurrency)**: `log()` is mutex-guarded and thread-safe
+  (`src/app/log.cpp`). Ownership: the UI thread owns terminal state and calls
+  `resize()`; the I/O loop thread calls `read()`/`write()` and owns registered
+  session I/O and termination; the startup worker calls `start()` while a
+  backend is unregistered; only the SPSC queues and the atomic `WakeupFlag` are
+  shared. `running()`/`terminate()` belong to the backend owner — the loop owns
+  termination via its `terminate` command, so direct calls must not race it.
+  These rules are recorded on `TerminalSession` in `include/app/session.hpp`. A
+  `CONSOLA_TSAN` option and `tsan` preset were added (also run from
+  `helper-scripts/ci-linux.sh`); the full CTest suite passes under TSan
+  (8/8, including the loop/queue/PTY tests and the Xvfb smoke test).

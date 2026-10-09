@@ -3,7 +3,7 @@
 
 set -eu
 
-for preset in debug release asan; do
+for preset in debug release asan tsan; do
     printf '=== configure %s ===\n' "$preset"
     cmake --preset "$preset"
     printf '=== build %s ===\n' "$preset"

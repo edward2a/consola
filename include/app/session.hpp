@@ -37,6 +37,13 @@ class TerminalSession {
 public:
     virtual ~TerminalSession() = default;
 
+    // Threading (DIP 1.7): read()/write() are called only by the I/O loop
+    // thread; resize() is called by the UI thread and is safe against the loop
+    // because TIOCSWINSZ is thread-safe and the FD outlives the session.
+    // start() is called only by the startup worker while the backend is
+    // unregistered. terminate()/running() belong to the backend's owner: in
+    // the application the I/O loop owns termination (the UI posts the loop's
+    // terminate command), so direct calls must not race the loop.
     virtual SessionError start(const SessionOptions &options) = 0;
     virtual IoResult read(std::span<std::byte> buffer) = 0;
     virtual IoResult write(std::span<const std::byte> buffer) = 0;
