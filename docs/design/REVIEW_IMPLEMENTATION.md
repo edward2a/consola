@@ -193,7 +193,7 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   criteria (shell start, command execution, resize, exit detection, no
   UI-thread PTY blocking) are covered by the PTY/loop tests and the dedicated
   I/O thread. A `CONSOLA_TSAN` option and `tsan` preset were added for the
-  watchlist #5 concurrency check; the TSan run itself is still owed.
+  watchlist #5 concurrency check, and the full suite passes under TSan.
 - **#5 Settled (concurrency)**: `log()` is mutex-guarded and thread-safe
   (`src/app/log.cpp`). Ownership: the UI thread owns terminal state and calls
   `resize()`; the I/O loop thread calls `read()`/`write()` and owns registered
