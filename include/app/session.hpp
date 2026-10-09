@@ -42,6 +42,9 @@ public:
     virtual IoResult write(std::span<const std::byte> buffer) = 0;
     virtual SessionError resize(int cols, int rows) = 0;
     virtual void terminate() = 0;
+    // Backend I/O/stop state, not process liveness. A naturally exited child
+    // still reports running() until terminate() is called; the I/O loop uses
+    // waitpid() as the authoritative exit signal (DIP 1.4, 1.6).
     [[nodiscard]] virtual bool running() const = 0;
 };
 

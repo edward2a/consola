@@ -97,11 +97,21 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `SYS_pidfd_open` with SIGCHLD fallback. One startup worker with bounded
   request/result queues, cancellation and `stop()` resolving every request.
   Application ignores `SIGPIPE` at startup (`src/app/main.cpp`).
+- **Post-review fixes (S1-CS2)**: `stop()` wakes result waiters before joining
+  (no deadlock on a full result queue); cancellation is published before the
+  dequeue-time re-check so a pre-dequeue cancel is not lost, and the handshake
+  resolves exec success before a simultaneous cancel; `fcntl` and child
+  `setsid`/`TIOCSCTTY`/`dup2` failures are checked and reported; PATH search
+  resolves relative components against the requested working directory.
+  `running()` is documented as backend I/O/stop state, not process liveness,
+  and `StartupResult`'s descriptors are documented as borrowed views owned by
+  the session.
 - **#6 Settled**: the parent closes its copy of the slave immediately after
   `fork()` (`pty_session.cpp`); `tests/pty_session_test.cpp` verifies the
   master reports `IoStatus::eof` after the child exits. Additional Stage 1
   tests cover shell I/O, `exec_failed`, invalid dimensions, termination,
-  `stop()` resolution and descriptor-leak checks.
+  `stop()` resolution and descriptor-leak checks, plus deterministic
+  pre-dequeue cancellation and `stop()` with a saturated result queue.
 - **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
   #5's thread ownership needs documenting once the I/O loop and UI exist, and
   #7 belongs to the terminate/kill-timer work (§1.6).

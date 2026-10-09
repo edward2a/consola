@@ -26,7 +26,13 @@
 namespace consola {
 namespace {
 
-enum class SetupStage : std::uint8_t { chdir = 1, exec = 2 };
+enum class SetupStage : std::uint8_t {
+    setsid = 1,
+    setctty = 2,
+    dup = 3,
+    chdir = 4,
+    exec = 5,
+};
 
 struct SetupError {
     std::int32_t stage;
@@ -42,20 +48,22 @@ struct PreparedLaunch {
     std::vector<char *> envp;
 };
 
-void set_cloexec(int fd) noexcept
+bool set_cloexec(int fd) noexcept
 {
     int flags = ::fcntl(fd, F_GETFD, 0);
-    if (flags >= 0) {
-        ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+    if (flags < 0) {
+        return false;
     }
+    return ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0;
 }
 
-void set_nonblocking(int fd) noexcept
+bool set_nonblocking(int fd) noexcept
 {
     int flags = ::fcntl(fd, F_GETFL, 0);
-    if (flags >= 0) {
-        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if (flags < 0) {
+        return false;
     }
+    return ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
 int ensure_above_stderr(int fd) noexcept
@@ -65,7 +73,8 @@ int ensure_above_stderr(int fd) noexcept
     }
     int higher = ::fcntl(fd, F_DUPFD, STDERR_FILENO + 1);
     if (higher < 0) {
-        return fd;
+        ::close(fd);
+        return -1;
     }
     ::close(fd);
     return higher;
@@ -82,7 +91,8 @@ const std::string *find_environment(const std::vector<std::string> &environment,
     return nullptr;
 }
 
-std::string search_path(const std::string &name, const std::string &path)
+std::string search_path(const std::string &name, const std::string &path,
+                        const std::string &working_directory)
 {
     std::size_t begin = 0;
     for (;;) {
@@ -92,7 +102,15 @@ std::string search_path(const std::string &name, const std::string &path)
         if (directory.empty()) {
             directory = ".";
         }
-        std::string candidate = directory;
+        std::string base;
+        if (directory.front() == '/' || working_directory.empty()) {
+            base = directory;
+        } else {
+            base = working_directory;
+            base += '/';
+            base += directory;
+        }
+        std::string candidate = base;
         candidate += '/';
         candidate += name;
         if (::access(candidate.c_str(), X_OK) == 0) {
@@ -151,7 +169,7 @@ SessionError prepare_launch(const SessionOptions &options, PreparedLaunch &out)
         if (const std::string *found = find_environment(out.environment_storage, "PATH")) {
             path = found->substr(std::strlen("PATH="));
         }
-        out.executable = search_path(options.executable, path);
+        out.executable = search_path(options.executable, path, out.working_directory);
         if (out.executable.empty()) {
             log(LogLevel::Error, "executable not found on PATH: " + options.executable);
             return SessionError::exec_failed;
@@ -203,11 +221,19 @@ void report_setup_error(int fd, SetupStage stage, int error) noexcept
     if (slave_fd < 0 || error_fd < 0) {
         ::_exit(127);
     }
-    ::setsid();
-    ::ioctl(slave_fd, TIOCSCTTY, 0);
-    ::dup2(slave_fd, STDIN_FILENO);
-    ::dup2(slave_fd, STDOUT_FILENO);
-    ::dup2(slave_fd, STDERR_FILENO);
+    if (::setsid() < 0) {
+        report_setup_error(error_fd, SetupStage::setsid, errno);
+        ::_exit(127);
+    }
+    if (::ioctl(slave_fd, TIOCSCTTY, 0) != 0) {
+        report_setup_error(error_fd, SetupStage::setctty, errno);
+        ::_exit(127);
+    }
+    if (::dup2(slave_fd, STDIN_FILENO) < 0 || ::dup2(slave_fd, STDOUT_FILENO) < 0 ||
+        ::dup2(slave_fd, STDERR_FILENO) < 0) {
+        report_setup_error(error_fd, SetupStage::dup, errno);
+        ::_exit(127);
+    }
     if (slave_fd > STDERR_FILENO) {
         ::close(slave_fd);
     }
@@ -253,9 +279,6 @@ SessionError wait_exec_handshake(int read_fd, int cancel_fd)
             log(LogLevel::Error, "poll failed while waiting for child exec");
             return SessionError::exec_failed;
         }
-        if (count == 2 && (descriptors[1].revents & POLLIN) != 0) {
-            return SessionError::cancelled;
-        }
         if ((descriptors[0].revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
             SetupError record{};
             std::size_t received = 0;
@@ -278,10 +301,16 @@ SessionError wait_exec_handshake(int read_fd, int cancel_fd)
                 return SessionError::exec_failed;
             }
             if (received == 0) {
+                // Exec success closes the CLOEXEC writer. An abnormal pre-exec
+                // child death also closes it; the loop's waitpid() is
+                // authoritative for that case (DIP 1.3 #11).
                 return SessionError::none;
             }
             log(LogLevel::Error, "incomplete child setup error record");
             return SessionError::exec_failed;
+        }
+        if (count == 2 && (descriptors[1].revents & POLLIN) != 0) {
+            return SessionError::cancelled;
         }
     }
 }
@@ -352,8 +381,17 @@ SessionError LinuxPtySession::start(const SessionOptions &options)
     }
     master = ensure_above_stderr(master);
     slave = ensure_above_stderr(slave);
-    set_cloexec(master);
-    set_cloexec(slave);
+    if (master < 0 || slave < 0 || !set_cloexec(master) || !set_cloexec(slave) ||
+        !set_nonblocking(master)) {
+        log(LogLevel::Error, "failed to prepare PTY descriptors");
+        if (master >= 0) {
+            ::close(master);
+        }
+        if (slave >= 0) {
+            ::close(slave);
+        }
+        return SessionError::pty_failed;
+    }
 
     std::array<int, 2> error_pipe{-1, -1};
     if (::pipe2(error_pipe.data(), O_CLOEXEC) != 0) {
@@ -364,8 +402,19 @@ SessionError LinuxPtySession::start(const SessionOptions &options)
     }
     error_pipe[0] = ensure_above_stderr(error_pipe[0]);
     error_pipe[1] = ensure_above_stderr(error_pipe[1]);
-    set_cloexec(error_pipe[0]);
-    set_cloexec(error_pipe[1]);
+    if (error_pipe[0] < 0 || error_pipe[1] < 0 || !set_cloexec(error_pipe[0]) ||
+        !set_cloexec(error_pipe[1])) {
+        log(LogLevel::Error, "failed to prepare error pipe");
+        ::close(master);
+        ::close(slave);
+        if (error_pipe[0] >= 0) {
+            ::close(error_pipe[0]);
+        }
+        if (error_pipe[1] >= 0) {
+            ::close(error_pipe[1]);
+        }
+        return SessionError::pty_failed;
+    }
 
     pid_t pid = ::fork();
     if (pid < 0) {
@@ -386,7 +435,6 @@ SessionError LinuxPtySession::start(const SessionOptions &options)
     ::close(slave);
     ::close(error_pipe[1]);
     master_fd_ = master;
-    set_nonblocking(master_fd_);
 
     SessionError handshake = wait_exec_handshake(error_pipe[0], cancel_fd_);
     ::close(error_pipe[0]);
@@ -400,9 +448,11 @@ SessionError LinuxPtySession::start(const SessionOptions &options)
     }
 
     exit_fd_ = open_exit_notification(pid);
-    if (exit_fd_ >= 0) {
-        set_cloexec(exit_fd_);
-    } else {
+    if (exit_fd_ >= 0 && !set_cloexec(exit_fd_)) {
+        ::close(exit_fd_);
+        exit_fd_ = -1;
+    }
+    if (exit_fd_ < 0) {
         log(LogLevel::Debug, "pidfd_open unavailable; using SIGCHLD fallback");
     }
     started_ = true;

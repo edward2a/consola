@@ -350,6 +350,77 @@ bool test_no_descriptor_leak()
     return after <= before + 2;
 }
 
+bool test_cancel_before_dequeue()
+{
+    consola::StartupWorker worker(nullptr, nullptr);
+    worker.cancel(consola::TerminalId{42});
+    consola::LaunchRequest request;
+    request.id.value = 42;
+    request.options.executable = "/bin/echo";
+    if (!worker.submit(std::move(request))) {
+        return false;
+    }
+    consola::StartupResult result;
+    if (!wait_result(worker, result, 5000)) {
+        return false;
+    }
+    worker.stop();
+    return result.error == consola::SessionError::cancelled && !result.session;
+}
+
+bool test_cancel_unknown()
+{
+    consola::StartupWorker worker(nullptr, nullptr);
+    worker.cancel(consola::TerminalId{999});
+    consola::LaunchRequest request;
+    request.id.value = 7;
+    request.options.executable = "/bin/echo";
+    request.options.arguments = {"ok"};
+    if (!worker.submit(std::move(request))) {
+        return false;
+    }
+    consola::StartupResult result;
+    if (!wait_result(worker, result, 5000)) {
+        return false;
+    }
+    bool ok = result.error == consola::SessionError::none && result.session != nullptr;
+    if (result.session) {
+        read_until_eof(*result.session, 5000);
+        wait_exit(result.process_id, 5000);
+        result.session.reset();
+    }
+    worker.stop();
+    return ok;
+}
+
+bool test_stop_with_full_results()
+{
+    consola::StartupWorker worker(nullptr, nullptr);
+    constexpr int kRequests = 80;
+    int submitted = 0;
+    for (int index = 0; index < kRequests; ++index) {
+        consola::LaunchRequest request;
+        request.id.value = static_cast<std::uint64_t>(index) + 300;
+        request.options.executable = "/bin/echo";
+        request.options.arguments = {"fill"};
+        if (worker.submit(std::move(request))) {
+            ++submitted;
+        }
+    }
+    std::this_thread::sleep_for(200ms);
+    worker.stop();
+
+    int resolved = 0;
+    consola::StartupResult result;
+    while (worker.try_pop(result)) {
+        ++resolved;
+        if (result.session) {
+            wait_exit(result.process_id, 5000);
+        }
+    }
+    return submitted > 0 && resolved == submitted;
+}
+
 } // namespace
 
 int main()
@@ -358,7 +429,7 @@ int main()
         const char *name;
         bool (*run)();
     };
-    std::array<Case, 7> cases{{
+    std::array<Case, 10> cases{{
         {.name = "echo_and_eof", .run = &test_echo_and_eof},
         {.name = "shell_io", .run = &test_shell_io},
         {.name = "exec_failed", .run = &test_exec_failed},
@@ -366,6 +437,9 @@ int main()
         {.name = "terminate_long_running", .run = &test_terminate_long_running},
         {.name = "stop_resolves_all", .run = &test_stop_resolves_all},
         {.name = "no_descriptor_leak", .run = &test_no_descriptor_leak},
+        {.name = "cancel_before_dequeue", .run = &test_cancel_before_dequeue},
+        {.name = "cancel_unknown", .run = &test_cancel_unknown},
+        {.name = "stop_with_full_results", .run = &test_stop_with_full_results},
     }};
 
     int failures = 0;

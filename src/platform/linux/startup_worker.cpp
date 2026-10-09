@@ -76,12 +76,27 @@ void StartupWorker::Impl::run()
 
 void StartupWorker::Impl::process(const LaunchRequest &request)
 {
+    int cancel_fd = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    {
+        std::scoped_lock lock(cancel_mutex);
+        current_id = request.id.value;
+        current_cancel_fd = cancel_fd;
+    }
+
     bool queued_cancelled = false;
     {
         std::scoped_lock lock(mutex);
         queued_cancelled = cancelled.erase(request.id.value) > 0;
     }
     if (queued_cancelled) {
+        {
+            std::scoped_lock lock(cancel_mutex);
+            current_id = 0;
+            current_cancel_fd = -1;
+        }
+        if (cancel_fd >= 0) {
+            ::close(cancel_fd);
+        }
         StartupResult result;
         result.id = request.id;
         result.error = SessionError::cancelled;
@@ -89,14 +104,7 @@ void StartupWorker::Impl::process(const LaunchRequest &request)
         return;
     }
 
-    int cancel_fd = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     auto session = std::make_unique<LinuxPtySession>(cancel_fd);
-    {
-        std::scoped_lock lock(cancel_mutex);
-        current_id = request.id.value;
-        current_cancel_fd = cancel_fd;
-    }
-
     SessionError error = session->start(request.options);
 
     {
@@ -153,6 +161,7 @@ void StartupWorker::Impl::stop()
         stopping = true;
     }
     request_cv.notify_all();
+    result_cv.notify_all();
     {
         std::scoped_lock lock(cancel_mutex);
         if (current_id != 0 && current_cancel_fd >= 0) {
@@ -165,6 +174,9 @@ void StartupWorker::Impl::stop()
         thread.join();
     }
     {
+        // Resolve every request still queued at stop. This may temporarily
+        // exceed the soft result bound (by at most the request bound); the
+        // worker is gone and the caller drains the results.
         std::scoped_lock lock(mutex);
         while (!requests.empty()) {
             StartupResult result;

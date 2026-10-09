@@ -17,6 +17,10 @@ struct LaunchRequest {
 struct StartupResult {
     TerminalId id;
     SessionError error = SessionError::none;
+    // On success, session owns the master and exit-notification descriptors;
+    // master_fd and exit_notification_fd are borrowed views valid only while
+    // session is alive. The owner must retire its poll entries before
+    // destroying the session (DIP 1.4). process_id is the direct child.
     std::unique_ptr<TerminalSession> session;
     int master_fd = -1;
     int exit_notification_fd = -1;
