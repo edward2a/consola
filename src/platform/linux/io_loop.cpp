@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <span>
 #include <thread>
 #include <vector>
@@ -38,12 +39,12 @@ constexpr std::size_t kEventSlots = 64;
 // Set before installing the SIGCHLD handler; the handler only writes a byte to
 // the loop's self-pipe (async-signal-safe). The loop scans all known PIDs
 // after the wake, so a coalesced or dropped byte loses no exit notification.
-int g_sigchld_write_fd = -1;
+volatile sig_atomic_t g_sigchld_write_fd = -1;
 
 extern "C" void consola_sigchld_handler(int signal_number)
 {
     static_cast<void>(signal_number);
-    const int fd = g_sigchld_write_fd;
+    const int fd = static_cast<int>(g_sigchld_write_fd);
     if (fd < 0) {
         return;
     }
@@ -61,6 +62,15 @@ int decode_wait_status(int status)
         return 128 + WTERMSIG(status);
     }
     return status;
+}
+
+pid_t waitpid_retry(pid_t pid, int *status)
+{
+    pid_t result = 0;
+    do {
+        result = ::waitpid(pid, status, WNOHANG);
+    } while (result < 0 && errno == EINTR);
+    return result;
 }
 
 struct LoopCommand {
@@ -127,7 +137,7 @@ private:
     void handle_wake() const;
     void handle_sigchld();
     void service_ready();
-    void service_read(Registered &session);
+    void service_read(Registered &session, bool hangup);
     void service_write(Registered &session);
     void service_exit(Registered &session);
     void reap(Registered &session, int status);
@@ -137,12 +147,14 @@ private:
     void finish_exit_if_drained(Registered &session);
     [[nodiscard]] Registered *find(TerminalId id);
     void push_event(LoopEvent event);
+    void flush_events();
     void signal_loop() const;
 
     WakeupFlag wakeup_;
     std::vector<Registered> sessions_;
     SpscRing<LoopCommand, kCommandSlots> commands_;
     SpscRing<LoopEvent, kEventSlots> events_;
+    std::deque<LoopEvent> pending_events_;
     std::vector<struct pollfd> pollfds_;
     std::vector<PollRef> refs_;
     std::vector<std::byte> read_buffer_;
@@ -153,6 +165,7 @@ private:
     std::thread thread_;
     std::atomic<bool> stop_requested_{false};
     bool running_ = false;
+    bool available_ = false;
     bool sigchld_installed_ = false;
     struct sigaction previous_sigchld_{};
 };
@@ -172,6 +185,11 @@ LinuxIoLoop::LinuxIoLoop(WakeCallback wake, void *wake_context) : wakeup_(wake, 
         sigchld_write_ = pipe_fds[1];
     } else {
         log(LogLevel::Error, "failed to create SIGCHLD self-pipe");
+    }
+
+    available_ = wake_fd_ >= 0 && sigchld_read_ >= 0 && sigchld_write_ >= 0;
+    if (!available_) {
+        log(LogLevel::Error, "I/O loop is unavailable; commands will be rejected");
     }
 }
 
@@ -198,7 +216,7 @@ void LinuxIoLoop::install_sigchld()
     if (sigchld_installed_ || sigchld_write_ < 0) {
         return;
     }
-    g_sigchld_write_fd = sigchld_write_;
+    g_sigchld_write_fd = static_cast<sig_atomic_t>(sigchld_write_);
     struct sigaction action{};
     action.sa_handler = &consola_sigchld_handler;
     ::sigemptyset(&action.sa_mask);
@@ -213,7 +231,7 @@ void LinuxIoLoop::install_sigchld()
 
 void LinuxIoLoop::start()
 {
-    if (running_) {
+    if (running_ || !available_) {
         return;
     }
     install_sigchld();
@@ -241,13 +259,18 @@ void LinuxIoLoop::signal_loop() const
         return;
     }
     const std::uint64_t one = 1;
-    const ssize_t ignored = ::write(wake_fd_, &one, sizeof(one));
-    (void)ignored;
+    ssize_t result = 0;
+    do {
+        result = ::write(wake_fd_, &one, sizeof(one));
+    } while (result < 0 && errno == EINTR);
 }
 
 bool LinuxIoLoop::add(TerminalSession &session, int master_fd, int exit_fd, std::int64_t process_id,
                       TerminalId id, SessionInboundQueue &inbound, SessionOutboundQueue &outbound)
 {
+    if (!available_) {
+        return false;
+    }
     LoopCommand *slot = commands_.prepare_push();
     if (slot == nullptr) {
         return false;
@@ -268,6 +291,9 @@ bool LinuxIoLoop::add(TerminalSession &session, int master_fd, int exit_fd, std:
 
 bool LinuxIoLoop::remove(TerminalId id)
 {
+    if (!available_) {
+        return false;
+    }
     LoopCommand *slot = commands_.prepare_push();
     if (slot == nullptr) {
         return false;
@@ -282,6 +308,9 @@ bool LinuxIoLoop::remove(TerminalId id)
 
 bool LinuxIoLoop::write_pending(TerminalId id)
 {
+    if (!available_) {
+        return false;
+    }
     LoopCommand *slot = commands_.prepare_push();
     if (slot == nullptr) {
         return false;
@@ -296,6 +325,9 @@ bool LinuxIoLoop::write_pending(TerminalId id)
 
 bool LinuxIoLoop::resume(TerminalId id)
 {
+    if (!available_) {
+        return false;
+    }
     LoopCommand *slot = commands_.prepare_push();
     if (slot == nullptr) {
         return false;
@@ -310,6 +342,9 @@ bool LinuxIoLoop::resume(TerminalId id)
 
 bool LinuxIoLoop::shutdown()
 {
+    if (!available_) {
+        return false;
+    }
     LoopCommand *slot = commands_.prepare_push();
     if (slot == nullptr) {
         return false;
@@ -344,13 +379,24 @@ LinuxIoLoop::Registered *LinuxIoLoop::find(TerminalId id)
 
 void LinuxIoLoop::push_event(LoopEvent event)
 {
-    LoopEvent *slot = events_.prepare_push();
-    if (slot == nullptr) {
-        log(LogLevel::Error, "I/O loop event queue overflow");
-        return;
+    pending_events_.push_back(event);
+    if (pending_events_.size() > 1024) {
+        log(LogLevel::Error, "I/O loop acknowledgement backlog is large");
     }
-    *slot = event;
-    events_.commit_push();
+    flush_events();
+}
+
+void LinuxIoLoop::flush_events()
+{
+    while (!pending_events_.empty()) {
+        LoopEvent *slot = events_.prepare_push();
+        if (slot == nullptr) {
+            break;
+        }
+        *slot = pending_events_.front();
+        events_.commit_push();
+        pending_events_.pop_front();
+    }
     wakeup_.notify();
 }
 
@@ -361,6 +407,10 @@ void LinuxIoLoop::run()
         if (stop_requested_.load(std::memory_order_acquire)) {
             break;
         }
+        // Complete any post-exit drain that a just-processed `resume` unblocked,
+        // before the loop can block in poll() with no readiness to report.
+        finish_exits();
+        flush_events();
 
         build_pollfds();
         const int ready = ::poll(pollfds_.data(), pollfds_.size(), -1);
@@ -410,7 +460,7 @@ void LinuxIoLoop::drain_commands()
             // consumed before this session was registered.
             int status = 0;
             const auto pid = static_cast<pid_t>(command.process_id);
-            const pid_t result = ::waitpid(pid, &status, WNOHANG);
+            const pid_t result = waitpid_retry(pid, &status);
             if (result == pid) {
                 reap(sessions_.back(), status);
             }
@@ -522,7 +572,7 @@ void LinuxIoLoop::service_ready()
                 continue;
             }
             if ((revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
-                service_read(session);
+                service_read(session, (revents & (POLLHUP | POLLERR)) != 0);
             }
             if (!session.master_retired && (revents & POLLOUT) != 0) {
                 service_write(session);
@@ -533,7 +583,7 @@ void LinuxIoLoop::service_ready()
     }
 }
 
-void LinuxIoLoop::service_read(Registered &session)
+void LinuxIoLoop::service_read(Registered &session, bool hangup)
 {
     if (session.master_retired) {
         return;
@@ -541,6 +591,7 @@ void LinuxIoLoop::service_read(Registered &session)
     const bool draining = session.reaped;
     const auto start = std::chrono::steady_clock::now();
     std::size_t moved = 0;
+    bool blocked = false;
     while (true) {
         if (session.inbound->data_full()) {
             session.suspended = true;
@@ -555,7 +606,10 @@ void LinuxIoLoop::service_read(Registered &session)
             break;
         }
 
-        const IoResult result = session.session->read(read_buffer_);
+        const std::size_t allowance = kReadChunk - moved;
+        const std::span<std::byte> target(read_buffer_.data(),
+                                          std::min(read_buffer_.size(), allowance));
+        const IoResult result = session.session->read(target);
         if (result.status == IoStatus::ok && result.count > 0) {
             const std::span<const std::byte> batch(read_buffer_.data(), result.count);
             if (!session.inbound->try_push_data(batch)) {
@@ -570,6 +624,7 @@ void LinuxIoLoop::service_read(Registered &session)
             continue;
         }
         if (result.status == IoStatus::would_block) {
+            blocked = true;
             break;
         }
         if (result.status == IoStatus::eof) {
@@ -584,6 +639,13 @@ void LinuxIoLoop::service_read(Registered &session)
     }
     if (draining) {
         session.drain_active += std::chrono::steady_clock::now() - start;
+    }
+    // A permanently asserted hangup/error must not keep the master in the poll
+    // set producing empty reads. Once no buffered bytes remain (would_block),
+    // retire the entry and publish EOF (DIP 1.4).
+    if (hangup && blocked && !session.master_retired && !session.suspended) {
+        retire_master(session);
+        queue_eof(session);
     }
 }
 
@@ -603,8 +665,10 @@ void LinuxIoLoop::service_write(Registered &session)
         if (elapsed >= kBatchBudget) {
             break;
         }
+        const std::size_t allowance = kWriteChunk - moved;
+        const std::size_t available = chunk->size() - session.write_offset;
         const std::span<const std::byte> remaining(chunk->data() + session.write_offset,
-                                                   chunk->size() - session.write_offset);
+                                                   std::min(available, allowance));
         const IoResult result = session.session->write(remaining);
         if (result.status == IoStatus::ok && result.count > 0) {
             session.write_offset += result.count;
@@ -635,7 +699,7 @@ void LinuxIoLoop::service_exit(Registered &session)
     }
     int status = 0;
     const auto pid = static_cast<pid_t>(session.process_id);
-    const pid_t result = ::waitpid(pid, &status, WNOHANG);
+    const pid_t result = waitpid_retry(pid, &status);
     if (result == pid) {
         reap(session, status);
     } else if (result < 0 && errno != EINTR && errno != ECHILD) {
@@ -674,7 +738,7 @@ void LinuxIoLoop::finish_exits()
     for (Registered &session : sessions_) {
         if (session.reaped && !session.exit_notified && !session.suspended &&
             !session.master_retired) {
-            service_read(session);
+            service_read(session, false);
         }
         finish_exit_if_drained(session);
     }

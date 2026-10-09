@@ -134,6 +134,19 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   **Deferred**: the `terminate`/kill-timer/process-group lifecycle (§1.6) and
   streaming paste/outbound budget/reply overflow (§1.7) are later change sets,
   so the loop does not yet expose `terminate`/`cancel-paste` commands.
+- **Post-review fixes (S1-CS3)**: `SessionInboundQueue::try_pop` re-reads the
+  other ring after selecting the later-published one, so the two-ring merge
+  cannot return a newer event before an older one; `resume` triggers a
+  post-exit drain before the loop can block, so a reaped session whose
+  descendant keeps the PTY open still completes; read and write syscalls are
+  capped to the remaining 64 KiB batch allowance; a permanently asserted
+  `POLLHUP`/`POLLERR` followed by `would_block` retires the master and
+  publishes EOF instead of busy-looping; loop acknowledgements are retained in
+  a pending queue instead of being dropped; `signal_loop` retries `EINTR` and
+  the loop refuses commands (and does not start) if its wake FD/self-pipe
+  setup failed; the SIGCHLD FD is `volatile sig_atomic_t` and `waitpid` retries
+  `EINTR`. Tests add a concurrent cross-ring ordering stress and a
+  descendant-holds-the-PTY resume/post-exit-drain case.
 - **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
   #5's thread ownership now needs a TSan run and a short written ownership
   note (UI owns terminal state, loop owns session I/O, startup worker owns

@@ -364,6 +364,63 @@ bool test_shutdown_rejected_with_session()
     return true;
 }
 
+bool test_resume_finishes_post_exit_drain()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{5};
+    // The background shell keeps the PTY slave open after the direct child
+    // exits, so there is no POLLHUP: post-exit completion must come from the
+    // resume-triggered drain, not from FD readiness.
+    if (!harness.launch(
+            id, "/bin/sh",
+            {"-c", "sh -c 'sleep 3' & dd if=/dev/zero bs=1024 count=2000 2>/dev/null"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        std::printf("add failed\n");
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+    if (!wait_for([&] { return harness.inbound.data_full(); }, 5000)) {
+        std::printf("inbound queue never filled\n");
+        return false;
+    }
+
+    const auto start = Clock::now();
+    const Drain drained = drain_session(harness, id, 10000, true);
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start);
+    if (!drained.exited) {
+        std::printf("session did not complete (bytes=%zu)\n", drained.bytes);
+        return false;
+    }
+    if (drained.bytes != std::size_t{1024} * 2000U) {
+        std::printf("byte mismatch: got %zu\n", drained.bytes);
+        return false;
+    }
+    if (elapsed >= std::chrono::milliseconds(2000)) {
+        std::printf("completion waited for the descendant (%lld ms)\n",
+                    static_cast<long long>(elapsed.count()));
+        return false;
+    }
+
+    harness.result.session->terminate(); // clean up the background descendant
+    if (!harness.loop->remove(id)) {
+        return false;
+    }
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -382,6 +439,10 @@ int main()
     }
     if (!test_shutdown_rejected_with_session()) {
         std::printf("test_shutdown_rejected_with_session failed\n");
+        return 1;
+    }
+    if (!test_resume_finishes_post_exit_drain()) {
+        std::printf("test_resume_finishes_post_exit_drain failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");

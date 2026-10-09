@@ -37,17 +37,40 @@ bool SessionInboundQueue::try_pop(InboundMessage &out)
     if (data == nullptr && lifecycle == nullptr) {
         return false;
     }
+
     const bool take_data =
         lifecycle == nullptr || (data != nullptr && data->sequence < lifecycle->sequence);
+
+    // Data and lifecycle events live in separate rings. If we selected the ring
+    // that published later, re-read the other ring: an item published just
+    // before the selected one (lower sequence) may not have been visible on the
+    // first load. The acquire on the selected ring's head makes every earlier
+    // producer commit visible to this second load, so the merge cannot return a
+    // later event before an earlier one (DIP 1.7 ordering).
     if (take_data) {
+        const LifecycleSlot *earlier = lifecycle_.front();
+        if (earlier != nullptr && earlier->sequence < data->sequence) {
+            out = std::move(lifecycle_.front_mut()->message);
+            lifecycle_.pop();
+            return true;
+        }
         out = InboundMessage{};
         out.kind = InboundMessage::Kind::data;
         out.bytes = std::move(data_.front_mut()->bytes);
         data_.pop();
-    } else {
-        out = std::move(lifecycle_.front_mut()->message);
-        lifecycle_.pop();
+        return true;
     }
+
+    const DataSlot *earlier = data_.front();
+    if (earlier != nullptr && earlier->sequence < lifecycle->sequence) {
+        out = InboundMessage{};
+        out.kind = InboundMessage::Kind::data;
+        out.bytes = std::move(data_.front_mut()->bytes);
+        data_.pop();
+        return true;
+    }
+    out = std::move(lifecycle_.front_mut()->message);
+    lifecycle_.pop();
     return true;
 }
 

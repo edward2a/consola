@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <span>
 #include <string>
 #include <thread>
@@ -133,6 +134,60 @@ bool test_outbound_slots()
     return !queue.try_push(std::span<const std::byte>(&a, 1));
 }
 
+bool test_inbound_concurrent_order()
+{
+    consola::SessionInboundQueue queue;
+    constexpr int kCount = 4000;
+    std::atomic<bool> failed{false};
+
+    std::thread producer([&] {
+        for (int i = 0; i < kCount; ++i) {
+            if ((i & 1) == 0) {
+                const auto value = static_cast<std::uint64_t>(i);
+                const auto *bytes = reinterpret_cast<const std::byte *>(&value);
+                while (!queue.try_push_data(std::span<const std::byte>(bytes, sizeof(value)))) {
+                    std::this_thread::yield();
+                }
+            } else {
+                consola::InboundMessage message;
+                message.kind = consola::InboundMessage::Kind::paste_finished;
+                message.exit_status = i;
+                while (!queue.try_push_lifecycle(message)) {
+                    std::this_thread::yield();
+                }
+            }
+        }
+    });
+
+    int expected = 0;
+    consola::InboundMessage message;
+    while (expected < kCount) {
+        if (!queue.try_pop(message)) {
+            std::this_thread::yield();
+            continue;
+        }
+        int index = -1;
+        if (message.kind == consola::InboundMessage::Kind::data) {
+            if (message.bytes.size() != sizeof(std::uint64_t)) {
+                failed.store(true);
+                break;
+            }
+            std::uint64_t value = 0;
+            std::memcpy(&value, message.bytes.data(), sizeof(value));
+            index = static_cast<int>(value);
+        } else {
+            index = message.exit_status;
+        }
+        if (index != expected) {
+            failed.store(true);
+            break;
+        }
+        ++expected;
+    }
+    producer.join();
+    return !failed.load() && expected == kCount;
+}
+
 bool test_spsc_stress()
 {
     consola::SpscRing<int, 64> ring;
@@ -186,6 +241,10 @@ int main()
     }
     if (!test_outbound_slots()) {
         std::printf("test_outbound_slots failed\n");
+        return 1;
+    }
+    if (!test_inbound_concurrent_order()) {
+        std::printf("test_inbound_concurrent_order failed\n");
         return 1;
     }
     if (!test_spsc_stress()) {
