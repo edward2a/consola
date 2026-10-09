@@ -30,7 +30,7 @@ does not authorize implementation; that still requires explicit user approval.
 | 4 | System-dependency mode checks | P3 | When `CONSOLA_USE_SYSTEM_DEPS` is on, the plan doesn't say how configure detects an FLTK built with Wayland/Cairo, or a rapidyaml built without exception callbacks. A system libtsm is a shared library and won't have the fork's features. | DIP §0.2, §5.3; DEP › FLTK, rapidyaml | Stage 0 / 5 | Settled |
 | 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Pending |
 | 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Settled |
-| 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Pending |
+| 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Settled |
 | 8 | Bracketed-paste injection | P2 | `tsm_vte_paste()` wraps the pasted text without filtering it. Pasted text containing `ESC[201~` ends the bracketing early, and the rest runs as if typed (source-checked). Decide whether to neutralise that marker before encoding. | DIP §1.7 › Streaming paste; §2.8 | Stage 2 | Pending |
 | 9 | Paste framing and mode visibility | P3 | Extends the existing 2.8 "verify" note. Source check: bracketed-paste mode (2004) is a private flag with no getter and is not in `tsm_vte_get_flags()`. Framing can be inferred from capture length = source + 12 bytes, plus an optional leading ESC. | DIP §2.8 | Stage 2 | Reviewed |
 | 10 | Cursor must use libtsm's clamped position | P3 | `tsm_screen_get_cursor_x()` returns the raw value, which equals the column count after writing the last column. `tsm_screen_draw()` clamps it to the last column (y likewise). If our cursor code uses the raw value, libtsm's inverted cell is left on screen (source-checked). | DIP §2.4 › Cursor | Stage 2 | Pending |
@@ -59,7 +59,7 @@ does not authorize implementation; that still requires explicit user approval.
 ## Totals
 
 - 8 × P2, 17 × P3, 6 × Minor.
-- 20 Pending, 7 Reviewed, 4 Settled.
+- 18 Pending, 7 Reviewed, 6 Settled.
 - Source-checked against pinned libtsm: #8, #9, #10, #21, #24, #25.
 - Documented-behaviour assumptions to confirm: #11, #14, #27, #28.
 
@@ -151,8 +151,24 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   byte/time-budget yield no longer publishes `exited` early), wakes the loop
   when the UI frees an event slot so retained acknowledgements are delivered,
   and quarantines `POLLERR`-only masters without claiming EOF.
-- **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
-  #5's thread ownership now needs a TSan run and a short written ownership
-  note (UI owns terminal state, loop owns session I/O, startup worker owns
-  unregistered backends; only the queues and wake flag are shared), and #7
-  belongs to the terminate/kill-timer work (§1.6).
+- **S1-CS4 — session lifecycle (§1.6)**: `IoLoop` gains `terminate()` and an
+  `add()` close-output flag; the factory takes the kill timeout (default 2 s).
+  `terminate` captures the shell's group and the controlling terminal's
+  foreground group, verifies each belongs to this terminal's session, dedups,
+  sends SIGHUP, and starts a per-session deadline serviced through the `poll()`
+  timeout (no timer thread); at the deadline it revalidates and sends SIGKILL.
+  Repeated `terminate` does not restart the deadline, and shell exit does not
+  cancel foreground escalation. `remove` is deferred until the signal sequence
+  completes and the direct child is reaped, then acknowledged. With
+  `drain_output_on_close == false`, `terminate` discards newly read output and
+  skips the post-exit drain. Tests add SIGHUP-ignoring SIGKILL escalation and
+  close-policy discard. **#7 Settled**: `group_in_session()` verifies the
+  foreground group via `tcgetpgrp()` and other groups via the group leader's
+  session id from `/proc/<pid>/stat`; an unverifiable group is skipped and
+  logged. **Deferred**: streaming paste/outbound budget/reply overflow (§1.7),
+  and the UI-side asynchronous shutdown orchestration (steps 1–4) belongs to
+  the application layer.
+- **#5 (concurrency)** remains open; it needs a TSan run and a short written
+  ownership note (UI owns terminal state, loop owns registered-session I/O and
+  termination, startup worker owns unregistered backends; only the queues and
+  wake flag are shared).

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
@@ -37,9 +38,19 @@ public:
     // Register a session and its queues. The referenced objects must outlive
     // the registration until remove() is acknowledged. master_fd,
     // exit_fd (may be -1) and process_id come from StartupResult.
+    // drain_output_on_close selects the explicit-close output policy (DIP 1.6):
+    // when false, terminate() discards newly read output and skips the
+    // post-exit drain.
     virtual bool add(TerminalSession &session, int master_fd, int exit_fd, std::int64_t process_id,
-                     TerminalId id, SessionInboundQueue &inbound,
+                     TerminalId id, bool drain_output_on_close, SessionInboundQueue &inbound,
                      SessionOutboundQueue &outbound) = 0;
+
+    // Begin normal terminal-close semantics (DIP 1.6): capture the shell and
+    // foreground process groups, send SIGHUP, then SIGKILL at the kill
+    // deadline. Returns immediately; repeated calls do not restart the
+    // deadline. Completion is reported through the normal reaping/`exited`
+    // path.
+    virtual bool terminate(TerminalId id) = 0;
 
     // Unregister a session. Acknowledged through LoopEvent::removed once its
     // poll entries are retired; the UI may then release the backend.
@@ -58,6 +69,8 @@ public:
     virtual bool try_pop_event(LoopEvent &out) = 0;
 };
 
-std::unique_ptr<IoLoop> make_linux_io_loop(WakeCallback wake, void *wake_context);
+std::unique_ptr<IoLoop>
+make_linux_io_loop(WakeCallback wake, void *wake_context,
+                   std::chrono::milliseconds kill_timeout = std::chrono::milliseconds{2000});
 
 } // namespace consola

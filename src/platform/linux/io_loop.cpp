@@ -10,8 +10,11 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <optional>
 #include <span>
 #include <thread>
 #include <vector>
@@ -20,6 +23,7 @@
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <app/log.hpp>
@@ -35,6 +39,7 @@ constexpr auto kBatchBudget = std::chrono::milliseconds(1);
 constexpr auto kDrainBudget = std::chrono::milliseconds(100);
 constexpr std::size_t kCommandSlots = 64;
 constexpr std::size_t kEventSlots = 64;
+constexpr auto kDefaultKillTimeout = std::chrono::milliseconds{2000};
 
 // Set before installing the SIGCHLD handler; the handler only writes a byte to
 // the loop's self-pipe (async-signal-safe). The loop scans all known PIDs
@@ -73,8 +78,74 @@ pid_t waitpid_retry(pid_t pid, int *status)
     return result;
 }
 
+// Session id of a process read from /proc/<pid>/stat, or nullopt if the process
+// is gone. Field 6 after the command name is the session id. Used to revalidate
+// that a process group still belongs to this terminal's session before a
+// delayed signal (DIP 1.6, watchlist #7).
+std::optional<pid_t> proc_session_id(pid_t pid)
+{
+    std::array<char, 64> path{};
+    const int length =
+        std::snprintf(path.data(), path.size(), "/proc/%d/stat", static_cast<int>(pid));
+    if (length <= 0 || static_cast<std::size_t>(length) >= path.size()) {
+        return std::nullopt;
+    }
+    const int fd = ::open(path.data(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return std::nullopt;
+    }
+    std::array<char, 1024> buffer{};
+    const ssize_t read_count = ::read(fd, buffer.data(), buffer.size() - 1);
+    ::close(fd);
+    if (read_count <= 0) {
+        return std::nullopt;
+    }
+    buffer[static_cast<std::size_t>(read_count)] = '\0';
+
+    char *cursor = std::strrchr(buffer.data(), ')');
+    if (cursor == nullptr) {
+        return std::nullopt;
+    }
+    ++cursor;
+
+    int field = 0;
+    while (*cursor != '\0') {
+        while (*cursor == ' ') {
+            ++cursor;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        char *start = cursor;
+        while (*cursor != '\0' && *cursor != ' ') {
+            ++cursor;
+        }
+        ++field;
+        if (field == 4) { // state, ppid, pgrp, session
+            return static_cast<pid_t>(std::strtol(start, nullptr, 10));
+        }
+    }
+    return std::nullopt;
+}
+
+// Verify that a process group still belongs to this terminal's session before
+// signaling it. The foreground group is confirmed through the controlling
+// terminal; other groups through the group leader's session id (DIP 1.6,
+// watchlist #7). A group whose identity cannot be established is not signaled.
+bool group_in_session(pid_t pgid, pid_t session_id, int master_fd)
+{
+    if (pgid <= 0) {
+        return false;
+    }
+    if (master_fd >= 0 && ::tcgetpgrp(master_fd) == pgid) {
+        return true;
+    }
+    const std::optional<pid_t> sid = proc_session_id(pgid);
+    return sid.has_value() && *sid == session_id;
+}
+
 struct LoopCommand {
-    enum class Kind : std::uint8_t { add, remove, write_pending, resume, shutdown };
+    enum class Kind : std::uint8_t { add, terminate, remove, write_pending, resume, shutdown };
 
     Kind kind = Kind::add;
     TerminalSession *session = nullptr;
@@ -83,12 +154,13 @@ struct LoopCommand {
     int master_fd = -1;
     int exit_fd = -1;
     std::int64_t process_id = -1;
+    bool drain_output_on_close = false;
     TerminalId id;
 };
 
 class LinuxIoLoop final : public IoLoop {
 public:
-    LinuxIoLoop(WakeCallback wake, void *wake_context);
+    LinuxIoLoop(WakeCallback wake, void *wake_context, std::chrono::milliseconds kill_timeout);
     ~LinuxIoLoop() override;
 
     LinuxIoLoop(const LinuxIoLoop &) = delete;
@@ -97,7 +169,9 @@ public:
     void start() override;
     void stop() override;
     bool add(TerminalSession &session, int master_fd, int exit_fd, std::int64_t process_id,
-             TerminalId id, SessionInboundQueue &inbound, SessionOutboundQueue &outbound) override;
+             TerminalId id, bool drain_output_on_close, SessionInboundQueue &inbound,
+             SessionOutboundQueue &outbound) override;
+    bool terminate(TerminalId id) override;
     bool remove(TerminalId id) override;
     bool write_pending(TerminalId id) override;
     bool resume(TerminalId id) override;
@@ -105,6 +179,13 @@ public:
     bool try_pop_event(LoopEvent &out) override;
 
 private:
+    struct Termination {
+        bool active = false;
+        bool completed = false;
+        std::chrono::steady_clock::time_point deadline;
+        std::vector<pid_t> targets;
+    };
+
     struct Registered {
         TerminalId id;
         TerminalSession *session = nullptr;
@@ -113,6 +194,10 @@ private:
         int master_fd = -1;
         int exit_fd = -1;
         std::int64_t process_id = -1;
+        bool drain_output_on_close = false;
+        bool discard_output = false;
+        bool remove_requested = false;
+        bool remove_acked = false;
         bool reaped = false;
         bool exit_notified = false;
         bool eof_queued = false;
@@ -124,6 +209,7 @@ private:
         std::size_t write_offset = 0;
         std::chrono::steady_clock::duration drain_active{0};
         int exit_status = 0;
+        Termination termination;
     };
 
     enum class RefKind : std::uint8_t { wake, sigchld, master, exit };
@@ -142,15 +228,21 @@ private:
     void service_read(Registered &session, bool hangup, bool poll_error);
     void service_write(Registered &session);
     void service_exit(Registered &session);
+    void service_deadlines();
+    void start_termination(Registered &session);
     void reap(Registered &session, int status);
     void finish_exits();
     void retire_master(Registered &session);
     void queue_eof(Registered &session);
     void finish_exit_if_drained(Registered &session);
+    void maybe_ack_removals();
+    void maybe_ack_remove(Registered &session);
+    void erase_acked();
     [[nodiscard]] Registered *find(TerminalId id);
     void push_event(LoopEvent event);
     void flush_events();
     void signal_loop() const;
+    [[nodiscard]] int poll_timeout_ms() const;
 
     WakeupFlag wakeup_;
     std::vector<Registered> sessions_;
@@ -161,6 +253,7 @@ private:
     std::vector<PollRef> refs_;
     std::vector<std::byte> read_buffer_;
     std::size_t rotation_ = 0;
+    std::chrono::milliseconds kill_timeout_;
     int wake_fd_ = -1;
     int sigchld_read_ = -1;
     int sigchld_write_ = -1;
@@ -172,7 +265,9 @@ private:
     struct sigaction previous_sigchld_{};
 };
 
-LinuxIoLoop::LinuxIoLoop(WakeCallback wake, void *wake_context) : wakeup_(wake, wake_context)
+LinuxIoLoop::LinuxIoLoop(WakeCallback wake, void *wake_context,
+                         std::chrono::milliseconds kill_timeout)
+    : wakeup_(wake, wake_context), kill_timeout_(kill_timeout)
 {
     read_buffer_.resize(kReadChunk);
 
@@ -268,7 +363,8 @@ void LinuxIoLoop::signal_loop() const
 }
 
 bool LinuxIoLoop::add(TerminalSession &session, int master_fd, int exit_fd, std::int64_t process_id,
-                      TerminalId id, SessionInboundQueue &inbound, SessionOutboundQueue &outbound)
+                      TerminalId id, bool drain_output_on_close, SessionInboundQueue &inbound,
+                      SessionOutboundQueue &outbound)
 {
     if (!available_) {
         return false;
@@ -285,6 +381,24 @@ bool LinuxIoLoop::add(TerminalSession &session, int master_fd, int exit_fd, std:
     slot->master_fd = master_fd;
     slot->exit_fd = exit_fd;
     slot->process_id = process_id;
+    slot->drain_output_on_close = drain_output_on_close;
+    slot->id = id;
+    commands_.commit_push();
+    signal_loop();
+    return true;
+}
+
+bool LinuxIoLoop::terminate(TerminalId id)
+{
+    if (!available_) {
+        return false;
+    }
+    LoopCommand *slot = commands_.prepare_push();
+    if (slot == nullptr) {
+        return false;
+    }
+    *slot = LoopCommand{};
+    slot->kind = LoopCommand::Kind::terminate;
     slot->id = id;
     commands_.commit_push();
     signal_loop();
@@ -412,13 +526,15 @@ void LinuxIoLoop::run()
         if (stop_requested_.load(std::memory_order_acquire)) {
             break;
         }
+        erase_acked();
         // Complete any post-exit drain that a just-processed `resume` unblocked,
         // before the loop can block in poll() with no readiness to report.
         finish_exits();
+        maybe_ack_removals();
         flush_events();
 
         build_pollfds();
-        const int ready = ::poll(pollfds_.data(), pollfds_.size(), -1);
+        const int ready = ::poll(pollfds_.data(), pollfds_.size(), poll_timeout_ms());
         if (ready < 0) {
             if (errno == EINTR) {
                 continue;
@@ -435,7 +551,11 @@ void LinuxIoLoop::run()
         }
 
         service_ready();
+        service_deadlines();
         finish_exits();
+        maybe_ack_removals();
+        erase_acked();
+        flush_events();
 
         if (!sessions_.empty()) {
             rotation_ = (rotation_ + 1) % sessions_.size();
@@ -459,6 +579,7 @@ void LinuxIoLoop::drain_commands()
             session.master_fd = command.master_fd;
             session.exit_fd = command.exit_fd;
             session.process_id = command.process_id;
+            session.drain_output_on_close = command.drain_output_on_close;
             sessions_.push_back(session);
 
             // Registration-time probe (DIP 1.4): a SIGCHLD may have been
@@ -476,19 +597,25 @@ void LinuxIoLoop::drain_commands()
             push_event(event);
             break;
         }
-        case LoopCommand::Kind::remove: {
-            const auto it = std::ranges::find_if(
-                sessions_, [&](const Registered &session) { return session.id == command.id; });
-            if (it != sessions_.end()) {
-                sessions_.erase(it);
-                if (rotation_ >= sessions_.size()) {
-                    rotation_ = 0;
-                }
+        case LoopCommand::Kind::terminate: {
+            Registered *session = find(command.id);
+            if (session != nullptr) {
+                start_termination(*session);
             }
-            LoopEvent event;
-            event.kind = LoopEvent::Kind::removed;
-            event.id = command.id;
-            push_event(event);
+            break;
+        }
+        case LoopCommand::Kind::remove: {
+            Registered *session = find(command.id);
+            if (session == nullptr) {
+                // Unknown session: acknowledge so the UI is not stranded.
+                LoopEvent event;
+                event.kind = LoopEvent::Kind::removed;
+                event.id = command.id;
+                push_event(event);
+            } else {
+                session->remove_requested = true;
+                maybe_ack_remove(*session);
+            }
             break;
         }
         case LoopCommand::Kind::write_pending:
@@ -598,7 +725,7 @@ void LinuxIoLoop::service_read(Registered &session, bool hangup, bool poll_error
     std::size_t moved = 0;
     bool blocked = false;
     while (true) {
-        if (session.inbound->data_full()) {
+        if (!session.discard_output && session.inbound->data_full()) {
             session.suspended = true;
             break;
         }
@@ -616,12 +743,14 @@ void LinuxIoLoop::service_read(Registered &session, bool hangup, bool poll_error
                                           std::min(read_buffer_.size(), allowance));
         const IoResult result = session.session->read(target);
         if (result.status == IoStatus::ok && result.count > 0) {
-            const std::span<const std::byte> batch(read_buffer_.data(), result.count);
-            if (!session.inbound->try_push_data(batch)) {
-                session.suspended = true;
-                break;
+            if (!session.discard_output) {
+                const std::span<const std::byte> batch(read_buffer_.data(), result.count);
+                if (!session.inbound->try_push_data(batch)) {
+                    session.suspended = true;
+                    break;
+                }
+                wakeup_.notify();
             }
-            wakeup_.notify();
             moved += result.count;
             if (moved >= kReadChunk) {
                 break;
@@ -755,11 +884,15 @@ void LinuxIoLoop::queue_eof(Registered &session)
 void LinuxIoLoop::finish_exits()
 {
     for (Registered &session : sessions_) {
+        if (session.remove_acked) {
+            continue;
+        }
         if (session.reaped && !session.exit_notified && !session.suspended &&
-            !session.master_retired) {
+            !session.master_retired && !session.discard_output) {
             service_read(session, false, false);
         }
         finish_exit_if_drained(session);
+        maybe_ack_remove(session);
     }
 }
 
@@ -768,7 +901,7 @@ void LinuxIoLoop::finish_exit_if_drained(Registered &session)
     if (!session.reaped || session.exit_notified || session.suspended) {
         return;
     }
-    if (!session.master_retired && !session.drain_complete) {
+    if (!session.master_retired && !session.drain_complete && !session.discard_output) {
         return; // drain yielded with output possibly still buffered
     }
     if (session.drain_capped) {
@@ -791,11 +924,137 @@ void LinuxIoLoop::finish_exit_if_drained(Registered &session)
     wakeup_.notify();
 }
 
+void LinuxIoLoop::start_termination(Registered &session)
+{
+    if (session.termination.active) {
+        return; // repeated terminate does not restart the deadline
+    }
+    session.termination.active = true;
+    if (!session.drain_output_on_close) {
+        session.discard_output = true;
+    }
+
+    const auto session_id = static_cast<pid_t>(session.process_id);
+    std::vector<pid_t> candidates;
+    if (session.process_id > 0) {
+        candidates.push_back(session_id);
+    }
+    if (session.master_fd >= 0) {
+        const pid_t foreground = ::tcgetpgrp(session.master_fd);
+        if (foreground > 0) {
+            candidates.push_back(foreground);
+        }
+    }
+
+    for (const pid_t pgid : candidates) {
+        if (pgid <= 0 || std::ranges::find(session.termination.targets, pgid) !=
+                             session.termination.targets.end()) {
+            continue;
+        }
+        if (group_in_session(pgid, session_id, session.master_fd)) {
+            session.termination.targets.push_back(pgid);
+        } else {
+            log(LogLevel::Warning, "skipping termination target not in the terminal session");
+        }
+    }
+
+    for (const pid_t pgid : session.termination.targets) {
+        if (::kill(-pgid, SIGHUP) != 0 && errno != ESRCH) {
+            log(LogLevel::Warning, "failed to send SIGHUP to a session group");
+        }
+    }
+    session.termination.deadline = std::chrono::steady_clock::now() + kill_timeout_;
+}
+
+void LinuxIoLoop::service_deadlines()
+{
+    const auto now = std::chrono::steady_clock::now();
+    for (Registered &session : sessions_) {
+        if (session.remove_acked || !session.termination.active || session.termination.completed) {
+            continue;
+        }
+        if (now < session.termination.deadline) {
+            continue;
+        }
+        const auto session_id = static_cast<pid_t>(session.process_id);
+        for (const pid_t pgid : session.termination.targets) {
+            if (!group_in_session(pgid, session_id, session.master_fd)) {
+                log(LogLevel::Warning,
+                    "skipping SIGKILL for a group no longer in the terminal session");
+                continue;
+            }
+            if (::kill(-pgid, SIGKILL) != 0 && errno != ESRCH) {
+                log(LogLevel::Warning, "failed to send SIGKILL to a session group");
+            }
+        }
+        session.termination.completed = true;
+    }
+}
+
+int LinuxIoLoop::poll_timeout_ms() const
+{
+    auto nearest = std::chrono::steady_clock::time_point::max();
+    for (const Registered &session : sessions_) {
+        if (session.termination.active && !session.termination.completed) {
+            nearest = std::min(nearest, session.termination.deadline);
+        }
+    }
+    if (nearest == std::chrono::steady_clock::time_point::max()) {
+        return -1;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (nearest <= now) {
+        return 0;
+    }
+    const auto remaining =
+        std::chrono::duration_cast<std::chrono::milliseconds>(nearest - now).count();
+    return static_cast<int>(remaining) + 1;
+}
+
+void LinuxIoLoop::maybe_ack_remove(Registered &session)
+{
+    if (!session.remove_requested || session.remove_acked) {
+        return;
+    }
+    if (session.termination.active && !session.termination.completed) {
+        return; // removal must not cancel the pending signal sequence
+    }
+    if (!session.reaped) {
+        return; // keep reaping the direct child before releasing the backend
+    }
+    session.remove_acked = true;
+    LoopEvent event;
+    event.kind = LoopEvent::Kind::removed;
+    event.id = session.id;
+    push_event(event);
+}
+
+void LinuxIoLoop::maybe_ack_removals()
+{
+    for (Registered &session : sessions_) {
+        maybe_ack_remove(session);
+    }
+}
+
+void LinuxIoLoop::erase_acked()
+{
+    const auto removed = std::ranges::remove_if(
+        sessions_, [](const Registered &session) { return session.remove_acked; });
+    sessions_.erase(removed.begin(), sessions_.end());
+    if (rotation_ >= sessions_.size()) {
+        rotation_ = 0;
+    }
+}
+
 } // namespace
 
-std::unique_ptr<IoLoop> make_linux_io_loop(WakeCallback wake, void *wake_context)
+std::unique_ptr<IoLoop> make_linux_io_loop(WakeCallback wake, void *wake_context,
+                                           std::chrono::milliseconds kill_timeout)
 {
-    return std::make_unique<LinuxIoLoop>(wake, wake_context);
+    if (kill_timeout <= std::chrono::milliseconds::zero()) {
+        kill_timeout = kDefaultKillTimeout;
+    }
+    return std::make_unique<LinuxIoLoop>(wake, wake_context, kill_timeout);
 }
 
 } // namespace consola

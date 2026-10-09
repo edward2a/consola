@@ -7,6 +7,7 @@
 #include <platform/startup.hpp>
 
 #include <chrono>
+#include <csignal>
 #include <cstddef>
 #include <cstdio>
 #include <functional>
@@ -42,8 +43,10 @@ struct Harness {
     consola::SessionOutboundQueue outbound{1U << 20};
     consola::SessionInboundQueue inbound;
     consola::StartupWorker worker{nullptr, nullptr};
-    std::unique_ptr<consola::IoLoop> loop = consola::make_linux_io_loop(nullptr, nullptr);
+    std::unique_ptr<consola::IoLoop> loop =
+        consola::make_linux_io_loop(nullptr, nullptr, std::chrono::milliseconds{300});
     consola::StartupResult result;
+    bool drain_output_on_close = true;
 
     ~Harness()
     {
@@ -71,7 +74,7 @@ struct Harness {
             return false;
         }
         return loop->add(*result.session, result.master_fd, result.exit_notification_fd,
-                         result.process_id, id, inbound, outbound);
+                         result.process_id, id, drain_output_on_close, inbound, outbound);
     }
 };
 
@@ -245,7 +248,7 @@ bool test_write_roundtrip()
         return false;
     }
 
-    harness.result.session->terminate();
+    harness.loop->terminate(id);
     const Drain drained = drain_session(harness, id, 5000, true);
     if (!drained.exited) {
         std::printf("cat did not exit\n");
@@ -341,7 +344,7 @@ bool test_shutdown_rejected_with_session()
         return false;
     }
 
-    harness.result.session->terminate();
+    harness.loop->terminate(id);
     const Drain drained = drain_session(harness, id, 5000, true);
     if (!drained.exited) {
         std::printf("session did not exit after terminate\n");
@@ -410,10 +413,90 @@ bool test_resume_finishes_post_exit_drain()
         return false;
     }
 
-    harness.result.session->terminate(); // clean up the background descendant
+    harness.loop->terminate(id); // clean up the background descendant
     if (!harness.loop->remove(id)) {
         return false;
     }
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
+bool test_terminate_escalates_sigkill()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{6};
+    // The shell ignores SIGHUP and the ignored disposition is inherited across
+    // exec, so only the SIGKILL escalation can end the session.
+    if (!harness.launch(id, "/bin/sh", {"-c", "trap '' HUP; sleep 10"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        std::printf("add failed\n");
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+    if (!harness.loop->terminate(id)) {
+        return false;
+    }
+
+    const Drain drained = drain_session(harness, id, 5000, true);
+    if (!drained.exited) {
+        std::printf("SIGKILL escalation did not complete\n");
+        return false;
+    }
+    if (drained.status != 128 + SIGKILL) {
+        std::printf("unexpected escalation status %d\n", drained.status);
+        return false;
+    }
+
+    harness.loop->remove(id);
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
+bool test_close_discards_output()
+{
+    Harness harness;
+    harness.drain_output_on_close = false;
+    harness.loop->start();
+
+    const consola::TerminalId id{7};
+    if (!harness.launch(id, "/bin/sh", {"-c", "dd if=/dev/zero bs=1024 count=4000 2>/dev/null"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    // Queue add and terminate together so the discard policy is set before the
+    // loop services the first read.
+    if (!harness.add(id) || !harness.loop->terminate(id)) {
+        std::printf("add/terminate failed\n");
+        return false;
+    }
+
+    const Drain drained = drain_session(harness, id, 10000, true);
+    const std::size_t expected = std::size_t{1024} * 4000U;
+    if (!drained.exited) {
+        std::printf("discarding session did not exit\n");
+        return false;
+    }
+    if (drained.bytes >= expected) {
+        std::printf("close policy did not discard output (%zu bytes)\n", drained.bytes);
+        return false;
+    }
+
+    consola::LoopEvent event;
+    harness.loop->remove(id);
     wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
     harness.loop->shutdown();
     wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
@@ -443,6 +526,14 @@ int main()
     }
     if (!test_resume_finishes_post_exit_drain()) {
         std::printf("test_resume_finishes_post_exit_drain failed\n");
+        return 1;
+    }
+    if (!test_terminate_escalates_sigkill()) {
+        std::printf("test_terminate_escalates_sigkill failed\n");
+        return 1;
+    }
+    if (!test_close_discards_output()) {
+        std::printf("test_close_discards_output failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");
