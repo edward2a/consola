@@ -120,6 +120,7 @@ private:
         bool suspended = false;
         bool drain_capped = false;
         bool drain_complete = false;
+        bool quarantined = false;
         std::size_t write_offset = 0;
         std::chrono::steady_clock::duration drain_active{0};
         int exit_status = 0;
@@ -654,6 +655,7 @@ void LinuxIoLoop::service_read(Registered &session, bool hangup, bool poll_error
             queue_eof(session);
         } else if (poll_error) {
             log(LogLevel::Warning, "session master poll error with no buffered data");
+            session.quarantined = true;
             retire_master(session);
         }
     }
@@ -772,7 +774,11 @@ void LinuxIoLoop::finish_exit_if_drained(Registered &session)
     if (session.drain_capped) {
         log(LogLevel::Warning, "session post-exit drain cap reached; possible truncation");
     }
-    queue_eof(session);
+    // A master quarantined on a POLLERR-only event never confirmed EOF, so do
+    // not synthesize one; still deliver `exited` (DIP 1.4).
+    if (!session.quarantined) {
+        queue_eof(session);
+    }
 
     InboundMessage message;
     message.kind = InboundMessage::Kind::exited;
