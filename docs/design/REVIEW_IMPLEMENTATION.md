@@ -146,7 +146,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   the loop refuses commands (and does not start) if its wake FD/self-pipe
   setup failed; the SIGCHLD FD is `volatile sig_atomic_t` and `waitpid` retries
   `EINTR`. Tests add a concurrent cross-ring ordering stress and a
-  descendant-holds-the-PTY resume/post-exit-drain case.
+  descendant-holds-the-PTY resume/post-exit-drain case. A second pass made
+  post-exit completion conditional on an actual terminal drain state (so a
+  byte/time-budget yield no longer publishes `exited` early), wakes the loop
+  when the UI frees an event slot so retained acknowledgements are delivered,
+  and quarantines `POLLERR`-only masters without claiming EOF.
 - **#5 (concurrency)** and **#7 (process-group revalidation)** remain open;
   #5's thread ownership now needs a TSan run and a short written ownership
   note (UI owns terminal state, loop owns session I/O, startup worker owns

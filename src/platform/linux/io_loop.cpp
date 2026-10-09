@@ -119,6 +119,7 @@ private:
         bool master_retired = false;
         bool suspended = false;
         bool drain_capped = false;
+        bool drain_complete = false;
         std::size_t write_offset = 0;
         std::chrono::steady_clock::duration drain_active{0};
         int exit_status = 0;
@@ -137,7 +138,7 @@ private:
     void handle_wake() const;
     void handle_sigchld();
     void service_ready();
-    void service_read(Registered &session, bool hangup);
+    void service_read(Registered &session, bool hangup, bool poll_error);
     void service_write(Registered &session);
     void service_exit(Registered &session);
     void reap(Registered &session, int status);
@@ -364,6 +365,9 @@ bool LinuxIoLoop::try_pop_event(LoopEvent &out)
     }
     out = *event;
     events_.pop();
+    // The loop may be holding acknowledgements in its pending queue while this
+    // ring was full; wake it so flush_events() can deliver them.
+    signal_loop();
     return true;
 }
 
@@ -572,7 +576,7 @@ void LinuxIoLoop::service_ready()
                 continue;
             }
             if ((revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
-                service_read(session, (revents & (POLLHUP | POLLERR)) != 0);
+                service_read(session, (revents & POLLHUP) != 0, (revents & POLLERR) != 0);
             }
             if (!session.master_retired && (revents & POLLOUT) != 0) {
                 service_write(session);
@@ -583,7 +587,7 @@ void LinuxIoLoop::service_ready()
     }
 }
 
-void LinuxIoLoop::service_read(Registered &session, bool hangup)
+void LinuxIoLoop::service_read(Registered &session, bool hangup, bool poll_error)
 {
     if (session.master_retired) {
         return;
@@ -642,10 +646,23 @@ void LinuxIoLoop::service_read(Registered &session, bool hangup)
     }
     // A permanently asserted hangup/error must not keep the master in the poll
     // set producing empty reads. Once no buffered bytes remain (would_block),
-    // retire the entry and publish EOF (DIP 1.4).
-    if (hangup && blocked && !session.master_retired && !session.suspended) {
-        retire_master(session);
-        queue_eof(session);
+    // retire the entry. POLLHUP means EOF; POLLERR alone is not proof of EOF,
+    // so it is quarantined without publishing one (DIP 1.4).
+    if (blocked && !session.master_retired && !session.suspended) {
+        if (hangup) {
+            retire_master(session);
+            queue_eof(session);
+        } else if (poll_error) {
+            log(LogLevel::Warning, "session master poll error with no buffered data");
+            retire_master(session);
+        }
+    }
+    // Mark the post-exit drain complete only when it reached a terminal state
+    // (would_block, EOF/error, or the active cap), not when a byte/time budget
+    // merely yielded with output possibly still buffered.
+    if (draining && !session.suspended &&
+        (blocked || session.master_retired || session.drain_capped)) {
+        session.drain_complete = true;
     }
 }
 
@@ -738,7 +755,7 @@ void LinuxIoLoop::finish_exits()
     for (Registered &session : sessions_) {
         if (session.reaped && !session.exit_notified && !session.suspended &&
             !session.master_retired) {
-            service_read(session, false);
+            service_read(session, false, false);
         }
         finish_exit_if_drained(session);
     }
@@ -748,6 +765,9 @@ void LinuxIoLoop::finish_exit_if_drained(Registered &session)
 {
     if (!session.reaped || session.exit_notified || session.suspended) {
         return;
+    }
+    if (!session.master_retired && !session.drain_complete) {
+        return; // drain yielded with output possibly still buffered
     }
     if (session.drain_capped) {
         log(LogLevel::Warning, "session post-exit drain cap reached; possible truncation");
