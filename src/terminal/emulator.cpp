@@ -92,7 +92,9 @@ void apply_palette(tsm_vte *vte, const TerminalStyle &style)
     palette[TSM_COLOR_BACKGROUND] = {style.background.r, style.background.g, style.background.b};
     // libtsm requires uint8_t(*)[3]; std::array has the same contiguous layout.
     // NOLINTNEXTLINE(modernize-avoid-c-arrays)
-    tsm_vte_set_custom_palette(vte, reinterpret_cast<uint8_t (*)[3]>(palette.data()));
+    if (tsm_vte_set_custom_palette(vte, reinterpret_cast<uint8_t (*)[3]>(palette.data())) < 0) {
+        log(LogLevel::Warning, "failed to apply custom palette");
+    }
 }
 
 int draw_trampoline([[maybe_unused]] tsm_screen *screen, [[maybe_unused]] uint64_t id,

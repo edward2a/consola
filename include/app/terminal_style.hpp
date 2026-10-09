@@ -44,6 +44,8 @@ struct TerminalStyle {
     std::array<Rgb, 16> ansi = kDefaultAnsi; // 0-7 normal, 8-15 bright
     Rgb foreground{0xd8, 0xd8, 0xd8};
     Rgb background{0x18, 0x18, 0x18};
+    // Reserved for cursor styling (watchlist #18); the renderer currently
+    // derives cursor colours from the cell (DIP 2.4).
     Rgb cursor{0xff, 0xff, 0xff};
     std::string font_family{"Inconsolata Condensed"};
     int font_size = 14;

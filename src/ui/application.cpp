@@ -75,7 +75,6 @@ void register_bundled_font()
 int run_application(int argc, char **argv, bool smoke_test)
 {
     register_bundled_font();
-    Fl::set_font(FL_HELVETICA, "Inconsolata Condensed");
 
     Fl_Window window(640, 400, "consola");
 

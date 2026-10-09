@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <FL/Fl_Widget.H>
 
@@ -12,7 +13,9 @@
 namespace consola {
 
 struct FontMetrics {
-    int cell_width = 0;
+    // Fractional advance of the monospace face; grid origins are rounded from
+    // this so fractional advances do not accumulate error (DIP 2.3, 2.4).
+    double cell_width = 0.0;
     int cell_height = 0;
     int ascent = 0;
 };
@@ -37,6 +40,7 @@ public:
     }
 
 private:
+    void apply_font_family() const;
     void update_metrics();
     void draw_cell(int column, int row, const Cell &cell);
     void draw_cursor();
@@ -50,8 +54,10 @@ private:
     bool cursor_visible_ = false;
     CursorStyle cursor_style_ = CursorStyle::default_style;
     std::string cursor_text_;
+    CellAttributes cursor_attributes_;
     Rgb cursor_foreground_;
     Rgb cursor_background_;
+    std::vector<char> utf8_scratch_;
 };
 
 } // namespace consola

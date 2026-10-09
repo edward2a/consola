@@ -234,6 +234,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   (block/underline/vbar; libtsm's cursor-cell inversion neutralised; viewport
   row from scrollback + clamped raw cursor position — watchlist **#10**).
   `application.cpp` now hosts a `TerminalWidget` fed by a `TerminalEmulator`, so
-  the Xvfb smoke test exercises rendering. **Carry**: #11 (glyph fallback),
-  #12 (fractional scaling), #13 (bold/italic face cost/fallback) are checked in
-  rendering; blink timing and the scrollbar land in S2-CS3/S2-CS7.
+  the Xvfb smoke test exercises rendering. Review fixes: the configured
+  `font_family` is mapped to FLTK's base and bold/italic faces; the fractional
+  cell advance is kept and grid origins are rounded from it; the cursor glyph
+  reuses the cell's face/underline and `TerminalStyle::cursor` is documented as
+  reserved (#18); the UTF-8 buffer is sized from the cell's codepoint span; and
+  the `tsm_vte_set_custom_palette()` result is checked. **Carry**: #11 (glyph
+  fallback), #12 (fractional scaling), #13 (bold/italic face cost/fallback) are
+  checked in rendering; blink timing and the scrollbar land in S2-CS3/S2-CS7.
