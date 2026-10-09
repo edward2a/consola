@@ -118,7 +118,7 @@ int main()
     if (cell_text(0, 0) != "h" || cell_text(4, 0) != "o" || cell_text(0, 1) != "w") {
         return EXIT_FAILURE;
     }
-    if (cell_width(0, 0) != 1) {
+    if (cell_width(0, 0) != 1 || cell_width(4, 0) != 1 || cell_width(0, 1) != 1) {
         return EXIT_FAILURE;
     }
 

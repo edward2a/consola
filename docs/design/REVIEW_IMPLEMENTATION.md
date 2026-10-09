@@ -218,8 +218,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   model reference and stub `draw()`/`handle()`; cell rendering lands in S2-CS2.
   `tests/emulator_test.cpp` now traverses the screen and checks cell text/width
   and cursor state.
-  **Finding**: pinned libtsm 4.8.0 has no window-title (OSC 0/2) API — there is
-  no title callback or stored title in `libtsm.h`/`tsm-vte.c`, so §2.12 will
-  need our own OSC parsing (or the libtsm fork) rather than a libtsm accessor.
+  **Finding**: pinned libtsm 4.8.0 has no dedicated title accessor; OSC 0/2 must
+  be captured through the generic `tsm_vte_set_osc_cb()` callback and parsed by
+  us in §2.12 (no separate raw escape parser needed).
   **Deferred**: font setup/basic rendering (S2-CS2), dirty regions (S2-CS3),
   input (S2-CS4/5), paste (§2.8), scrollback/title/bell (S2-CS7).

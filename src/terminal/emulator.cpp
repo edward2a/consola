@@ -91,7 +91,7 @@ int draw_trampoline([[maybe_unused]] tsm_screen *screen, [[maybe_unused]] uint64
     cell.text = std::span<const std::uint32_t>(ch, len);
     cell.attributes = to_attributes(*attr);
     cell.width = static_cast<std::uint8_t>(width);
-    cell.age = static_cast<std::uint32_t>(age);
+    cell.age = static_cast<ContentAge>(age);
     bridge->callback(bridge->context, static_cast<int>(posx), static_cast<int>(posy), cell);
     return 0;
 }
@@ -147,13 +147,13 @@ void TerminalEmulator::set_output_callback(OutputCallback callback, void *contex
     impl_->output_context = context;
 }
 
-std::uint32_t TerminalEmulator::draw(CellCallback callback, void *context)
+ContentAge TerminalEmulator::draw(CellCallback callback, void *context)
 {
     if (callback == nullptr) {
         return 0;
     }
     DrawBridge bridge{.callback = callback, .context = context};
-    return static_cast<std::uint32_t>(tsm_screen_draw(impl_->screen, &draw_trampoline, &bridge));
+    return static_cast<ContentAge>(tsm_screen_draw(impl_->screen, &draw_trampoline, &bridge));
 }
 
 int TerminalEmulator::columns() const

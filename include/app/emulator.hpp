@@ -11,6 +11,10 @@ namespace consola {
 
 struct TerminalEmulatorImpl;
 
+// libtsm's native content age (uint_fast32_t); kept at native width so age
+// comparisons do not wrap early (DIP 2.5).
+using ContentAge = std::uint_fast32_t;
+
 struct Rgb {
     std::uint8_t r = 0;
     std::uint8_t g = 0;
@@ -38,7 +42,7 @@ struct Cell {
     CellAttributes attributes{};
     // 1 or 2 for a glyph, or 0 for the trailing half of a wide glyph (skip it).
     std::uint8_t width = 0;
-    std::uint32_t age = 0;
+    ContentAge age = 0;
 };
 
 enum class CursorStyle : std::uint8_t {
@@ -82,7 +86,8 @@ public:
 
     // Traverse the visible screen via tsm_screen_draw(); the callback receives
     // our Cell type. Returns the content age of the completed paint (DIP 2.2).
-    std::uint32_t draw(CellCallback callback, void *context);
+    // The callback runs inside libtsm's C callback path and must not throw.
+    ContentAge draw(CellCallback callback, void *context);
 
     [[nodiscard]] int columns() const;
     [[nodiscard]] int rows() const;
