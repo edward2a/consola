@@ -279,3 +279,19 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   (Ctrl+C, text, left arrow). **Carry**: #14 (FLTK focus/Escape/Tab),
   #16 (IME/layout verification), #17 (capability matrix); modifyOtherKeys and
   the kitty keyboard protocol remain v1 limitations.
+- **S2-CS5 — mouse input and selection (§2.7)**: `include/app/mouse_event.hpp`
+  adds platform-neutral `MouseEvent`, `MouseButton`, `MouseModifier`,
+  `MouseAction` and `MouseTracking`; the emulator wraps
+  `tsm_vte_get_mouse_mode/event` (`mouse_tracking()`) and `tsm_vte_handle_mouse`
+  (`handle_mouse()`), keeping libtsm types inside the emulator. Selection wraps
+  libtsm (`selection_start/target/reset/copy`); `select_word()` computes
+  boundaries from a Terminator-style `word_chars` class (literal chars plus
+  `a-z` ranges) by reading cell codepoints with `tsm_screen_draw2()` (read-only,
+  not rendering). `TerminalWidget` handles press/drag/release/wheel: clicks
+  focus the pane; when mouse reporting is enabled it forwards encoded events,
+  otherwise it drives selection (double-click selects a word, drag extends);
+  selection changes force a full repaint because libtsm inverts selected cells
+  in the draw callback and does not age them. Tests cover VT200 press encoding
+  and selection/word copy. **Carry**: #14 (GUI click/focus test), #16, wheel
+  scrollback (S2-CS7), copy/paste wiring (S2-CS6), and selection coordinates
+  with scrollback.

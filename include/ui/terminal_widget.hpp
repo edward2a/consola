@@ -68,6 +68,11 @@ private:
     void paint_cell(int column, int row, const Cell &cell);
     void collect_cell(int column, int row, const Cell &cell);
     void draw_cursor();
+    void event_cell(int &column, int &row) const;
+    int handle_push();
+    int handle_drag();
+    int handle_release();
+    int handle_wheel();
     static void paint_callback(void *context, int column, int row, const Cell &cell);
     static void collect_callback(void *context, int column, int row, const Cell &cell);
 
@@ -97,6 +102,10 @@ private:
     Rgb cursor_foreground_;
     Rgb cursor_background_;
     std::vector<char> utf8_scratch_;
+
+    // Mouse/selection state (DIP 2.7).
+    bool selecting_ = false;
+    int pressed_button_ = -1;
 };
 
 } // namespace consola

@@ -49,6 +49,8 @@ struct TerminalStyle {
     Rgb cursor{0xff, 0xff, 0xff};
     std::string font_family{"Inconsolata Condensed"};
     int font_size = 14;
+    // Characters that form a word for double-click selection (DIP 2.7).
+    std::string word_chars{"-A-Za-z0-9,./?%&#:_=+@~"};
 };
 
 inline const TerminalStyle &default_terminal_style()

@@ -5,7 +5,10 @@
 #include <array>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 
 #include <libtsm.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
@@ -181,6 +184,159 @@ bool TerminalEmulator::handle_keyboard(const KeyEvent &event)
     const std::uint32_t ascii = event.ascii == kKeysymNone ? XKB_KEY_NoSymbol : event.ascii;
     const std::uint32_t unicode = event.unicode == kUnicodeNone ? TSM_VTE_INVALID : event.unicode;
     return tsm_vte_handle_keyboard(impl_->vte, keysym, ascii, mods, unicode);
+}
+
+MouseTracking TerminalEmulator::mouse_tracking() const
+{
+    if (tsm_vte_get_mouse_mode(impl_->vte) == 0) {
+        return MouseTracking::disabled;
+    }
+    if (tsm_vte_get_mouse_event(impl_->vte) == TSM_MOUSE_TRACK_ANY) {
+        return MouseTracking::any;
+    }
+    return MouseTracking::click;
+}
+
+bool TerminalEmulator::handle_mouse(const MouseEvent &event)
+{
+    unsigned int button = TSM_MOUSE_BUTTON_LEFT;
+    switch (event.button) {
+    case MouseButton::left:
+        button = TSM_MOUSE_BUTTON_LEFT;
+        break;
+    case MouseButton::middle:
+        button = TSM_MOUSE_BUTTON_MIDDLE;
+        break;
+    case MouseButton::right:
+        button = TSM_MOUSE_BUTTON_RIGHT;
+        break;
+    case MouseButton::wheel_up:
+        button = TSM_MOUSE_BUTTON_WHEEL_UP;
+        break;
+    case MouseButton::wheel_down:
+        button = TSM_MOUSE_BUTTON_WHEEL_DOWN;
+        break;
+    }
+
+    unsigned int flags = 0;
+    if ((event.modifiers & MouseModifierShift) != 0) {
+        flags |= TSM_MOUSE_MODIFIER_SHIFT;
+    }
+    if ((event.modifiers & MouseModifierCtrl) != 0) {
+        flags |= TSM_MOUSE_MODIFIER_CTRL;
+    }
+    if ((event.modifiers & (MouseModifierAlt | MouseModifierMeta)) != 0) {
+        flags |= TSM_MOUSE_MODIFIER_META;
+    }
+
+    unsigned int action = 0;
+    if ((event.action & MouseActionPressed) != 0) {
+        action |= TSM_MOUSE_EVENT_PRESSED;
+    }
+    if ((event.action & MouseActionReleased) != 0) {
+        action |= TSM_MOUSE_EVENT_RELEASED;
+    }
+    if ((event.action & MouseActionMoved) != 0) {
+        action |= TSM_MOUSE_EVENT_MOVED;
+    }
+
+    return tsm_vte_handle_mouse(impl_->vte, static_cast<unsigned int>(event.cell_x),
+                                static_cast<unsigned int>(event.cell_y),
+                                static_cast<unsigned int>(event.pixel_x),
+                                static_cast<unsigned int>(event.pixel_y), button, action,
+                                static_cast<unsigned char>(flags));
+}
+
+void TerminalEmulator::selection_start(int column, int row)
+{
+    tsm_screen_selection_start(impl_->screen, static_cast<unsigned int>(column),
+                               static_cast<unsigned int>(row));
+}
+
+void TerminalEmulator::selection_target(int column, int row)
+{
+    tsm_screen_selection_target(impl_->screen, static_cast<unsigned int>(column),
+                                static_cast<unsigned int>(row));
+}
+
+void TerminalEmulator::selection_reset()
+{
+    tsm_screen_selection_reset(impl_->screen);
+}
+
+std::string TerminalEmulator::selection_copy() const
+{
+    char *out = nullptr;
+    const int length = tsm_screen_selection_copy(impl_->screen, &out);
+    if (length < 0 || out == nullptr) {
+        if (out != nullptr) {
+            std::free(out);
+        }
+        return {};
+    }
+    std::string text(out, static_cast<std::size_t>(length));
+    std::free(out);
+    return text;
+}
+
+void TerminalEmulator::select_word(int column, int row, std::string_view word_chars)
+{
+    const int columns = this->columns();
+    if (columns <= 0) {
+        selection_reset();
+        return;
+    }
+    // draw2() is used only to read cell codepoints for word boundaries; it has
+    // no age side effects and is not used for rendering (DIP 2.2, 2.7).
+    const struct tsm_screen_cell *cells = tsm_screen_draw2(impl_->screen);
+    if (cells == nullptr) {
+        selection_reset();
+        return;
+    }
+    const auto cell_at = [&](int index) -> std::uint32_t {
+        if (index < 0 || index >= columns) {
+            return 0;
+        }
+        return cells[(static_cast<std::size_t>(row) * static_cast<std::size_t>(columns)) +
+                     static_cast<std::size_t>(index)]
+            .ch;
+    };
+    const auto in_word_chars = [&](char character) {
+        // word_chars is a Terminator-style class: literal characters plus
+        // `a-z` ranges.
+        for (std::size_t i = 0; i < word_chars.size(); ++i) {
+            if (i + 2 < word_chars.size() && word_chars[i + 1] == '-') {
+                if (character >= word_chars[i] && character <= word_chars[i + 2]) {
+                    return true;
+                }
+                i += 2;
+            } else if (word_chars[i] == character) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto is_word = [&](int index) {
+        const std::uint32_t codepoint = cell_at(index);
+        if (codepoint == 0 || codepoint > 0x7f) {
+            return false;
+        }
+        return in_word_chars(static_cast<char>(codepoint));
+    };
+    if (!is_word(column)) {
+        selection_reset();
+        return;
+    }
+    int start = column;
+    while (is_word(start - 1)) {
+        --start;
+    }
+    int end = column;
+    while (is_word(end + 1)) {
+        ++end;
+    }
+    selection_start(start, row);
+    selection_target(end, row);
 }
 
 void TerminalEmulator::set_output_callback(OutputCallback callback, void *context)

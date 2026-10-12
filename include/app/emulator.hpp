@@ -6,8 +6,11 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string>
+#include <string_view>
 
 #include <app/key_event.hpp>
+#include <app/mouse_event.hpp>
 #include <app/terminal_style.hpp>
 
 namespace consola {
@@ -80,6 +83,20 @@ public:
     // Encode a key with libtsm and deliver the bytes through the output
     // callback (DIP 2.6). Returns true if the key produced output.
     bool handle_keyboard(const KeyEvent &event);
+
+    // Terminal mouse reporting (DIP 2.7). mouse_tracking() reports the current
+    // mode; handle_mouse() encodes a mouse event with libtsm.
+    [[nodiscard]] MouseTracking mouse_tracking() const;
+    bool handle_mouse(const MouseEvent &event);
+
+    // Selection (DIP 2.7): libtsm owns the selection; callers pass screen
+    // (viewport) coordinates. select_word() computes word boundaries from
+    // word_chars.
+    void selection_start(int column, int row);
+    void selection_target(int column, int row);
+    void selection_reset();
+    [[nodiscard]] std::string selection_copy() const;
+    void select_word(int column, int row, std::string_view word_chars);
 
     // Invoked synchronously during feed(); the span is valid only for the
     // duration of the call, and the callback must not throw.

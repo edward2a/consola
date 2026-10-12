@@ -49,6 +49,38 @@ bool same(Rgb lhs, Rgb rhs)
     return lhs.r == rhs.r && lhs.g == rhs.g && lhs.b == rhs.b;
 }
 
+MouseButton fltk_mouse_button(int button)
+{
+    switch (button) {
+    case FL_MIDDLE_MOUSE:
+        return MouseButton::middle;
+    case FL_RIGHT_MOUSE:
+        return MouseButton::right;
+    case FL_LEFT_MOUSE:
+    default:
+        return MouseButton::left;
+    }
+}
+
+unsigned fltk_mouse_modifiers()
+{
+    const int state = Fl::event_state();
+    unsigned modifiers = 0;
+    if ((state & FL_SHIFT) != 0) {
+        modifiers |= MouseModifierShift;
+    }
+    if ((state & FL_CTRL) != 0) {
+        modifiers |= MouseModifierCtrl;
+    }
+    if ((state & FL_ALT) != 0) {
+        modifiers |= MouseModifierAlt;
+    }
+    if ((state & FL_META) != 0) {
+        modifiers |= MouseModifierMeta;
+    }
+    return modifiers;
+}
+
 } // namespace
 
 TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emulator,
@@ -358,9 +390,13 @@ int TerminalWidget::handle(int event)
     case FL_UNFOCUS:
         return 1;
     case FL_PUSH:
-        // Clicking the pane focuses it so it receives key input (watchlist #14).
-        Fl::focus(this);
-        return 1;
+        return handle_push();
+    case FL_DRAG:
+        return handle_drag();
+    case FL_RELEASE:
+        return handle_release();
+    case FL_MOUSEWHEEL:
+        return handle_wheel();
     case FL_KEYDOWN:
         // The terminal consumes every key; libtsm encodes those it knows.
         dispatch_fltk_key(emulator_);
@@ -368,6 +404,130 @@ int TerminalWidget::handle(int event)
     default:
         return 0;
     }
+}
+
+void TerminalWidget::event_cell(int &column, int &row) const
+{
+    column =
+        clamp_int(static_cast<int>(static_cast<double>(Fl::event_x() - x()) / metrics_.cell_width),
+                  0, emulator_.columns() - 1);
+    row =
+        clamp_int(static_cast<int>(static_cast<double>(Fl::event_y() - y()) / metrics_.cell_height),
+                  0, emulator_.rows() - 1);
+}
+
+int TerminalWidget::handle_push()
+{
+    // Clicking the pane focuses it so it receives key input (watchlist #14).
+    Fl::focus(this);
+    int column = 0;
+    int row = 0;
+    event_cell(column, row);
+
+    if (emulator_.mouse_tracking() != MouseTracking::disabled) {
+        const MouseButton button = fltk_mouse_button(Fl::event_button());
+        pressed_button_ = static_cast<int>(button);
+        MouseEvent event;
+        event.cell_x = column;
+        event.cell_y = row;
+        event.pixel_x = Fl::event_x();
+        event.pixel_y = Fl::event_y();
+        event.button = button;
+        event.action = MouseActionPressed;
+        event.modifiers = fltk_mouse_modifiers();
+        emulator_.handle_mouse(event);
+        return 1;
+    }
+
+    selecting_ = true;
+    if (Fl::event_clicks() > 0) {
+        emulator_.select_word(column, row, style_.word_chars);
+    } else {
+        emulator_.selection_start(column, row);
+    }
+    full_redraw_requested_ = true;
+    redraw();
+    return 1;
+}
+
+int TerminalWidget::handle_drag()
+{
+    int column = 0;
+    int row = 0;
+    event_cell(column, row);
+
+    const MouseTracking tracking = emulator_.mouse_tracking();
+    if (tracking == MouseTracking::any ||
+        (tracking == MouseTracking::click && pressed_button_ >= 0)) {
+        MouseEvent event;
+        event.cell_x = column;
+        event.cell_y = row;
+        event.pixel_x = Fl::event_x();
+        event.pixel_y = Fl::event_y();
+        event.button = static_cast<MouseButton>(pressed_button_ >= 0 ? pressed_button_ : 0);
+        event.action = MouseActionMoved;
+        event.modifiers = fltk_mouse_modifiers();
+        emulator_.handle_mouse(event);
+        return 1;
+    }
+
+    if (selecting_) {
+        emulator_.selection_target(column, row);
+        full_redraw_requested_ = true;
+        redraw();
+    }
+    return 1;
+}
+
+int TerminalWidget::handle_release()
+{
+    int column = 0;
+    int row = 0;
+    event_cell(column, row);
+
+    if (emulator_.mouse_tracking() != MouseTracking::disabled) {
+        MouseEvent event;
+        event.cell_x = column;
+        event.cell_y = row;
+        event.pixel_x = Fl::event_x();
+        event.pixel_y = Fl::event_y();
+        event.button = static_cast<MouseButton>(pressed_button_ >= 0 ? pressed_button_ : 0);
+        event.action = MouseActionReleased;
+        event.modifiers = fltk_mouse_modifiers();
+        emulator_.handle_mouse(event);
+        pressed_button_ = -1;
+        return 1;
+    }
+
+    if (selecting_) {
+        emulator_.selection_target(column, row);
+        selecting_ = false;
+        full_redraw_requested_ = true;
+        redraw();
+    }
+    pressed_button_ = -1;
+    return 1;
+}
+
+int TerminalWidget::handle_wheel()
+{
+    if (emulator_.mouse_tracking() != MouseTracking::disabled) {
+        int column = 0;
+        int row = 0;
+        event_cell(column, row);
+        MouseEvent event;
+        event.cell_x = column;
+        event.cell_y = row;
+        event.pixel_x = Fl::event_x();
+        event.pixel_y = Fl::event_y();
+        event.button = Fl::event_dy() < 0 ? MouseButton::wheel_up : MouseButton::wheel_down;
+        event.action = MouseActionPressed;
+        event.modifiers = fltk_mouse_modifiers();
+        emulator_.handle_mouse(event);
+        return 1;
+    }
+    // Scrollback scrolling lands in S2-CS7.
+    return 0;
 }
 
 } // namespace consola

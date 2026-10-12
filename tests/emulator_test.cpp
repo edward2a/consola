@@ -162,5 +162,37 @@ int main()
         return EXIT_FAILURE;
     }
 
+    // Mouse reporting (VT200): enable, then a left press at (1,2).
+    g_output.clear();
+    emulator.feed(as_bytes("\x1b[?1000h"));
+    if (emulator.mouse_tracking() == consola::MouseTracking::disabled) {
+        return EXIT_FAILURE;
+    }
+    consola::MouseEvent press;
+    press.cell_x = 1;
+    press.cell_y = 2;
+    press.button = consola::MouseButton::left;
+    press.action = consola::MouseActionPressed;
+    if (!emulator.handle_mouse(press)) {
+        return EXIT_FAILURE;
+    }
+    if (g_output.size() != 6 || !g_output.starts_with("\x1b[M") || g_output[3] != ' ' ||
+        g_output[4] != '"' || g_output[5] != '#') {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b[?1000l"));
+
+    // Selection and double-click word selection.
+    emulator.selection_reset();
+    emulator.selection_start(0, 0);
+    emulator.selection_target(4, 0);
+    if (emulator.selection_copy() != "hello") {
+        return EXIT_FAILURE;
+    }
+    emulator.select_word(1, 1, "-A-Za-z0-9,./?%&#:_=+@~");
+    if (emulator.selection_copy() != "world") {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }
