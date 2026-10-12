@@ -147,5 +147,20 @@ int main()
         return EXIT_FAILURE;
     }
 
+    g_output.clear();
+    consola::KeyEvent backspace;
+    backspace.keysym = 0xff08; // XKB_KEY_BackSpace
+    if (!emulator.handle_keyboard(backspace) || g_output != std::string(1, '\x7f')) {
+        return EXIT_FAILURE;
+    }
+
+    // U+0000 is distinct from "no composed text".
+    g_output.clear();
+    consola::KeyEvent nul;
+    nul.unicode = 0;
+    if (!emulator.handle_keyboard(nul) || g_output != std::string(1, '\0')) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

@@ -25,8 +25,8 @@ struct KeyEvent {
     // X11 keysym (special keys pass through unchanged); kKeysymNone for
     // composed text.
     std::uint32_t keysym = kKeysymNone;
-    // ASCII keysym for Ctrl combinations (so Ctrl+C works on non-Latin
-    // layouts); kKeysymNone otherwise.
+    // ASCII keysym for Ctrl combinations (best effort so Ctrl+C keeps working
+    // on many non-Latin layouts); kKeysymNone otherwise.
     std::uint32_t ascii = kKeysymNone;
     unsigned modifiers = 0;
     // Composed codepoint from the input method; kUnicodeNone when absent.

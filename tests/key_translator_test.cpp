@@ -44,6 +44,13 @@ int main()
         return 1;
     }
 
+    const consola::KeyEvent meta_shift = consola::translate_key('x', FL_META | FL_SHIFT, "x", 1);
+    if ((meta_shift.modifiers & consola::KeyModifierMeta) == 0 ||
+        (meta_shift.modifiers & consola::KeyModifierShift) == 0) {
+        std::printf("meta+shift translation failed\n");
+        return 1;
+    }
+
     std::printf("key_translator_test ok\n");
     return 0;
 }

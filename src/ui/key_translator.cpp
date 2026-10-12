@@ -26,8 +26,9 @@ KeyEvent translate_key(std::uint32_t fltk_key, unsigned fltk_state, const char *
         event.modifiers |= KeyModifierMeta;
     }
 
-    // Provide the ASCII keysym for Ctrl combinations so Ctrl+C works on
-    // non-Latin layouts (DIP 2.6).
+    // Best effort: provide the ASCII keysym for Ctrl combinations so Ctrl+C
+    // keeps working on many non-Latin layouts. A layout-aware lookup is not
+    // implemented (watchlist #16).
     if ((event.modifiers & KeyModifierCtrl) != 0 && fltk_key >= 0x20 && fltk_key < 0x7f) {
         event.ascii = fltk_key;
     }
@@ -44,6 +45,40 @@ KeyEvent translate_fltk_key()
     return translate_key(static_cast<std::uint32_t>(Fl::event_key()),
                          static_cast<unsigned>(Fl::event_state()), Fl::event_text(),
                          Fl::event_length());
+}
+
+bool dispatch_fltk_key(TerminalEmulator &emulator)
+{
+    const auto state = static_cast<unsigned>(Fl::event_state());
+    const char *text = Fl::event_text();
+    const int length = Fl::event_length();
+
+    // Ctrl combinations use the ASCII keysym path; composed/text input is
+    // split into one codepoint per KeyEvent with no keysym (DIP 2.6).
+    if ((state & FL_CTRL) == 0 && text != nullptr && length > 0) {
+        const char *cursor = text;
+        const char *end = text + length;
+        bool produced = false;
+        while (cursor < end) {
+            int decoded_length = 0;
+            const auto codepoint = fl_utf8decode(cursor, end, &decoded_length);
+            if (decoded_length <= 0) {
+                break;
+            }
+            KeyEvent event = translate_key(static_cast<std::uint32_t>(Fl::event_key()), state,
+                                           cursor, decoded_length);
+            event.keysym = kKeysymNone;
+            event.unicode = codepoint;
+            if (emulator.handle_keyboard(event)) {
+                produced = true;
+            }
+            cursor += decoded_length;
+        }
+        return produced;
+    }
+
+    return emulator.handle_keyboard(
+        translate_key(static_cast<std::uint32_t>(Fl::event_key()), state, text, length));
 }
 
 } // namespace consola

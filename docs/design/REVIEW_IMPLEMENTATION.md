@@ -270,7 +270,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `translate_key()`/`translate_fltk_key()` (`include/ui/key_translator.hpp`)
   passes special keys through as keysyms, supplies the ASCII keysym for Ctrl
   combinations, decodes `Fl::event_text()` for composed codepoints, and maps
-  FLTK modifier state; `TerminalWidget::handle()` consumes `FL_KEYDOWN`.
+  FLTK modifier state; `TerminalWidget::handle()` consumes `FL_KEYDOWN` and
+  takes focus on `FL_PUSH`. Review fixes: `dispatch_fltk_key()` splits composed
+  multi-codepoint text into one keysym-less `KeyEvent` per codepoint; the
+  Ctrl-ASCII claim is narrowed to a best effort (layout-aware lookup is not
+  implemented, #16); tests add backspace, U+0000 and Meta+Shift.
   Tests: `key_translator_test` and libtsm encoding checks in `emulator_test`
   (Ctrl+C, text, left arrow). **Carry**: #14 (FLTK focus/Escape/Tab),
   #16 (IME/layout verification), #17 (capability matrix); modifyOtherKeys and

@@ -357,9 +357,13 @@ int TerminalWidget::handle(int event)
     case FL_FOCUS:
     case FL_UNFOCUS:
         return 1;
+    case FL_PUSH:
+        // Clicking the pane focuses it so it receives key input (watchlist #14).
+        Fl::focus(this);
+        return 1;
     case FL_KEYDOWN:
         // The terminal consumes every key; libtsm encodes those it knows.
-        emulator_.handle_keyboard(translate_fltk_key());
+        dispatch_fltk_key(emulator_);
         return 1;
     default:
         return 0;
