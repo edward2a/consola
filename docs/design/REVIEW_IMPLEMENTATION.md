@@ -261,3 +261,17 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   flagged for repaint before the wide-glyph continuation early-out; a metric
   change (DPI/font) forces a full repaint; `set_style()` documents that runtime
   palette changes for existing content are out of scope (DIP 2.3).
+- **S2-CS4 — keyboard input (§2.6)**: `include/app/key_event.hpp` adds a
+  platform-neutral `KeyEvent` (keysym/ascii/modifiers/unicode) with our own
+  `KeyModifier` bits; `TerminalEmulator::handle_keyboard()` maps them to
+  `TSM_*_MASK` and calls `tsm_vte_handle_keyboard()`, so libtsm types stay
+  inside the emulator (watchlist **#15** largely addressed). `backspace` sends
+  DEL via `tsm_vte_set_backspace_sends_delete()`. The UI-side
+  `translate_key()`/`translate_fltk_key()` (`include/ui/key_translator.hpp`)
+  passes special keys through as keysyms, supplies the ASCII keysym for Ctrl
+  combinations, decodes `Fl::event_text()` for composed codepoints, and maps
+  FLTK modifier state; `TerminalWidget::handle()` consumes `FL_KEYDOWN`.
+  Tests: `key_translator_test` and libtsm encoding checks in `emulator_test`
+  (Ctrl+C, text, left arrow). **Carry**: #14 (FLTK focus/Escape/Tab),
+  #16 (IME/layout verification), #17 (capability matrix); modifyOtherKeys and
+  the kitty keyboard protocol remain v1 limitations.

@@ -13,6 +13,8 @@
 #include <FL/fl_draw.H>
 #include <FL/fl_utf8.h>
 
+#include <ui/key_translator.hpp>
+
 namespace consola {
 namespace {
 
@@ -351,8 +353,17 @@ void TerminalWidget::draw_cursor()
 
 int TerminalWidget::handle(int event)
 {
-    static_cast<void>(event);
-    return 0;
+    switch (event) {
+    case FL_FOCUS:
+    case FL_UNFOCUS:
+        return 1;
+    case FL_KEYDOWN:
+        // The terminal consumes every key; libtsm encodes those it knows.
+        emulator_.handle_keyboard(translate_fltk_key());
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 } // namespace consola

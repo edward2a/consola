@@ -8,6 +8,7 @@
 #include <stdexcept>
 
 #include <libtsm.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 #include <app/log.hpp>
 
@@ -127,6 +128,8 @@ TerminalEmulator::TerminalEmulator(const TerminalStyle &style)
     }
     // Apply the palette before any output is fed (DIP 2.3).
     apply_palette(impl_->vte, style);
+    // Backspace sends DEL (0x7f), like xterm/VTE (DIP 2.6).
+    tsm_vte_set_backspace_sends_delete(impl_->vte, true);
 }
 
 TerminalEmulator::~TerminalEmulator()
@@ -157,6 +160,27 @@ void TerminalEmulator::resize(int cols, int rows)
     }
     tsm_screen_resize(impl_->screen, static_cast<unsigned int>(cols),
                       static_cast<unsigned int>(rows));
+}
+
+bool TerminalEmulator::handle_keyboard(const KeyEvent &event)
+{
+    unsigned int mods = 0;
+    if ((event.modifiers & KeyModifierShift) != 0) {
+        mods |= TSM_SHIFT_MASK;
+    }
+    if ((event.modifiers & KeyModifierCtrl) != 0) {
+        mods |= TSM_CONTROL_MASK;
+    }
+    if ((event.modifiers & KeyModifierAlt) != 0) {
+        mods |= TSM_ALT_MASK;
+    }
+    if ((event.modifiers & KeyModifierMeta) != 0) {
+        mods |= TSM_LOGO_MASK;
+    }
+    const std::uint32_t keysym = event.keysym == kKeysymNone ? XKB_KEY_NoSymbol : event.keysym;
+    const std::uint32_t ascii = event.ascii == kKeysymNone ? XKB_KEY_NoSymbol : event.ascii;
+    const std::uint32_t unicode = event.unicode == kUnicodeNone ? TSM_VTE_INVALID : event.unicode;
+    return tsm_vte_handle_keyboard(impl_->vte, keysym, ascii, mods, unicode);
 }
 
 void TerminalEmulator::set_output_callback(OutputCallback callback, void *context)

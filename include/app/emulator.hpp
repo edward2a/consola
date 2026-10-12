@@ -7,6 +7,7 @@
 #include <memory>
 #include <span>
 
+#include <app/key_event.hpp>
 #include <app/terminal_style.hpp>
 
 namespace consola {
@@ -75,6 +76,10 @@ public:
 
     void feed(std::span<const std::byte> data);
     void resize(int cols, int rows);
+
+    // Encode a key with libtsm and deliver the bytes through the output
+    // callback (DIP 2.6). Returns true if the key produced output.
+    bool handle_keyboard(const KeyEvent &event);
 
     // Invoked synchronously during feed(); the span is valid only for the
     // duration of the call, and the callback must not throw.

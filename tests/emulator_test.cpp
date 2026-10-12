@@ -122,5 +122,30 @@ int main()
         return EXIT_FAILURE;
     }
 
+    // Keyboard encoding goes through libtsm (DIP 2.6).
+    g_output.clear();
+    consola::KeyEvent ctrl_c;
+    ctrl_c.keysym = 'c';
+    ctrl_c.ascii = 'c';
+    ctrl_c.modifiers = consola::KeyModifierCtrl;
+    if (!emulator.handle_keyboard(ctrl_c) || g_output != std::string(1, '\x03')) {
+        return EXIT_FAILURE;
+    }
+
+    g_output.clear();
+    consola::KeyEvent text;
+    text.keysym = 'a';
+    text.unicode = 'a';
+    if (!emulator.handle_keyboard(text) || g_output != "a") {
+        return EXIT_FAILURE;
+    }
+
+    g_output.clear();
+    consola::KeyEvent left;
+    left.keysym = 0xff51; // XKB_KEY_Left
+    if (!emulator.handle_keyboard(left) || g_output != "\x1b[D") {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

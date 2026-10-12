@@ -117,6 +117,7 @@ endif()
 
 add_library(terminal_ui STATIC
     src/ui/application.cpp
+    src/ui/key_translator.cpp
     src/ui/terminal_widget.cpp
 )
 target_link_libraries(terminal_ui PUBLIC terminal_core)
