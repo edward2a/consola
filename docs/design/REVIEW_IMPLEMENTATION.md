@@ -360,3 +360,21 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   success. A `CONSOLA_EXIT_AFTER_MS` test hook closes the window headlessly;
   verified against a SIGHUP-ignoring shell (escalation + reap, rc 0, no
   lingering child).
+- **S3-CS1 — layout tree and core operations (§3.1, §3.2)**:
+  `include/layout/layout_tree.hpp` and `src/layout/layout_tree.cpp` add a
+  FLTK-independent binary split tree over `TerminalId` leaves. `LayoutNode` is
+  a `std::variant<SplitNode, TerminalNode>`; nodes use stable `NodeId` values
+  with parent links, never pointers. Operations: `split_terminal`
+  (horizontal/vertical, ratio in (0, 1)), `remove` (collapses the parent so the
+  sibling takes the freed space), `find_parent`, `focus`, `equalize`, and a
+  depth-first `terminals()` walk. `Orientation::horizontal` means a horizontal
+  divider (children stacked top to bottom) and `vertical` means a vertical
+  divider (children left to right), matching Terminator's `split_horiz`
+  (`VPaned`) / `split_vert` (`HPaned`). Rectangle calculation (§3.3) is
+  deferred to S3-CS2. Tests: empty/single/nested/repeated splits, removal and
+  root collapse, split rejections (absent/duplicate target; ratio 0, 1,
+  negative, > 1, NaN), focus, and focus migration. Review fixes: focus migrates
+  to the sibling subtree's first depth-first leaf when the sibling is itself a
+  split (previously focus was dropped); non-finite split ratios are rejected.
+  `layout_test` is wired into CTest; Debug and ASan/UBSan suites pass 10/10;
+  clang-format/clang-tidy clean.
