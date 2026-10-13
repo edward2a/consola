@@ -220,8 +220,11 @@ void TerminalWidget::draw()
 
     const CursorState cursor = emulator_.cursor();
     cursor_style_ = cursor.style;
+    // libtsm clamps the cursor to the last row when drawing, so clamp before
+    // computing the viewport row (DIP 2.2, 2.4).
+    const int cursor_y = clamp_int(cursor.y, 0, emulator_.rows() - 1);
     const int viewport_row =
-        emulator_.scrollback_line_count() - emulator_.scrollback_line_pos() + cursor.y;
+        emulator_.scrollback_line_count() - emulator_.scrollback_line_pos() + cursor_y;
     cursor_visible_ = !cursor.hidden && viewport_row >= 0 && viewport_row < emulator_.rows();
     cursor_row_ = clamp_int(viewport_row, 0, emulator_.rows() - 1);
     cursor_column_ = clamp_int(cursor.x, 0, emulator_.columns() - 1);
@@ -481,6 +484,11 @@ int TerminalWidget::handle(int event)
                 return 1;
             }
         }
+        // A byte-producing key returns the view to live (DIP 2.9).
+        if (emulator_.scrollback_line_pos() != emulator_.scrollback_line_count()) {
+            emulator_.scroll_to_bottom();
+            full_redraw_requested_ = true;
+        }
         // The terminal consumes every key; libtsm encodes those it knows.
         dispatch_fltk_key(emulator_);
         return 1;
@@ -639,7 +647,14 @@ int TerminalWidget::handle_wheel()
         emulator_.handle_mouse(event);
         return 1;
     }
-    // Shift+wheel always scrolls scrollback, even while reporting (DIP 2.9).
+    // On the alternate screen with reporting off, the wheel sends Up/Down keys
+    // (DIP 2.9); otherwise it scrolls scrollback (Shift+wheel always scrolls).
+    if (!shift && emulator_.alternate_screen()) {
+        KeyEvent key;
+        key.keysym = Fl::event_dy() < 0 ? 0xff52U : 0xff54U; // XKB_KEY_Up / Down
+        emulator_.handle_keyboard(key);
+        return 1;
+    }
     emulator_.scroll_lines(Fl::event_dy() < 0 ? 3 : -3);
     full_redraw_requested_ = true;
     redraw();

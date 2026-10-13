@@ -489,6 +489,11 @@ int TerminalEmulator::scrollback_line_pos() const
     return static_cast<int>(tsm_screen_sb_get_line_pos(impl_->screen));
 }
 
+bool TerminalEmulator::alternate_screen() const
+{
+    return (tsm_screen_get_flags(impl_->screen) & TSM_SCREEN_ALTERNATE) != 0;
+}
+
 void TerminalEmulator::set_max_scrollback(int lines)
 {
     const int clamped = std::max(0, lines);

@@ -126,6 +126,7 @@ public:
     [[nodiscard]] CursorState cursor() const;
     [[nodiscard]] int scrollback_line_count() const;
     [[nodiscard]] int scrollback_line_pos() const;
+    [[nodiscard]] bool alternate_screen() const;
 
     // Scrollback control (DIP 2.9). Positive delta scrolls toward older lines.
     void set_max_scrollback(int lines);

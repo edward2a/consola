@@ -333,4 +333,10 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   live). `application.cpp` sets a 10,000-line scrollback and updates the window
   label from the title callback. Tests cover scrollback count/position and
   OSC 0/2 titles. **Carry**: #21 (how URL detection reads screen text), the
-  audible/visual bell (Stage 6), and scrollbar dragging/interaction.
+  audible/visual bell (Stage 6), and scrollbar dragging/interaction. Review
+  fixes: the cursor row is clamped before the viewport-row calculation (libtsm
+  clamps the cursor when drawing); a byte-producing key returns the view to
+  live; the wheel on the alternate screen with reporting off sends Up/Down
+  keys. **Carry**: the scrollbar is drawn over the rightmost cell area and is
+  not yet draggable (§2.9), and dynamic scrollback-cap changes are not tracked
+  independently.

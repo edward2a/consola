@@ -261,5 +261,14 @@ int main()
         return EXIT_FAILURE;
     }
 
+    emulator.feed(as_bytes("\x1b[?1049h"));
+    if (!emulator.alternate_screen()) {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b[?1049l"));
+    if (emulator.alternate_screen()) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }
