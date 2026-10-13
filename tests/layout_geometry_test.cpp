@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include <layout/layout_geometry.hpp>
@@ -197,6 +198,23 @@ void test_undersized_clipping()
     check_tiling(result);
 }
 
+void test_partial_clip_nonzero_origin()
+{
+    LayoutTree tree(tid(1));
+    tree.split_terminal(tid(1), Orientation::vertical, tid(2), 0.5F);
+    const LayoutResult result = consola::compute_layout(tree, Rect{10, 5, 40, 22}, kMetrics);
+
+    CHECK(result.content == Rect(10, 5, 40, 22));
+    CHECK(result.canvas == Rect(10, 5, 54, 22));
+    CHECK(find_pane(result, 1)->logical == Rect(10, 5, 26, 22));
+    CHECK(find_pane(result, 1)->visible == Rect(10, 5, 26, 22));
+    CHECK(find_pane(result, 2)->logical == Rect(38, 5, 26, 22));
+    CHECK(find_pane(result, 2)->visible == Rect(38, 5, 12, 22));
+    CHECK(result.dividers[0].rect == Rect(36, 5, 2, 22));
+    CHECK(result.dividers[0].visible == Rect(36, 5, 2, 22));
+    check_tiling(result);
+}
+
 void test_zero_area_clipping()
 {
     LayoutTree tree(tid(1));
@@ -263,6 +281,34 @@ void test_negative_content_normalized()
     CHECK(result.panes[0].visible == Rect(10, 10, 0, 0));
 }
 
+void test_extreme_metrics_clamped()
+{
+    const int maximum = std::numeric_limits<int>::max();
+    const LayoutMetrics huge{.cell_width = maximum,
+                             .cell_height = maximum,
+                             .pane_border = maximum,
+                             .scrollbar_width = maximum,
+                             .divider_thickness = maximum};
+    LayoutTree tree(tid(1));
+    CHECK(consola::minimum_size(tree, huge) == Size{maximum, maximum});
+
+    const LayoutResult result = consola::compute_layout(tree, Rect{0, 0, 10, 10}, huge);
+    CHECK(result.canvas == Rect(0, 0, maximum, maximum));
+    CHECK(result.panes[0].logical == Rect(0, 0, maximum, maximum));
+    CHECK(result.panes[0].visible == Rect(0, 0, 10, 10));
+}
+
+void test_extreme_origin()
+{
+    const int minimum = std::numeric_limits<int>::min();
+    LayoutTree tree(tid(1));
+    const LayoutResult result =
+        consola::compute_layout(tree, Rect{minimum, minimum, 10, 10}, kMetrics);
+
+    CHECK(result.canvas == Rect(minimum, minimum, 26, 22));
+    CHECK(result.panes[0].visible == Rect(minimum, minimum, 10, 10));
+}
+
 } // namespace
 
 int main()
@@ -274,11 +320,14 @@ int main()
     test_nested_tiling();
     test_boundary_sized();
     test_undersized_clipping();
+    test_partial_clip_nonzero_origin();
     test_zero_area_clipping();
     test_ratio_preserved_across_resize();
     test_divider_clamped_to_minimums();
     test_empty_tree();
     test_negative_content_normalized();
+    test_extreme_metrics_clamped();
+    test_extreme_origin();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d layout geometry check(s) failed\n", g_failures);

@@ -378,3 +378,28 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   split (previously focus was dropped); non-finite split ratios are rejected.
   `layout_test` is wired into CTest; Debug and ASan/UBSan suites pass 10/10;
   clang-format/clang-tidy clean.
+- **S3-CS2 — layout rectangle calculation (§3.3)**:
+  `include/layout/layout_geometry.hpp` and `src/layout/layout_geometry.cpp`
+  turn a content rectangle plus the tree into one rectangle per terminal leaf,
+  independent of FLTK. `LayoutMetrics` carries the UI-supplied cell size and
+  pane chrome (border, scrollbar, divider); `minimum_size()` returns the
+  content-only minimum (two columns by one row per leaf plus chrome, combined
+  bottom-up: sum along the split axis plus divider thickness, max on the other
+  axis) and the caller adds window/tab chrome. `compute_layout()` tiles the
+  content with whole pixels and no gaps/overlaps, clamps divider positions to
+  both subtree minimums while leaving stored ratios untouched, and on an
+  undersized or zero-area content lays out at max(actual, minimum) per axis and
+  clips each pane to the content area anchored top-left. `PaneRect` exposes the
+  logical rectangle (for deriving rows/columns, §2.11) and the visible
+  intersection (for clipping drawing and hit-testing); `DividerRect` exposes the
+  same for split dividers, for §3.5. Geometry uses 64-bit intermediates with
+  results clamped to the int range so extreme metrics/origins cannot overflow.
+  Subtree minimums are computed once per call and cached. Tests: single,
+  vertical/horizontal/nested tiling, boundary-sized layouts, undersized and
+  zero-area clipping (including a non-zero origin), ratio preservation across
+  resizes, divider clamping, empty tree, negative content, and extreme
+  metrics/origins. `layout_geometry_test` is wired into CTest; Debug and
+  ASan/UBSan suites pass 11/11; clang-format/clang-tidy clean. Review fixes:
+  64-bit intermediate geometry with clamping; per-call minimum caching (removes
+  quadratic recomputation); divider `visible` intersection added; added
+  non-zero-origin partial-clip and extreme-value tests.

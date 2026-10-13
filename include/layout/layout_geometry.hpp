@@ -55,11 +55,13 @@ struct PaneRect {
     Rect visible;
 };
 
-// A split's divider strip, for hit-testing and drag-resize (DIP 3.5).
+// A split's divider strip, for hit-testing and drag-resize (DIP 3.5). `visible`
+// is its intersection with the content area, matching PaneRect.
 struct DividerRect {
     NodeId split;
     Orientation orientation;
     Rect rect;
+    Rect visible;
 };
 
 struct LayoutResult {

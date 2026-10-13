@@ -4,9 +4,24 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <unordered_map>
 
 namespace consola {
 namespace {
+
+constexpr int kIntMax = std::numeric_limits<int>::max();
+
+// Geometry is computed with 64-bit intermediates so large metrics or deeply
+// nested trees cannot overflow the int rectangles. Unrepresentable results are
+// clamped to the int range; real content areas are far below it.
+int clamp_size(long long value)
+{
+    if (value < 0) {
+        return 0;
+    }
+    return value > kIntMax ? kIntMax : static_cast<int>(value);
+}
 
 int non_negative(int value)
 {
@@ -15,29 +30,44 @@ int non_negative(int value)
 
 Size leaf_minimum(const LayoutMetrics &metrics)
 {
-    const int cell_width = std::max(1, metrics.cell_width);
-    const int cell_height = std::max(1, metrics.cell_height);
-    const int border = non_negative(metrics.pane_border);
-    const int scrollbar = non_negative(metrics.scrollbar_width);
-    return Size{(2 * cell_width) + (2 * border) + scrollbar, cell_height + (2 * border)};
+    const long long cell_width = std::max<long long>(1, metrics.cell_width);
+    const long long cell_height = std::max<long long>(1, metrics.cell_height);
+    const long long border = non_negative(metrics.pane_border);
+    const long long scrollbar = non_negative(metrics.scrollbar_width);
+    return Size{clamp_size((2 * cell_width) + (2 * border) + scrollbar),
+                clamp_size(cell_height + (2 * border))};
 }
 
-Size node_minimum(const LayoutTree &tree, NodeId id, const LayoutMetrics &metrics)
+// Bottom-up subtree minimums, computed once per layout call and cached by node.
+Size build_minimums(const LayoutTree &tree, NodeId id, const LayoutMetrics &metrics,
+                    std::unordered_map<std::uint64_t, Size> &cache)
 {
     if (tree.terminal(id) != nullptr) {
-        return leaf_minimum(metrics);
+        const Size size = leaf_minimum(metrics);
+        cache.emplace(id.value, size);
+        return size;
     }
     const SplitNode *split = tree.split(id);
     if (split == nullptr) {
-        return Size{};
+        const Size size{};
+        cache.emplace(id.value, size);
+        return size;
     }
-    const Size first = node_minimum(tree, split->first, metrics);
-    const Size second = node_minimum(tree, split->second, metrics);
-    const int divider = non_negative(metrics.divider_thickness);
+
+    const Size first = build_minimums(tree, split->first, metrics, cache);
+    const Size second = build_minimums(tree, split->second, metrics, cache);
+    const long long divider = non_negative(metrics.divider_thickness);
+
+    Size size;
     if (split->orientation == Orientation::horizontal) {
-        return Size{std::max(first.width, second.width), first.height + divider + second.height};
+        size = Size{std::max(first.width, second.width),
+                    clamp_size(static_cast<long long>(first.height) + divider + second.height)};
+    } else {
+        size = Size{clamp_size(static_cast<long long>(first.width) + divider + second.width),
+                    std::max(first.height, second.height)};
     }
-    return Size{first.width + divider + second.width, std::max(first.height, second.height)};
+    cache.emplace(id.value, size);
+    return size;
 }
 
 int split_extent(int available, float ratio, int first_minimum, int second_minimum)
@@ -68,7 +98,7 @@ Rect intersect(const Rect &a, const Rect &b)
 }
 
 void place(const LayoutTree &tree, NodeId id, const Rect &rect, const LayoutMetrics &metrics,
-           LayoutResult &out)
+           const std::unordered_map<std::uint64_t, Size> &minimums, LayoutResult &out)
 {
     if (const TerminalNode *leaf = tree.terminal(id)) {
         out.panes.push_back(
@@ -80,8 +110,8 @@ void place(const LayoutTree &tree, NodeId id, const Rect &rect, const LayoutMetr
         return;
     }
 
-    const Size first_min = node_minimum(tree, split->first, metrics);
-    const Size second_min = node_minimum(tree, split->second, metrics);
+    const Size first_min = minimums.at(split->first.value);
+    const Size second_min = minimums.at(split->second.value);
     const int divider = non_negative(metrics.divider_thickness);
 
     if (split->orientation == Orientation::horizontal) {
@@ -94,11 +124,13 @@ void place(const LayoutTree &tree, NodeId id, const Rect &rect, const LayoutMetr
         const Rect second_rect{rect.x, rect.y + first + divider, rect.width,
                                non_negative(rect.height - first - divider)};
         if (divider > 0) {
-            out.dividers.push_back(
-                DividerRect{.split = id, .orientation = split->orientation, .rect = divider_rect});
+            out.dividers.push_back(DividerRect{.split = id,
+                                               .orientation = split->orientation,
+                                               .rect = divider_rect,
+                                               .visible = Rect{}});
         }
-        place(tree, split->first, first_rect, metrics, out);
-        place(tree, split->second, second_rect, metrics, out);
+        place(tree, split->first, first_rect, metrics, minimums, out);
+        place(tree, split->second, second_rect, metrics, minimums, out);
     } else {
         const int available = non_negative(rect.width - divider);
         const int first = split_extent(available, split->ratio, first_min.width, second_min.width);
@@ -108,11 +140,13 @@ void place(const LayoutTree &tree, NodeId id, const Rect &rect, const LayoutMetr
         const Rect second_rect{rect.x + first + divider, rect.y,
                                non_negative(rect.width - first - divider), rect.height};
         if (divider > 0) {
-            out.dividers.push_back(
-                DividerRect{.split = id, .orientation = split->orientation, .rect = divider_rect});
+            out.dividers.push_back(DividerRect{.split = id,
+                                               .orientation = split->orientation,
+                                               .rect = divider_rect,
+                                               .visible = Rect{}});
         }
-        place(tree, split->first, first_rect, metrics, out);
-        place(tree, split->second, second_rect, metrics, out);
+        place(tree, split->first, first_rect, metrics, minimums, out);
+        place(tree, split->second, second_rect, metrics, minimums, out);
     }
 }
 
@@ -123,28 +157,46 @@ Size minimum_size(const LayoutTree &tree, const LayoutMetrics &metrics)
     if (tree.empty()) {
         return Size{};
     }
-    return node_minimum(tree, tree.root(), metrics);
+    std::unordered_map<std::uint64_t, Size> cache;
+    return build_minimums(tree, tree.root(), metrics, cache);
 }
 
 LayoutResult compute_layout(const LayoutTree &tree, const Rect &content,
                             const LayoutMetrics &metrics)
 {
     LayoutResult result;
-    result.content =
-        Rect{content.x, content.y, non_negative(content.width), non_negative(content.height)};
+
+    // Normalize the content area and keep origin + extent representable in int
+    // so every endpoint computed below stays overflow-free.
+    long long origin_x = content.x;
+    long long origin_y = content.y;
+    const long long width = non_negative(content.width);
+    const long long height = non_negative(content.height);
+    origin_x = std::min(origin_x, static_cast<long long>(kIntMax) - width);
+    origin_y = std::min(origin_y, static_cast<long long>(kIntMax) - height);
+    result.content = Rect{static_cast<int>(origin_x), static_cast<int>(origin_y),
+                          static_cast<int>(width), static_cast<int>(height)};
     if (tree.empty()) {
         result.canvas = result.content;
         return result;
     }
 
-    const Size minimum = minimum_size(tree, metrics);
-    result.canvas =
-        Rect{result.content.x, result.content.y, std::max(result.content.width, minimum.width),
-             std::max(result.content.height, minimum.height)};
+    std::unordered_map<std::uint64_t, Size> minimums;
+    const Size minimum = build_minimums(tree, tree.root(), metrics, minimums);
+    const long long canvas_width = std::min(std::max(width, static_cast<long long>(minimum.width)),
+                                            static_cast<long long>(kIntMax) - origin_x);
+    const long long canvas_height =
+        std::min(std::max(height, static_cast<long long>(minimum.height)),
+                 static_cast<long long>(kIntMax) - origin_y);
+    result.canvas = Rect{static_cast<int>(origin_x), static_cast<int>(origin_y),
+                         static_cast<int>(canvas_width), static_cast<int>(canvas_height)};
 
-    place(tree, tree.root(), result.canvas, metrics, result);
+    place(tree, tree.root(), result.canvas, metrics, minimums, result);
     for (PaneRect &pane : result.panes) {
         pane.visible = intersect(pane.logical, result.content);
+    }
+    for (DividerRect &divider : result.dividers) {
+        divider.visible = intersect(divider.rect, result.content);
     }
     return result;
 }
