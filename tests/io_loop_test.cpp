@@ -721,6 +721,42 @@ bool test_output_reaches_emulator()
     return true;
 }
 
+bool test_fail_session_terminates()
+{
+    Harness harness;
+    harness.loop->start();
+
+    const consola::TerminalId id{12};
+    if (!harness.launch(id, "/bin/cat", {})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+
+    // A required-reply overflow fails the session through termination/reaping.
+    if (!harness.loop->fail_session(id, consola::SessionError::reply_overflow)) {
+        return false;
+    }
+    const Drain drained = drain_session(harness, id, 5000, true);
+    if (!drained.exited) {
+        std::printf("failed session did not exit\n");
+        return false;
+    }
+
+    harness.loop->remove(id);
+    wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 5000, event);
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -767,6 +803,10 @@ int main()
     }
     if (!test_output_reaches_emulator()) {
         std::printf("test_output_reaches_emulator failed\n");
+        return 1;
+    }
+    if (!test_fail_session_terminates()) {
+        std::printf("test_fail_session_terminates failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");

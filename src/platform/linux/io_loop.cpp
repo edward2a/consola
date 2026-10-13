@@ -148,7 +148,15 @@ bool group_in_session(pid_t pgid, pid_t session_id, int master_fd)
 }
 
 struct LoopCommand {
-    enum class Kind : std::uint8_t { add, terminate, remove, write_pending, resume, shutdown };
+    enum class Kind : std::uint8_t {
+        add,
+        terminate,
+        fail,
+        remove,
+        write_pending,
+        resume,
+        shutdown
+    };
 
     Kind kind = Kind::add;
     TerminalSession *session = nullptr;
@@ -158,6 +166,7 @@ struct LoopCommand {
     int exit_fd = -1;
     std::int64_t process_id = -1;
     bool drain_output_on_close = false;
+    SessionError error = SessionError::none;
     TerminalId id;
 };
 
@@ -175,6 +184,7 @@ public:
              TerminalId id, bool drain_output_on_close, SessionInboundQueue &inbound,
              SessionOutboundQueue &outbound) override;
     bool terminate(TerminalId id) override;
+    bool fail_session(TerminalId id, SessionError error) override;
     bool remove(TerminalId id) override;
     bool write_pending(TerminalId id) override;
     bool resume(TerminalId id) override;
@@ -425,6 +435,24 @@ bool LinuxIoLoop::remove(TerminalId id)
     return true;
 }
 
+bool LinuxIoLoop::fail_session(TerminalId id, SessionError error)
+{
+    if (!available_) {
+        return false;
+    }
+    LoopCommand *slot = commands_.prepare_push();
+    if (slot == nullptr) {
+        return false;
+    }
+    *slot = LoopCommand{};
+    slot->kind = LoopCommand::Kind::fail;
+    slot->error = error;
+    slot->id = id;
+    commands_.commit_push();
+    signal_loop();
+    return true;
+}
+
 bool LinuxIoLoop::write_pending(TerminalId id)
 {
     if (!available_) {
@@ -603,6 +631,14 @@ void LinuxIoLoop::drain_commands()
         case LoopCommand::Kind::terminate: {
             Registered *session = find(command.id);
             if (session != nullptr) {
+                start_termination(*session);
+            }
+            break;
+        }
+        case LoopCommand::Kind::fail: {
+            Registered *session = find(command.id);
+            if (session != nullptr) {
+                log(LogLevel::Warning, "failing session after a required-reply overflow");
                 start_termination(*session);
             }
             break;

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <FL/Fl_Widget.H>
@@ -35,6 +36,14 @@ public:
     // changes for existing content are out of scope (DIP 2.3); the emulator
     // palette is fixed at construction, so this only affects font metrics.
     void set_style(TerminalStyle style);
+
+    // Copy the current selection to the clipboard / selection buffer (DIP 2.8).
+    void copy_selection();
+    // Request the clipboard and deliver an encoded paste through the callback.
+    void paste_clipboard();
+
+    using PasteCallback = void (*)(void *context, std::string_view bytes);
+    void set_paste_callback(PasteCallback paste_callback, void *context);
 
     [[nodiscard]] TerminalEmulator &emulator() noexcept
     {
@@ -107,6 +116,10 @@ private:
     bool selecting_ = false;
     bool word_selection_ = false;
     int pressed_button_ = -1;
+
+    // Clipboard (DIP 2.8).
+    PasteCallback paste_callback_ = nullptr;
+    void *paste_context_ = nullptr;
 };
 
 } // namespace consola

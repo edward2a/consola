@@ -52,6 +52,11 @@ public:
     // path.
     virtual bool terminate(TerminalId id) = 0;
 
+    // Fail a session through the normal termination/reaping path (DIP 1.7),
+    // e.g. when a required automatic reply cannot fit the outbound budget. The
+    // caller is responsible for the visible failure indication.
+    virtual bool fail_session(TerminalId id, SessionError error) = 0;
+
     // Unregister a session. Acknowledged through LoopEvent::removed once its
     // `exited` event has been published, any pending termination signal
     // sequence has completed and its poll entries are retired; the UI may then

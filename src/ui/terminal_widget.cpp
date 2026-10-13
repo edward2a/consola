@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <FL/Fl.H>
@@ -130,6 +131,28 @@ void TerminalWidget::set_style(TerminalStyle style)
     update_metrics();
     full_redraw_requested_ = true;
     redraw();
+}
+
+void TerminalWidget::copy_selection()
+{
+    const std::string text = emulator_.selection_copy();
+    if (text.empty()) {
+        return;
+    }
+    Fl::copy(text.data(), static_cast<int>(text.size()), 1); // clipboard
+    Fl::copy(text.data(), static_cast<int>(text.size()), 0); // primary selection
+}
+
+void TerminalWidget::paste_clipboard()
+{
+    // Requests the clipboard; FLTK delivers it as an FL_PASTE event.
+    Fl::paste(*this, 1);
+}
+
+void TerminalWidget::set_paste_callback(PasteCallback paste_callback, void *context)
+{
+    paste_callback_ = paste_callback;
+    paste_context_ = context;
 }
 
 void TerminalWidget::resize(int x, int y, int w, int h)
@@ -397,10 +420,36 @@ int TerminalWidget::handle(int event)
         return handle_release();
     case FL_MOUSEWHEEL:
         return handle_wheel();
-    case FL_KEYDOWN:
+    case FL_KEYDOWN: {
+        // Ctrl+Shift+C/V are the default copy/paste shortcuts (Stage 5 config).
+        const int state = Fl::event_state();
+        const int key = Fl::event_key();
+        if ((state & FL_CTRL) != 0 && (state & FL_SHIFT) != 0) {
+            if (key == 'c' || key == 'C') {
+                copy_selection();
+                return 1;
+            }
+            if (key == 'v' || key == 'V') {
+                paste_clipboard();
+                return 1;
+            }
+        }
         // The terminal consumes every key; libtsm encodes those it knows.
         dispatch_fltk_key(emulator_);
         return 1;
+    }
+    case FL_PASTE: {
+        const char *text = Fl::event_text();
+        const int length = Fl::event_length();
+        if (paste_callback_ != nullptr && text != nullptr && length > 0) {
+            const PasteCapture capture = emulator_.capture_paste(
+                std::string_view(text, static_cast<std::size_t>(length)), style_.max_paste_bytes);
+            if (capture.ok) {
+                paste_callback_(paste_context_, capture.bytes);
+            }
+        }
+        return 1;
+    }
     default:
         return 0;
     }

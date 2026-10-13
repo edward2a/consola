@@ -300,3 +300,18 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   (GUI click/focus test), #16, wheel scrollback and Shift+wheel while reporting
   (S2-CS7), copy/paste wiring (S2-CS6), and selection coordinates with
   scrollback.
+- **S2-CS6 — clipboard and paste capture (§2.8)**: `TerminalEmulator` adds
+  `capture_paste(text, max_bytes)`: it runs `tsm_vte_paste()` once with the
+  write callback redirected into a bounded buffer (bracketed-paste markers
+  included when mode 2004 is set) and returns `PasteCapture{ok, bytes}`,
+  rejecting an oversized source, an over-limit encoded result, or an empty
+  capture. `TerminalStyle` gains `max_paste_bytes` (16 MiB). `TerminalWidget`
+  copies the selection to the clipboard and primary buffer (`Fl::copy`),
+  requests the clipboard for paste (`Fl::paste` -> `FL_PASTE` -> capture ->
+  `PasteCallback`), and intercepts Ctrl+Shift+C/V. `IoLoop::fail_session()`
+  fails a session through the normal termination/reaping path (for
+  `reply_overflow`). Tests: bracketed/unbracketed/oversized/empty capture and
+  fail-session termination. **Deferred to Stage 4** (needs the session
+  wiring): the streaming paste transport (queue-fed chunks, cancel-paste,
+  `paste_finished`, deferred keys/replies, reserve integration) and watchlist
+  #8 (bracketed-paste injection) / #9 (framing and mode exposure).

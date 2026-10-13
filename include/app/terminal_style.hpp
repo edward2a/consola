@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -51,6 +52,8 @@ struct TerminalStyle {
     int font_size = 14;
     // Characters that form a word for double-click selection (DIP 2.7).
     std::string word_chars{"-A-Za-z0-9,./?%&#:_=+@~"};
+    // Maximum encoded paste size including framing (DIP 1.7/2.8).
+    std::size_t max_paste_bytes = std::size_t{16} * 1024 * 1024;
 };
 
 inline const TerminalStyle &default_terminal_style()

@@ -208,5 +208,23 @@ int main()
         return EXIT_FAILURE;
     }
 
+    // Paste capture: bracketed mode wraps the text; unbracketed does not.
+    emulator.feed(as_bytes("\x1b[?2004h"));
+    const consola::PasteCapture bracketed = emulator.capture_paste("hi", 1024);
+    if (!bracketed.ok || bracketed.bytes != "\x1b[200~hi\x1b[201~") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b[?2004l"));
+    const consola::PasteCapture plain = emulator.capture_paste("hi", 1024);
+    if (!plain.ok || plain.bytes != "hi") {
+        return EXIT_FAILURE;
+    }
+    if (emulator.capture_paste("hi", 1).ok) {
+        return EXIT_FAILURE;
+    }
+    if (emulator.capture_paste("", 1024).ok) {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

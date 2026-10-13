@@ -65,6 +65,14 @@ struct CursorState {
     bool hidden = false;
 };
 
+// Result of capturing an encoded paste (DIP 2.8, 1.7). ok is false when the
+// source is oversized, the encoded result exceeds the limit, or the capture is
+// empty (tsm_vte_paste() fails silently).
+struct PasteCapture {
+    bool ok = false;
+    std::string bytes;
+};
+
 class TerminalEmulator {
 public:
     using OutputCallback = void (*)(void *context, std::span<const std::byte> bytes);
@@ -97,6 +105,12 @@ public:
     void selection_reset();
     [[nodiscard]] std::string selection_copy() const;
     void select_word(int column, int row, std::string_view word_chars);
+
+    // Encode text once through tsm_vte_paste() into a bounded capture (DIP 2.8,
+    // 1.7). No bytes are sent; the caller transports the encoded transaction.
+    // Rejects a source larger than max_bytes and an encoded result over the
+    // limit. text is NUL-terminated to libtsm, so embedded NULs truncate.
+    PasteCapture capture_paste(std::string_view text, std::size_t max_bytes);
 
     // Invoked synchronously during feed(); the span is valid only for the
     // duration of the call, and the callback must not throw.

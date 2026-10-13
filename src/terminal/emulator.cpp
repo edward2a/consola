@@ -22,6 +22,11 @@ struct TerminalEmulatorImpl {
     tsm_vte *vte = nullptr;
     TerminalEmulator::OutputCallback output_callback = nullptr;
     void *output_context = nullptr;
+    // Active paste capture (DIP 2.8, 1.7); when set, write-callback output is
+    // captured instead of forwarded.
+    std::string *capture = nullptr;
+    std::size_t capture_limit = 0;
+    bool capture_overflow = false;
 };
 
 namespace {
@@ -39,6 +44,14 @@ void log_callback([[maybe_unused]] void *data, [[maybe_unused]] const char *file
 void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size_t len, void *data)
 {
     auto *impl = static_cast<TerminalEmulatorImpl *>(data);
+    if (impl->capture != nullptr) {
+        if (impl->capture->size() + len > impl->capture_limit) {
+            impl->capture_overflow = true;
+            return;
+        }
+        impl->capture->append(u8, len);
+        return;
+    }
     if (impl->output_callback != nullptr) {
         impl->output_callback(
             impl->output_context,
@@ -339,6 +352,33 @@ void TerminalEmulator::select_word(int column, int row, std::string_view word_ch
     }
     selection_start(start, row);
     selection_target(end, row);
+}
+
+PasteCapture TerminalEmulator::capture_paste(std::string_view text, std::size_t max_bytes)
+{
+    if (text.size() > max_bytes) {
+        return {}; // reject oversized source before capture
+    }
+    std::string encoded;
+    encoded.reserve(text.size() + 12);
+    impl_->capture = &encoded;
+    impl_->capture_limit = max_bytes;
+    impl_->capture_overflow = false;
+
+    const std::string source(text);
+    tsm_vte_paste(impl_->vte, source.c_str());
+
+    impl_->capture = nullptr;
+    impl_->capture_limit = 0;
+    const bool overflow = impl_->capture_overflow;
+    impl_->capture_overflow = false;
+    if (overflow || encoded.empty()) {
+        return {};
+    }
+    PasteCapture result;
+    result.ok = true;
+    result.bytes = std::move(encoded);
+    return result;
 }
 
 void TerminalEmulator::set_output_callback(OutputCallback callback, void *context)
