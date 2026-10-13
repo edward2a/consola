@@ -85,6 +85,8 @@ endif()
 add_library(terminal_core STATIC
     src/app/log.cpp
     src/app/session_queue.cpp
+    src/app/tab.cpp
+    src/app/terminal_instance.cpp
     src/layout/layout_geometry.cpp
     src/layout/layout_tree.cpp
     src/terminal/emulator.cpp
@@ -116,6 +118,14 @@ if(NOT CONSOLA_OPENPTY_IN_LIBC)
     find_library(CONSOLA_LIBUTIL util REQUIRED)
     target_link_libraries(terminal_platform PRIVATE ${CONSOLA_LIBUTIL})
 endif()
+
+add_library(terminal_session STATIC
+    src/app/terminal_manager.cpp
+)
+target_include_directories(terminal_session PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_link_libraries(terminal_session PUBLIC terminal_core terminal_platform)
 
 add_library(terminal_ui STATIC
     src/ui/application.cpp

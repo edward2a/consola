@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -56,3 +57,14 @@ public:
 };
 
 } // namespace consola
+
+namespace std {
+
+template <> struct hash<consola::TerminalId> {
+    std::size_t operator()(const consola::TerminalId &id) const noexcept
+    {
+        return std::hash<std::uint64_t>{}(id.value);
+    }
+};
+
+} // namespace std

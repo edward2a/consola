@@ -26,6 +26,17 @@ target_link_libraries(consola_layout_geometry_test PRIVATE terminal_core)
 
 add_test(NAME layout_geometry_test COMMAND consola_layout_geometry_test)
 
+add_executable(consola_tab_test tab_test.cpp)
+target_link_libraries(consola_tab_test PRIVATE terminal_core)
+
+add_test(NAME tab_test COMMAND consola_tab_test)
+
+add_executable(consola_terminal_manager_test terminal_manager_test.cpp)
+target_link_libraries(consola_terminal_manager_test PRIVATE terminal_session)
+
+add_test(NAME terminal_manager_test COMMAND consola_terminal_manager_test)
+set_tests_properties(terminal_manager_test PROPERTIES TIMEOUT 60)
+
 add_executable(consola_key_translator_test key_translator_test.cpp)
 target_link_libraries(consola_key_translator_test PRIVATE terminal_ui)
 
