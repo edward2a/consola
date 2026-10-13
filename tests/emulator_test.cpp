@@ -182,6 +182,20 @@ int main()
     }
     emulator.feed(as_bytes("\x1b[?1000l"));
 
+    // A held-button drag move in SGR mode encodes button + 32.
+    g_output.clear();
+    emulator.feed(as_bytes("\x1b[?1002h\x1b[?1006h"));
+    consola::MouseEvent drag;
+    drag.cell_x = 1;
+    drag.cell_y = 2;
+    drag.button = consola::MouseButton::left;
+    drag.action = consola::MouseActionMoved;
+    drag.dragging = true;
+    if (!emulator.handle_mouse(drag) || g_output != "\x1b[<32;2;3M") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b[?1006l\x1b[?1002l"));
+
     // Selection and double-click word selection.
     emulator.selection_reset();
     emulator.selection_start(0, 0);

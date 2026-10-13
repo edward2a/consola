@@ -430,8 +430,8 @@ int TerminalWidget::handle_push()
         MouseEvent event;
         event.cell_x = column;
         event.cell_y = row;
-        event.pixel_x = Fl::event_x();
-        event.pixel_y = Fl::event_y();
+        event.pixel_x = Fl::event_x() - x();
+        event.pixel_y = Fl::event_y() - y();
         event.button = button;
         event.action = MouseActionPressed;
         event.modifiers = fltk_mouse_modifiers();
@@ -441,8 +441,10 @@ int TerminalWidget::handle_push()
 
     selecting_ = true;
     if (Fl::event_clicks() > 0) {
+        word_selection_ = true;
         emulator_.select_word(column, row, style_.word_chars);
     } else {
+        word_selection_ = false;
         emulator_.selection_start(column, row);
     }
     full_redraw_requested_ = true;
@@ -462,16 +464,18 @@ int TerminalWidget::handle_drag()
         MouseEvent event;
         event.cell_x = column;
         event.cell_y = row;
-        event.pixel_x = Fl::event_x();
-        event.pixel_y = Fl::event_y();
+        event.pixel_x = Fl::event_x() - x();
+        event.pixel_y = Fl::event_y() - y();
         event.button = static_cast<MouseButton>(pressed_button_ >= 0 ? pressed_button_ : 0);
         event.action = MouseActionMoved;
+        event.dragging = pressed_button_ >= 0;
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
         return 1;
     }
 
     if (selecting_) {
+        word_selection_ = false;
         emulator_.selection_target(column, row);
         full_redraw_requested_ = true;
         redraw();
@@ -489,8 +493,8 @@ int TerminalWidget::handle_release()
         MouseEvent event;
         event.cell_x = column;
         event.cell_y = row;
-        event.pixel_x = Fl::event_x();
-        event.pixel_y = Fl::event_y();
+        event.pixel_x = Fl::event_x() - x();
+        event.pixel_y = Fl::event_y() - y();
         event.button = static_cast<MouseButton>(pressed_button_ >= 0 ? pressed_button_ : 0);
         event.action = MouseActionReleased;
         event.modifiers = fltk_mouse_modifiers();
@@ -500,7 +504,11 @@ int TerminalWidget::handle_release()
     }
 
     if (selecting_) {
-        emulator_.selection_target(column, row);
+        // A double-click already selected the whole word; do not shorten it.
+        if (!word_selection_) {
+            emulator_.selection_target(column, row);
+        }
+        word_selection_ = false;
         selecting_ = false;
         full_redraw_requested_ = true;
         redraw();
@@ -518,15 +526,16 @@ int TerminalWidget::handle_wheel()
         MouseEvent event;
         event.cell_x = column;
         event.cell_y = row;
-        event.pixel_x = Fl::event_x();
-        event.pixel_y = Fl::event_y();
+        event.pixel_x = Fl::event_x() - x();
+        event.pixel_y = Fl::event_y() - y();
         event.button = Fl::event_dy() < 0 ? MouseButton::wheel_up : MouseButton::wheel_down;
         event.action = MouseActionPressed;
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
         return 1;
     }
-    // Scrollback scrolling lands in S2-CS7.
+    // Scrollback scrolling lands in S2-CS7 (including Shift+wheel while
+    // mouse reporting is active).
     return 0;
 }
 

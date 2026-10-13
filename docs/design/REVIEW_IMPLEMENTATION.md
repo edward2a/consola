@@ -292,6 +292,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   otherwise it drives selection (double-click selects a word, drag extends);
   selection changes force a full repaint because libtsm inverts selected cells
   in the draw callback and does not age them. Tests cover VT200 press encoding
-  and selection/word copy. **Carry**: #14 (GUI click/focus test), #16, wheel
-  scrollback (S2-CS7), copy/paste wiring (S2-CS6), and selection coordinates
-  with scrollback.
+  and selection/word copy. Review fixes: drag moves encode `button + 32`
+  (with a `dragging` flag distinguishing a drag from a hover move); pixel
+  coordinates are terminal-local; a double-click release no longer shortens the
+  word selection; `select_word()` validates the row; the word-class grammar is
+  documented as ASCII-only; the copy buffer is freed with RAII. **Carry**: #14
+  (GUI click/focus test), #16, wheel scrollback and Shift+wheel while reporting
+  (S2-CS7), copy/paste wiring (S2-CS6), and selection coordinates with
+  scrollback.

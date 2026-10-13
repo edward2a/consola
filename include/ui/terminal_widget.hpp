@@ -105,6 +105,7 @@ private:
 
     // Mouse/selection state (DIP 2.7).
     bool selecting_ = false;
+    bool word_selection_ = false;
     int pressed_button_ = -1;
 };
 

@@ -37,6 +37,8 @@ struct MouseEvent {
     MouseButton button = MouseButton::left;
     unsigned action = 0; // MouseAction bits
     unsigned modifiers = 0;
+    // True when a button is held during a move (a drag rather than a hover).
+    bool dragging = false;
 };
 
 } // namespace consola

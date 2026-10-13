@@ -217,6 +217,11 @@ bool TerminalEmulator::handle_mouse(const MouseEvent &event)
         button = TSM_MOUSE_BUTTON_WHEEL_DOWN;
         break;
     }
+    // libtsm encodes a button drag as button + 32; hover moves keep the low
+    // code so it emits the motion marker (DIP 2.7).
+    if (event.dragging) {
+        button += 32;
+    }
 
     unsigned int flags = 0;
     if ((event.modifiers & MouseModifierShift) != 0) {
@@ -266,23 +271,19 @@ void TerminalEmulator::selection_reset()
 
 std::string TerminalEmulator::selection_copy() const
 {
-    char *out = nullptr;
-    const int length = tsm_screen_selection_copy(impl_->screen, &out);
-    if (length < 0 || out == nullptr) {
-        if (out != nullptr) {
-            std::free(out);
-        }
+    char *raw = nullptr;
+    const int length = tsm_screen_selection_copy(impl_->screen, &raw);
+    const std::unique_ptr<char, void (*)(void *)> out(raw, &std::free);
+    if (length < 0 || raw == nullptr) {
         return {};
     }
-    std::string text(out, static_cast<std::size_t>(length));
-    std::free(out);
-    return text;
+    return {raw, static_cast<std::size_t>(length)};
 }
 
 void TerminalEmulator::select_word(int column, int row, std::string_view word_chars)
 {
     const int columns = this->columns();
-    if (columns <= 0) {
+    if (columns <= 0 || row < 0 || row >= this->rows()) {
         selection_reset();
         return;
     }
@@ -303,7 +304,8 @@ void TerminalEmulator::select_word(int column, int row, std::string_view word_ch
     };
     const auto in_word_chars = [&](char character) {
         // word_chars is a Terminator-style class: literal characters plus
-        // `a-z` ranges.
+        // `a-z` ranges. The grammar is ASCII-only; a descending range such as
+        // `z-a` matches nothing.
         for (std::size_t i = 0; i < word_chars.size(); ++i) {
             if (i + 2 < word_chars.size() && word_chars[i + 1] == '-') {
                 if (character >= word_chars[i] && character <= word_chars[i + 2]) {
