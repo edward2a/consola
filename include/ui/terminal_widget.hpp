@@ -77,6 +77,7 @@ private:
     void paint_cell(int column, int row, const Cell &cell);
     void collect_cell(int column, int row, const Cell &cell);
     void draw_cursor();
+    void draw_scrollbar();
     void event_cell(int &column, int &row) const;
     int handle_push();
     int handle_drag();

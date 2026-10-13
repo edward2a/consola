@@ -271,6 +271,7 @@ void TerminalWidget::draw()
     if (full_ || cursor_repaint_) {
         draw_cursor();
     }
+    draw_scrollbar();
 
     last_cursor_column_ = cursor_column_;
     last_cursor_row_ = cursor_row_;
@@ -408,6 +409,30 @@ void TerminalWidget::draw_cursor()
     }
 }
 
+void TerminalWidget::draw_scrollbar()
+{
+    const int lines = emulator_.scrollback_line_count();
+    if (lines <= 0) {
+        return;
+    }
+    const int bar_width = std::max(4, static_cast<int>(metrics_.cell_width / 4));
+    const int bar_x = x() + w() - bar_width;
+
+    fl_color(static_cast<unsigned char>(style_.foreground.r / 2),
+             static_cast<unsigned char>(style_.foreground.g / 2),
+             static_cast<unsigned char>(style_.foreground.b / 2));
+    fl_rectf(bar_x, y(), bar_width, h());
+    const int position = emulator_.scrollback_line_pos();
+    const int total = lines + emulator_.rows();
+    const int thumb_height = std::max(20, (h() * emulator_.rows()) / std::max(1, total));
+    // libtsm: pos 0 is the top, pos == lines is live/bottom.
+    const double fraction = static_cast<double>(position) / static_cast<double>(lines);
+    const int thumb_y = y() + static_cast<int>((h() - thumb_height) * fraction);
+
+    fl_color(style_.foreground.r, style_.foreground.g, style_.foreground.b);
+    fl_rectf(bar_x, thumb_y, bar_width, thumb_height);
+}
+
 int TerminalWidget::handle(int event)
 {
     switch (event) {
@@ -433,6 +458,26 @@ int TerminalWidget::handle(int event)
             }
             if (key == 'v' || key == 'V') {
                 paste_clipboard();
+                return 1;
+            }
+        }
+        if ((state & FL_SHIFT) != 0 && (state & FL_CTRL) == 0) {
+            // Shift+PageUp/PageDown/Home/End navigate scrollback (DIP 2.9).
+            bool scrolled = true;
+            if (key == FL_Page_Up) {
+                emulator_.scroll_page(1);
+            } else if (key == FL_Page_Down) {
+                emulator_.scroll_page(-1);
+            } else if (key == FL_Home) {
+                emulator_.scroll_to_top();
+            } else if (key == FL_End) {
+                emulator_.scroll_to_bottom();
+            } else {
+                scrolled = false;
+            }
+            if (scrolled) {
+                full_redraw_requested_ = true;
+                redraw();
                 return 1;
             }
         }
@@ -578,7 +623,8 @@ int TerminalWidget::handle_release()
 
 int TerminalWidget::handle_wheel()
 {
-    if (emulator_.mouse_tracking() != MouseTracking::disabled) {
+    const bool shift = (Fl::event_state() & FL_SHIFT) != 0;
+    if (!shift && emulator_.mouse_tracking() != MouseTracking::disabled) {
         int column = 0;
         int row = 0;
         event_cell(column, row);
@@ -593,9 +639,11 @@ int TerminalWidget::handle_wheel()
         emulator_.handle_mouse(event);
         return 1;
     }
-    // Scrollback scrolling lands in S2-CS7 (including Shift+wheel while
-    // mouse reporting is active).
-    return 0;
+    // Shift+wheel always scrolls scrollback, even while reporting (DIP 2.9).
+    emulator_.scroll_lines(Fl::event_dy() < 0 ? 3 : -3);
+    full_redraw_requested_ = true;
+    redraw();
+    return 1;
 }
 
 } // namespace consola

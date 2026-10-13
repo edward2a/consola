@@ -6,6 +6,8 @@
 #include <cstring>
 #include <filesystem>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <FL/Fl.H>
@@ -31,6 +33,18 @@ struct SmokeFeedContext {
     TerminalEmulator *emulator;
     TerminalWidget *terminal;
 };
+
+struct TitleContext {
+    Fl_Window *window;
+};
+
+void title_callback(void *data, std::string_view title)
+{
+    auto *context = static_cast<TitleContext *>(data);
+    const std::string text(title);
+    context->window->copy_label(text.c_str());
+    context->window->redraw();
+}
 
 void smoke_test_feed(void *data)
 {
@@ -94,6 +108,10 @@ int run_application(int argc, char **argv, bool smoke_test)
     Fl_Window window(640, 400, "consola");
 
     TerminalEmulator emulator;
+    emulator.set_max_scrollback(10000);
+    TitleContext title_context{.window = &window};
+    emulator.set_title_callback(&title_callback, &title_context);
+
     const char *banner = "consola\r\n";
     emulator.feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(banner),
                                              std::strlen(banner)));

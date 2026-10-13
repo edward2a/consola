@@ -233,5 +233,33 @@ int main()
     }
     emulator.feed(as_bytes("\x1b[?2004l"));
 
+    // Scrollback and title (DIP 2.9, 2.12).
+    emulator.set_max_scrollback(100);
+    for (int i = 0; i < 40; ++i) {
+        emulator.feed(as_bytes("line\r\n"));
+    }
+    const int scroll_count = emulator.scrollback_line_count();
+    if (scroll_count <= 0) {
+        return EXIT_FAILURE;
+    }
+    // libtsm: live/bottom is pos == count, top is pos == 0.
+    emulator.scroll_to_top();
+    if (emulator.scrollback_line_pos() != 0) {
+        return EXIT_FAILURE;
+    }
+    emulator.scroll_to_bottom();
+    if (emulator.scrollback_line_pos() != scroll_count) {
+        return EXIT_FAILURE;
+    }
+
+    emulator.feed(as_bytes("\x1b]0;hello\x07"));
+    if (emulator.title() != "hello") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]2;world\x1b\\"));
+    if (emulator.title() != "world") {
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }

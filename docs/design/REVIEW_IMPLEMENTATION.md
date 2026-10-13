@@ -322,3 +322,15 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   primary selection and a rejected paste is logged. **#9** remains partly open:
   bracketed vs unbracketed framing is test-verified, but libtsm exposes no
   mode-2004 getter.
+- **S2-CS7 — scrollback, title and bell (§2.9, §2.12, §2.8a)**:
+  `TerminalEmulator` exposes scrollback control (`set_max_scrollback`,
+  `scroll_lines/page`, `scroll_to_top/bottom`) plus the existing line
+  count/position; window title from OSC 0/2 via `tsm_vte_set_osc_cb()` with a
+  `TitleCallback`; and a no-op bell callback. `TerminalWidget` maps
+  Shift+PageUp/PageDown/Home/End to scrollback, scrolls on the wheel (and on
+  Shift+wheel even while mouse reporting is active), and draws a scrollbar
+  when scrollback exists (libtsm: position 0 is the top, position == count is
+  live). `application.cpp` sets a 10,000-line scrollback and updates the window
+  label from the title callback. Tests cover scrollback count/position and
+  OSC 0/2 titles. **Carry**: #21 (how URL detection reads screen text), the
+  audible/visual bell (Stage 6), and scrollbar dragging/interaction.

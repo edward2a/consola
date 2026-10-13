@@ -2,6 +2,7 @@
 
 #include <app/emulator.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdarg>
 #include <cstdio>
@@ -22,6 +23,9 @@ struct TerminalEmulatorImpl {
     tsm_vte *vte = nullptr;
     TerminalEmulator::OutputCallback output_callback = nullptr;
     void *output_context = nullptr;
+    TerminalEmulator::TitleCallback title_callback = nullptr;
+    void *title_context = nullptr;
+    std::string title;
     // Active paste capture (DIP 2.8, 1.7); when set, write-callback output is
     // captured instead of forwarded.
     std::string *capture = nullptr;
@@ -62,6 +66,29 @@ void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size
             impl->output_context,
             std::span<const std::byte>(reinterpret_cast<const std::byte *>(u8), len));
     }
+}
+
+void osc_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size_t len, void *data)
+{
+    auto *impl = static_cast<TerminalEmulatorImpl *>(data);
+    const std::string_view payload(u8, len);
+    const std::size_t separator = payload.find(';');
+    if (separator == std::string_view::npos) {
+        return;
+    }
+    const std::string_view command = payload.substr(0, separator);
+    if (command != "0" && command != "2") {
+        return;
+    }
+    impl->title.assign(payload.substr(separator + 1));
+    if (impl->title_callback != nullptr) {
+        impl->title_callback(impl->title_context, impl->title);
+    }
+}
+
+void bell_callback([[maybe_unused]] tsm_vte *vte, [[maybe_unused]] void *data)
+{
+    // Audible/visual bell arrives in Stage 6 (DIP 2.8a).
 }
 
 // Remove bracketed-paste framing markers from pasted text so a payload cannot
@@ -175,6 +202,9 @@ TerminalEmulator::TerminalEmulator(const TerminalStyle &style)
     apply_palette(impl_->vte, style);
     // Backspace sends DEL (0x7f), like xterm/VTE (DIP 2.6).
     tsm_vte_set_backspace_sends_delete(impl_->vte, true);
+    // Window title (OSC 0/2) and a no-op bell (DIP 2.12, 2.8a).
+    tsm_vte_set_osc_cb(impl_->vte, &osc_callback, impl_.get());
+    tsm_vte_set_bell_cb(impl_->vte, &bell_callback, impl_.get());
 }
 
 TerminalEmulator::~TerminalEmulator()
@@ -457,6 +487,51 @@ int TerminalEmulator::scrollback_line_count() const
 int TerminalEmulator::scrollback_line_pos() const
 {
     return static_cast<int>(tsm_screen_sb_get_line_pos(impl_->screen));
+}
+
+void TerminalEmulator::set_max_scrollback(int lines)
+{
+    const int clamped = std::max(0, lines);
+    tsm_screen_set_max_sb(impl_->screen, static_cast<unsigned int>(clamped));
+}
+
+void TerminalEmulator::scroll_lines(int delta)
+{
+    if (delta > 0) {
+        tsm_screen_sb_up(impl_->screen, static_cast<unsigned int>(delta));
+    } else if (delta < 0) {
+        tsm_screen_sb_down(impl_->screen, static_cast<unsigned int>(-delta));
+    }
+}
+
+void TerminalEmulator::scroll_page(int pages)
+{
+    if (pages > 0) {
+        tsm_screen_sb_page_up(impl_->screen, static_cast<unsigned int>(pages));
+    } else if (pages < 0) {
+        tsm_screen_sb_page_down(impl_->screen, static_cast<unsigned int>(-pages));
+    }
+}
+
+void TerminalEmulator::scroll_to_top()
+{
+    tsm_screen_sb_up(impl_->screen, static_cast<unsigned int>(scrollback_line_count()));
+}
+
+void TerminalEmulator::scroll_to_bottom()
+{
+    tsm_screen_sb_reset(impl_->screen);
+}
+
+const std::string &TerminalEmulator::title() const
+{
+    return impl_->title;
+}
+
+void TerminalEmulator::set_title_callback(TitleCallback callback, void *context)
+{
+    impl_->title_callback = callback;
+    impl_->title_context = context;
 }
 
 int TerminalEmulator::cursor_x_raw() const

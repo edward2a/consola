@@ -127,6 +127,18 @@ public:
     [[nodiscard]] int scrollback_line_count() const;
     [[nodiscard]] int scrollback_line_pos() const;
 
+    // Scrollback control (DIP 2.9). Positive delta scrolls toward older lines.
+    void set_max_scrollback(int lines);
+    void scroll_lines(int delta);
+    void scroll_page(int pages);
+    void scroll_to_top();
+    void scroll_to_bottom();
+
+    // Window title from OSC 0/2 (DIP 2.12).
+    using TitleCallback = void (*)(void *context, std::string_view title);
+    [[nodiscard]] const std::string &title() const;
+    void set_title_callback(TitleCallback callback, void *context);
+
     // Raw libtsm cursor position (not clamped); prefer cursor().
     [[nodiscard]] int cursor_x_raw() const;
     [[nodiscard]] int cursor_y_raw() const;
