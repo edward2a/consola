@@ -3,6 +3,7 @@
 #include <app/application.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -10,6 +11,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -34,6 +36,13 @@ bool g_smoke_timeout_ran = false;
 void smoke_test_exit([[maybe_unused]] void *data)
 {
     g_smoke_timeout_ran = true;
+    Fl::hide_all_windows();
+}
+
+// Test/CI hook: close the window after CONSOLA_EXIT_AFTER_MS to exercise the
+// window-close shutdown path headlessly.
+void exit_after_timeout([[maybe_unused]] void *data)
+{
     Fl::hide_all_windows();
 }
 
@@ -80,9 +89,11 @@ struct SessionHost {
     bool exited = false;
     bool closing = false;
     bool removed = false;
+    bool launch_failed = false;
 
     ~SessionHost()
     {
+        // Last resort if shutdown() was not run: terminate the child directly.
         if (result.session != nullptr) {
             result.session->terminate();
         }
@@ -116,8 +127,7 @@ struct SessionHost {
     static void poll_timer(void *context)
     {
         auto *host = static_cast<SessionHost *>(context);
-        host->poll();
-        if (!host->removed) {
+        if (!host->pump()) {
             Fl::repeat_timeout(0.016, &SessionHost::poll_timer, context);
         }
     }
@@ -144,7 +154,9 @@ struct SessionHost {
         worker.submit(std::move(request));
     }
 
-    void poll()
+    // Processes one poll cycle; returns true once the session is fully removed
+    // and the window has been hidden.
+    bool pump()
     {
         if (!launched && worker.try_pop(result)) {
             launched = true;
@@ -155,10 +167,10 @@ struct SessionHost {
             if (registered) {
                 added = true;
             } else {
+                launch_failed = true;
                 exited = true;
             }
         }
-
         if (added) {
             InboundMessage message;
             bool dirty = false;
@@ -194,7 +206,42 @@ struct SessionHost {
         if (closing && removed) {
             loop->shutdown();
             Fl::hide_all_windows();
+            return true;
         }
+        return false;
+    }
+
+    // Orderly shutdown: cancel startup, terminate the session through the loop
+    // (with SIGHUP/SIGKILL escalation), wait for removal, then stop the loop.
+    void shutdown()
+    {
+        worker.stop();
+        while (worker.try_pop(result)) {
+            if (result.session == nullptr) {
+                launch_failed = true;
+                continue;
+            }
+            if (added || removed) {
+                continue;
+            }
+            if (loop->add(*result.session, result.master_fd, result.exit_notification_fd,
+                          result.process_id, id, false, inbound, outbound)) {
+                added = true;
+            } else {
+                launch_failed = true;
+            }
+        }
+
+        if (added && !removed) {
+            closing = true;
+            loop->terminate(id);
+            for (int attempt = 0; attempt < 300 && !removed; ++attempt) {
+                pump();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        }
+        loop->shutdown();
+        loop->stop();
     }
 };
 
@@ -285,9 +332,21 @@ int run_application(int argc, char **argv, bool smoke_test)
         terminal.set_resize_callback(&SessionHost::resize_callback, host.get());
         host->start();
         Fl::add_timeout(0.016, &SessionHost::poll_timer, host.get());
+
+        if (const char *exit_after = std::getenv("CONSOLA_EXIT_AFTER_MS")) {
+            const int milliseconds = std::atoi(exit_after);
+            if (milliseconds > 0) {
+                Fl::add_timeout(static_cast<double>(milliseconds) / 1000.0, &exit_after_timeout,
+                                nullptr);
+            }
+        }
+
         Fl::run();
+
+        host->shutdown();
+        const bool failed = host->launch_failed;
         host.reset();
-        return EXIT_SUCCESS;
+        return failed ? EXIT_FAILURE : EXIT_SUCCESS;
     }
 
     log(LogLevel::Debug, "entering event loop");

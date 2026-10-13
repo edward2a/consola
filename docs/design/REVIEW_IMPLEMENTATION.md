@@ -351,4 +351,12 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   colour and attributes" (rendering + palette). Verified by running the app
   headless against a script shell (prints and exits): the app renders the
   output, detects the exit and exits 0. `terminal_ui` now links
-  `terminal_platform`.
+  `terminal_platform`. Review fixes: an orderly `SessionHost::shutdown()` runs
+  after the event loop — it cancels the startup worker (resolving late
+  successes), terminates the session through the loop (SIGHUP/SIGKILL
+  escalation), pumps until the removal acknowledgement, then stops the loop —
+  so closing the window mid-session reaps the child instead of leaking it; a
+  launch/registration failure returns `EXIT_FAILURE` instead of a silent
+  success. A `CONSOLA_EXIT_AFTER_MS` test hook closes the window headlessly;
+  verified against a SIGHUP-ignoring shell (escalation + reap, rc 0, no
+  lingering child).
