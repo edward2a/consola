@@ -638,7 +638,11 @@ void LinuxIoLoop::drain_commands()
         case LoopCommand::Kind::fail: {
             Registered *session = find(command.id);
             if (session != nullptr) {
-                log(LogLevel::Warning, "failing session after a required-reply overflow");
+                if (command.error == SessionError::reply_overflow) {
+                    log(LogLevel::Warning, "failing session: required reply overflow");
+                } else {
+                    log(LogLevel::Warning, "failing session");
+                }
                 start_termination(*session);
             }
             break;

@@ -16,6 +16,8 @@
 
 #include <ui/key_translator.hpp>
 
+#include <app/log.hpp>
+
 namespace consola {
 namespace {
 
@@ -446,6 +448,8 @@ int TerminalWidget::handle(int event)
                 std::string_view(text, static_cast<std::size_t>(length)), style_.max_paste_bytes);
             if (capture.ok) {
                 paste_callback_(paste_context_, capture.bytes);
+            } else {
+                log(LogLevel::Warning, "paste rejected (oversized or empty)");
             }
         }
         return 1;
@@ -485,6 +489,12 @@ int TerminalWidget::handle_push()
         event.action = MouseActionPressed;
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
+        return 1;
+    }
+
+    if (fltk_mouse_button(Fl::event_button()) == MouseButton::middle) {
+        // Middle-click pastes the primary selection.
+        Fl::paste(*this, 0);
         return 1;
     }
 

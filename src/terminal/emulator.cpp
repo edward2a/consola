@@ -49,7 +49,12 @@ void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size
             impl->capture_overflow = true;
             return;
         }
-        impl->capture->append(u8, len);
+        // Never let an allocation failure cross the libtsm callback boundary.
+        try {
+            impl->capture->append(u8, len);
+        } catch (...) {
+            impl->capture_overflow = true;
+        }
         return;
     }
     if (impl->output_callback != nullptr) {
@@ -57,6 +62,30 @@ void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size
             impl->output_context,
             std::span<const std::byte>(reinterpret_cast<const std::byte *>(u8), len));
     }
+}
+
+// Remove bracketed-paste framing markers from pasted text so a payload cannot
+// end bracketed mode early (watchlist #8).
+std::string sanitize_paste(std::string_view text)
+{
+    constexpr std::string_view kStart = "\x1b[200~";
+    constexpr std::string_view kEnd = "\x1b[201~";
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size();) {
+        const std::string_view rest = text.substr(i);
+        if (rest.starts_with(kEnd)) {
+            i += kEnd.size();
+            continue;
+        }
+        if (rest.starts_with(kStart)) {
+            i += kStart.size();
+            continue;
+        }
+        out.push_back(text[i]);
+        ++i;
+    }
+    return out;
 }
 
 CellAttributes to_attributes(const tsm_screen_attr &attr)
@@ -359,18 +388,21 @@ PasteCapture TerminalEmulator::capture_paste(std::string_view text, std::size_t 
     if (text.size() > max_bytes) {
         return {}; // reject oversized source before capture
     }
+    // Build the source and capture buffer before touching capture state, so a
+    // failed allocation cannot leave a dangling capture pointer.
+    std::string source = sanitize_paste(text);
     std::string encoded;
-    encoded.reserve(text.size() + 12);
+    encoded.reserve(source.size() + 12);
+
     impl_->capture = &encoded;
     impl_->capture_limit = max_bytes;
     impl_->capture_overflow = false;
 
-    const std::string source(text);
     tsm_vte_paste(impl_->vte, source.c_str());
 
+    const bool overflow = impl_->capture_overflow;
     impl_->capture = nullptr;
     impl_->capture_limit = 0;
-    const bool overflow = impl_->capture_overflow;
     impl_->capture_overflow = false;
     if (overflow || encoded.empty()) {
         return {};

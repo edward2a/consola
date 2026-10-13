@@ -31,7 +31,7 @@ does not authorize implementation; that still requires explicit user approval.
 | 5 | Concurrency verification | P2 | The design has three threads, lock-free single-producer/single-consumer queues and an atomic wake flag, but CI runs only ASan/UBSan, not ThreadSanitizer. Which thread may call `TerminalSession::running()` / `terminate()` is not stated, and neither is whether `log()` is thread-safe (the UI, I/O loop and startup worker all call it). | DIP §0.4, §0.7, §1.1, §1.7 | Stage 1 | Settled |
 | 6 | Parent's copy of the PTY slave | P3 | 1.3 says the parent keeps the master FD but never says it closes its own copy of the slave after `fork()`. If the slave stays open, the Linux end-of-output signal (`EIO`/`POLLHUP`) never arrives. Test 24 would catch it. | DIP §1.3 › Required behavior | Stage 1 | Settled |
 | 7 | Checking a process group is still ours | P2 | Before a delayed `kill(-pgid)`, 1.6 requires confirming the group still belongs to the terminal's session, but names no way to do it. Linux has no handle for a process group, and the group leader may already be gone. Pick a method and check it against test 18. | DIP §1.6 › terminate() | Stage 1 | Settled |
-| 8 | Bracketed-paste injection | P2 | `tsm_vte_paste()` wraps the pasted text without filtering it. Pasted text containing `ESC[201~` ends the bracketing early, and the rest runs as if typed (source-checked). Decide whether to neutralise that marker before encoding. | DIP §1.7 › Streaming paste; §2.8 | Stage 2 | Pending |
+| 8 | Bracketed-paste injection | P2 | `tsm_vte_paste()` wraps the pasted text without filtering it. Pasted text containing `ESC[201~` ends the bracketing early, and the rest runs as if typed (source-checked). Decide whether to neutralise that marker before encoding. | DIP §1.7 › Streaming paste; §2.8 | Stage 2 | Settled |
 | 9 | Paste framing and mode visibility | P3 | Extends the existing 2.8 "verify" note. Source check: bracketed-paste mode (2004) is a private flag with no getter and is not in `tsm_vte_get_flags()`. Framing can be inferred from capture length = source + 12 bytes, plus an optional leading ESC. | DIP §2.8 | Stage 2 | Reviewed |
 | 10 | Cursor must use libtsm's clamped position | P3 | `tsm_screen_get_cursor_x()` returns the raw value, which equals the column count after writing the last column. `tsm_screen_draw()` clamps it to the last column (y likewise). If our cursor code uses the raw value, libtsm's inverted cell is left on screen (source-checked). | DIP §2.4 › Cursor | Stage 2 | Pending |
 | 11 | Missing glyphs without Pango | P2 | With Xft and no Pango, FLTK probably draws with a single font and no per-glyph fallback, so CJK, symbols and emoji the font lacks would show as boxes. Verify with 2.10's CJK test. If confirmed, record it as a v1 limitation / font requirement; no new dependencies. | DIP §2.3, §2.10; DEP › FLTK pin and build | Stage 2 | Pending |
@@ -59,7 +59,7 @@ does not authorize implementation; that still requires explicit user approval.
 ## Totals
 
 - 8 × P2, 17 × P3, 6 × Minor.
-- 17 Pending, 7 Reviewed, 7 Settled.
+- 16 Pending, 7 Reviewed, 8 Settled.
 - Source-checked against pinned libtsm: #8, #9, #10, #21, #24, #25.
 - Documented-behaviour assumptions to confirm: #11, #14, #27, #28.
 
@@ -314,4 +314,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   fail-session termination. **Deferred to Stage 4** (needs the session
   wiring): the streaming paste transport (queue-fed chunks, cancel-paste,
   `paste_finished`, deferred keys/replies, reserve integration) and watchlist
-  #8 (bracketed-paste injection) / #9 (framing and mode exposure).
+  #8 (bracketed-paste injection) / #9 (framing and mode exposure). Review
+  fixes: the capture is exception-safe (source/buffer built before capture
+  state is set; allocation failures in the write callback mark the capture
+  failed instead of escaping libtsm); `capture_paste()` strips the bracketed
+  framing markers from the payload (**#8 Settled**); middle-click pastes the
+  primary selection and a rejected paste is logged. **#9** remains partly open:
+  bracketed vs unbracketed framing is test-verified, but libtsm exposes no
+  mode-2004 getter.

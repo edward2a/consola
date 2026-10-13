@@ -225,6 +225,13 @@ int main()
     if (emulator.capture_paste("", 1024).ok) {
         return EXIT_FAILURE;
     }
+    // A bracketed-paste closing marker in the payload is neutralised.
+    emulator.feed(as_bytes("\x1b[?2004h"));
+    const consola::PasteCapture injected = emulator.capture_paste("a\x1b[201~b", 1024);
+    if (!injected.ok || injected.bytes != "\x1b[200~ab\x1b[201~") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b[?2004l"));
 
     return EXIT_SUCCESS;
 }
