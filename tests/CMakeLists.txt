@@ -16,6 +16,11 @@ target_link_libraries(consola_emulator_test PRIVATE terminal_core)
 
 add_test(NAME emulator_test COMMAND consola_emulator_test)
 
+add_executable(consola_layout_test layout_test.cpp)
+target_link_libraries(consola_layout_test PRIVATE terminal_core)
+
+add_test(NAME layout_test COMMAND consola_layout_test)
+
 add_executable(consola_key_translator_test key_translator_test.cpp)
 target_link_libraries(consola_key_translator_test PRIVATE terminal_ui)
 

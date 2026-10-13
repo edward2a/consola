@@ -85,6 +85,7 @@ endif()
 add_library(terminal_core STATIC
     src/app/log.cpp
     src/app/session_queue.cpp
+    src/layout/layout_tree.cpp
     src/terminal/emulator.cpp
 )
 target_include_directories(terminal_core PUBLIC
