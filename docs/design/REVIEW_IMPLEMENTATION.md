@@ -340,3 +340,15 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   keys. **Carry**: the scrollbar is drawn over the rightmost cell area and is
   not yet draggable (§2.9), and dynamic scrollback-cap changes are not tracked
   independently.
+- **Stage 2 exit verification**: `application.cpp` now wires a single session
+  end to end — a `SessionHost` starts the `StartupWorker` and `IoLoop`, launches
+  `$SHELL`, drains the inbound queue into the `TerminalEmulator`, routes the
+  emulator's encoded output and widget pastes into the session's outbound queue,
+  resizes the session on widget resize, and closes the window on `exited`. This
+  covers "an interactive shell is usable", "typing works" (keys are encoded by
+  the emulator and routed to the session), "scrolling works", "copy/paste
+  works", "terminal resize works", "cursor works", and "text renders / basic
+  colour and attributes" (rendering + palette). Verified by running the app
+  headless against a script shell (prints and exits): the app renders the
+  output, detects the exit and exits 0. `terminal_ui` now links
+  `terminal_platform`.

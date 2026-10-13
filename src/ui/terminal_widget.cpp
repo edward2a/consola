@@ -157,11 +157,23 @@ void TerminalWidget::set_paste_callback(PasteCallback paste_callback, void *cont
     paste_context_ = context;
 }
 
+void TerminalWidget::set_resize_callback(ResizeCallback resize_callback, void *context)
+{
+    resize_callback_ = resize_callback;
+    resize_context_ = context;
+}
+
 void TerminalWidget::resize(int x, int y, int w, int h)
 {
     Fl_Widget::resize(x, y, w, h);
     update_metrics();
     full_redraw_requested_ = true;
+    if (resize_callback_ != nullptr) {
+        const int columns =
+            std::max(1, static_cast<int>(static_cast<double>(w) / metrics_.cell_width));
+        const int rows = std::max(1, h / metrics_.cell_height);
+        resize_callback_(resize_context_, columns, rows);
+    }
 }
 
 TerminalWidget::Rect TerminalWidget::cell_rect(int column, int row, int width) const

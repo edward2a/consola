@@ -2,12 +2,15 @@
 
 #include <app/application.hpp>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <FL/Fl.H>
@@ -16,6 +19,11 @@
 
 #include <app/emulator.hpp>
 #include <app/log.hpp>
+#include <app/message.hpp>
+#include <app/session.hpp>
+#include <app/session_queue.hpp>
+#include <platform/io_loop.hpp>
+#include <platform/startup.hpp>
 #include <ui/terminal_widget.hpp>
 
 namespace consola {
@@ -55,6 +63,140 @@ void smoke_test_feed(void *data)
     // Trigger a partial (age-driven) redraw rather than a full one.
     context->terminal->damage(FL_DAMAGE_EXPOSE);
 }
+
+// Minimal single-session wiring: one shell fed by the I/O loop, keys and pastes
+// routed back through the session's outbound queue (DIP Stage 1/2 exit).
+struct SessionHost {
+    StartupWorker worker{nullptr, nullptr};
+    std::unique_ptr<IoLoop> loop = make_linux_io_loop(nullptr, nullptr);
+    SessionInboundQueue inbound;
+    SessionOutboundQueue outbound{std::size_t{1} << 20};
+    StartupResult result;
+    TerminalEmulator *emulator = nullptr;
+    TerminalWidget *widget = nullptr;
+    TerminalId id{1};
+    bool launched = false;
+    bool added = false;
+    bool exited = false;
+    bool closing = false;
+    bool removed = false;
+
+    ~SessionHost()
+    {
+        if (result.session != nullptr) {
+            result.session->terminate();
+        }
+        if (loop) {
+            loop->stop();
+        }
+        worker.stop();
+    }
+
+    static void output_callback(void *context, std::span<const std::byte> bytes)
+    {
+        static_cast<SessionHost *>(context)->send(bytes);
+    }
+
+    static void paste_callback(void *context, std::string_view bytes)
+    {
+        static_cast<SessionHost *>(context)->send(std::span<const std::byte>(
+            reinterpret_cast<const std::byte *>(bytes.data()), bytes.size()));
+    }
+
+    static void resize_callback(void *context, int columns, int rows)
+    {
+        auto *host = static_cast<SessionHost *>(context);
+        host->emulator->resize(columns, rows);
+        if (host->result.session != nullptr) {
+            host->result.session->resize(columns, rows);
+        }
+        host->widget->redraw();
+    }
+
+    static void poll_timer(void *context)
+    {
+        auto *host = static_cast<SessionHost *>(context);
+        host->poll();
+        if (!host->removed) {
+            Fl::repeat_timeout(0.016, &SessionHost::poll_timer, context);
+        }
+    }
+
+    void send(std::span<const std::byte> bytes)
+    {
+        if (!added || bytes.empty()) {
+            return;
+        }
+        if (outbound.try_push(bytes)) {
+            loop->write_pending(id);
+        }
+    }
+
+    void start()
+    {
+        loop->start();
+        LaunchRequest request;
+        request.id = id;
+        const char *shell = std::getenv("SHELL");
+        request.options.executable = (shell != nullptr && shell[0] != '\0') ? shell : "/bin/sh";
+        request.options.columns = emulator->columns();
+        request.options.rows = emulator->rows();
+        worker.submit(std::move(request));
+    }
+
+    void poll()
+    {
+        if (!launched && worker.try_pop(result)) {
+            launched = true;
+            const bool registered =
+                result.session != nullptr &&
+                loop->add(*result.session, result.master_fd, result.exit_notification_fd,
+                          result.process_id, id, false, inbound, outbound);
+            if (registered) {
+                added = true;
+            } else {
+                exited = true;
+            }
+        }
+
+        if (added) {
+            InboundMessage message;
+            bool dirty = false;
+            while (inbound.try_pop(message)) {
+                if (message.kind == InboundMessage::Kind::data) {
+                    emulator->feed(message.bytes);
+                    dirty = true;
+                } else if (message.kind == InboundMessage::Kind::exited) {
+                    exited = true;
+                }
+            }
+            if (dirty) {
+                widget->redraw();
+            }
+            loop->resume(id);
+        }
+
+        LoopEvent event;
+        while (loop->try_pop_event(event)) {
+            if (event.kind == LoopEvent::Kind::removed) {
+                removed = true;
+            }
+        }
+
+        if (exited && !closing) {
+            closing = true;
+            if (added) {
+                loop->remove(id);
+            } else {
+                removed = true;
+            }
+        }
+        if (closing && removed) {
+            loop->shutdown();
+            Fl::hide_all_windows();
+        }
+    }
+};
 
 std::vector<std::filesystem::path> bundled_font_candidates()
 {
@@ -112,10 +254,6 @@ int run_application(int argc, char **argv, bool smoke_test)
     TitleContext title_context{.window = &window};
     emulator.set_title_callback(&title_callback, &title_context);
 
-    const char *banner = "consola\r\n";
-    emulator.feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(banner),
-                                             std::strlen(banner)));
-
     TerminalWidget terminal(0, 0, 640, 400, emulator);
     window.resizable(terminal);
     window.end();
@@ -128,8 +266,28 @@ int run_application(int argc, char **argv, bool smoke_test)
 
     SmokeFeedContext smoke_context{.emulator = &emulator, .terminal = &terminal};
     if (smoke_test) {
+        const char *banner = "consola\r\n";
+        emulator.feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(banner),
+                                                 std::strlen(banner)));
         Fl::add_timeout(0.05, smoke_test_feed, &smoke_context);
         Fl::add_timeout(0.1, smoke_test_exit, nullptr);
+    } else {
+        const int columns = std::max(
+            1, static_cast<int>(static_cast<double>(terminal.w()) / terminal.metrics().cell_width));
+        const int rows = std::max(1, terminal.h() / terminal.metrics().cell_height);
+        emulator.resize(columns, rows);
+
+        auto host = std::make_unique<SessionHost>();
+        host->emulator = &emulator;
+        host->widget = &terminal;
+        emulator.set_output_callback(&SessionHost::output_callback, host.get());
+        terminal.set_paste_callback(&SessionHost::paste_callback, host.get());
+        terminal.set_resize_callback(&SessionHost::resize_callback, host.get());
+        host->start();
+        Fl::add_timeout(0.016, &SessionHost::poll_timer, host.get());
+        Fl::run();
+        host.reset();
+        return EXIT_SUCCESS;
     }
 
     log(LogLevel::Debug, "entering event loop");

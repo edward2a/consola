@@ -128,7 +128,7 @@ include(cmake/licenses.cmake)
 find_package(Fontconfig REQUIRED)
 
 target_link_libraries(terminal_core PRIVATE consola_libtsm consola_ryml)
-target_link_libraries(terminal_ui PUBLIC consola_fltk)
+target_link_libraries(terminal_ui PUBLIC consola_fltk terminal_platform)
 target_link_libraries(terminal_ui PRIVATE Fontconfig::Fontconfig)
 target_compile_definitions(terminal_ui PRIVATE
     CONSOLA_FONT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/Inconsolata-Condensed.ttf")

@@ -45,6 +45,10 @@ public:
     using PasteCallback = void (*)(void *context, std::string_view bytes);
     void set_paste_callback(PasteCallback paste_callback, void *context);
 
+    // Notified with the new grid size when the widget is resized.
+    using ResizeCallback = void (*)(void *context, int columns, int rows);
+    void set_resize_callback(ResizeCallback resize_callback, void *context);
+
     [[nodiscard]] TerminalEmulator &emulator() noexcept
     {
         return emulator_;
@@ -121,6 +125,10 @@ private:
     // Clipboard (DIP 2.8).
     PasteCallback paste_callback_ = nullptr;
     void *paste_context_ = nullptr;
+
+    // Resize notification (DIP 2.11).
+    ResizeCallback resize_callback_ = nullptr;
+    void *resize_context_ = nullptr;
 };
 
 } // namespace consola
