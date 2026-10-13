@@ -2,6 +2,7 @@
 
 #include <layout/layout_tree.hpp>
 
+#include <cmath>
 #include <utility>
 
 namespace consola {
@@ -118,7 +119,7 @@ std::optional<TerminalId> LayoutTree::focused() const noexcept
 std::optional<NodeId> LayoutTree::split_terminal(TerminalId target, Orientation orientation,
                                                  TerminalId added, float ratio)
 {
-    if (ratio <= 0.0F || ratio >= 1.0F) {
+    if (!std::isfinite(ratio) || ratio <= 0.0F || ratio >= 1.0F) {
         return std::nullopt;
     }
     if (contains(added)) {
@@ -191,8 +192,9 @@ std::optional<NodeId> LayoutTree::remove(TerminalId target)
     nodes_.erase(leaf_id.value);
 
     if (focused_ && *focused_ == target) {
-        const TerminalNode *sib = terminal(sibling);
-        focused_ = sib == nullptr ? std::nullopt : std::optional<TerminalId>(sib->terminal);
+        std::vector<TerminalId> survivors;
+        collect_terminals(sibling, survivors);
+        focused_ = survivors.empty() ? std::nullopt : std::optional<TerminalId>(survivors.front());
     }
     return leaf_id;
 }

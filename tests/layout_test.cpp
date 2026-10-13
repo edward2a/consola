@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include <layout/layout_tree.hpp>
@@ -208,6 +209,9 @@ void test_split_rejections()
     CHECK(
         !tree.split_terminal(tid(1), consola::Orientation::horizontal, tid(2), -0.1F).has_value());
     CHECK(!tree.split_terminal(tid(1), consola::Orientation::horizontal, tid(2), 1.1F).has_value());
+    CHECK(!tree.split_terminal(tid(1), consola::Orientation::horizontal, tid(2),
+                               std::numeric_limits<float>::quiet_NaN())
+               .has_value());
     CHECK(tree.terminal_count() == 1);
 
     CHECK(tree.split_terminal(tid(1), consola::Orientation::vertical, tid(2), 0.25F).has_value());
@@ -229,6 +233,18 @@ void test_focus()
 
     tree.remove(tid(2));
     CHECK(tree.focused() == std::optional<consola::TerminalId>(tid(3)));
+}
+
+void test_focus_moves_into_sibling_subtree()
+{
+    consola::LayoutTree tree(tid(1));
+    tree.split_terminal(tid(1), consola::Orientation::horizontal, tid(2));
+    tree.split_terminal(tid(2), consola::Orientation::vertical, tid(3));
+    tree.focus(tid(1));
+
+    tree.remove(tid(1));
+    CHECK(tree.terminal_count() == 2);
+    CHECK(tree.focused() == std::optional<consola::TerminalId>(tid(2)));
 }
 
 void test_focus_on_last_removal()
@@ -267,6 +283,7 @@ int main()
     test_remove_absent();
     test_split_rejections();
     test_focus();
+    test_focus_moves_into_sibling_subtree();
     test_focus_on_last_removal();
     test_equalize();
 
