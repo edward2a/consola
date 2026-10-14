@@ -660,4 +660,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `io_loop_test::test_terminate_after_exit_is_prompt` uses a 5s kill deadline and
   asserts removal is acknowledged within 1.5s; `terminal_view_test` covers pane
   and empty-tab auto-close. Debug and ASan/UBSan suites pass 20/20;
-  clang-format/clang-tidy clean.
+  clang-format/clang-tidy clean. Review carry: while a signal sequence is in
+  flight, `poll_timeout_ms()` now caps the wait at 50 ms so `service_deadlines()`
+  re-checks target survival even when no poll wake source remains (e.g. a
+  reaped leader whose SIGHUP-terminable group member exits on its own);
+  `io_loop_test::test_terminate_after_leader_exit_is_prompt` covers it.

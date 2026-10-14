@@ -40,6 +40,9 @@ constexpr auto kDrainBudget = std::chrono::milliseconds(100);
 constexpr std::size_t kCommandSlots = 64;
 constexpr std::size_t kEventSlots = 64;
 constexpr auto kDefaultKillTimeout = std::chrono::milliseconds{2000};
+// While a termination signal sequence is in flight, re-check whether its target
+// groups still exist at least this often.
+constexpr auto kTerminationRecheck = std::chrono::milliseconds{50};
 
 // Set before installing the SIGCHLD handler; the handler only writes a byte to
 // the loop's self-pipe (async-signal-safe). The loop scans all known PIDs
@@ -1090,15 +1093,21 @@ void LinuxIoLoop::service_deadlines()
 int LinuxIoLoop::poll_timeout_ms() const
 {
     auto nearest = std::chrono::steady_clock::time_point::max();
+    bool terminating = false;
     for (const Registered &session : sessions_) {
         if (session.termination.active && !session.termination.completed) {
+            terminating = true;
             nearest = std::min(nearest, session.termination.deadline);
         }
     }
-    if (nearest == std::chrono::steady_clock::time_point::max()) {
+    if (!terminating) {
         return -1;
     }
     const auto now = std::chrono::steady_clock::now();
+    // While a signal sequence is in flight, re-check target survival
+    // periodically so a group that exits on its own (without a poll wake source,
+    // e.g. after its reaped leader) does not hold removal until the deadline.
+    nearest = std::min(nearest, now + kTerminationRecheck);
     if (nearest <= now) {
         return 0;
     }

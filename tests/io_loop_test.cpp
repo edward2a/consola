@@ -839,6 +839,61 @@ bool test_terminate_after_exit_is_prompt()
     return true;
 }
 
+bool test_terminate_after_leader_exit_is_prompt()
+{
+    // The leader exits, leaving a background group member that dies on SIGHUP.
+    // Once it is gone there is no poll wake source, so the loop must re-check
+    // target survival rather than sleep until the kill deadline.
+    Harness harness(std::chrono::milliseconds{5000});
+    harness.loop->start();
+
+    const consola::TerminalId id{78};
+    if (!harness.launch(id, "/bin/sh", {"-c", "sleep 30 & exit 0"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        std::printf("add failed\n");
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+
+    const Drain drained = drain_session(harness, id, 5000, true);
+    if (!drained.exited) {
+        std::printf("leader did not exit\n");
+        return false;
+    }
+    if (!harness.loop->terminate(id)) {
+        std::printf("terminate rejected\n");
+        return false;
+    }
+
+    const auto start = Clock::now();
+    if (!harness.loop->remove(id)) {
+        std::printf("remove rejected\n");
+        return false;
+    }
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 2000, event)) {
+        std::printf("removal after leader exit not acknowledged\n");
+        return false;
+    }
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start);
+    if (elapsed > std::chrono::milliseconds{1500}) {
+        std::printf("removal after leader exit took %lldms\n",
+                    static_cast<long long>(elapsed.count()));
+        return false;
+    }
+
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 int main()
 {
     if (!test_shell_exit_and_order()) {
@@ -895,6 +950,10 @@ int main()
     }
     if (!test_terminate_after_exit_is_prompt()) {
         std::printf("test_terminate_after_exit_is_prompt failed\n");
+        return 1;
+    }
+    if (!test_terminate_after_leader_exit_is_prompt()) {
+        std::printf("test_terminate_after_leader_exit_is_prompt failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");
