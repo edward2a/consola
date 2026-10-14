@@ -633,3 +633,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   background panes (not just inactive tabs) and `focus_callback` refreshes the
   label on focus change; added a test that closes a tab after one of its panes
   has already entered the close path.
+- **Stage 4 exit review**: Stage 4 (Tabs and Sessions) is complete — multiple
+  tabs, arbitrary per-tab splits, independent PTYs per terminal, and leak-free
+  tab/pane lifecycle. The deferred **streaming paste transport** (DIP 1.7:
+  queue-fed chunks, cancel-paste, `paste_finished`, deferred keys/replies,
+  reserve integration) is explicitly deferred until after the application is
+  complete and is not part of Stage 4's exit criteria.
