@@ -6,9 +6,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 #include <FL/Fl.H>
@@ -90,13 +90,17 @@ unsigned fltk_mouse_modifiers()
 namespace {
 
 // FLTK's face table is process-global and Fl::set_font() keeps the const char*
-// it is handed. A deque never invalidates or frees existing elements on growth,
-// so the names handed to FLTK stay valid for the process lifetime (see
-// watchlist #13). Style changes append rather than overwrite.
-std::deque<std::string> &font_name_store()
+// it is handed. Names are interned in a node-based map so each unique name is
+// stored once and its address stays valid for the process lifetime (see
+// watchlist #13).
+const std::string &intern_font_name(const std::string &name)
 {
-    static std::deque<std::string> store;
-    return store;
+    static std::unordered_map<std::string, std::string> store;
+    const auto it = store.find(name);
+    if (it != store.end()) {
+        return it->second;
+    }
+    return store.emplace(name, name).first->second;
 }
 
 } // namespace
@@ -115,20 +119,11 @@ void TerminalWidget::apply_font_family() const
     // Map the configured family to FLTK's base face and its styled variants so
     // bold/italic stay in the same monospace family (fontconfig resolves the
     // closest available style; see watchlist #13).
-    std::deque<std::string> &store = font_name_store();
-    store.push_back(style_.font_family);
-    store.push_back(style_.font_family + " bold");
-    store.push_back(style_.font_family + " italic");
-    store.push_back(style_.font_family + " bold italic");
-    auto it = store.end();
-    const std::string &bold_italic = *(--it);
-    const std::string &italic = *(--it);
-    const std::string &bold = *(--it);
-    const std::string &regular = *(--it);
-    Fl::set_font(FL_HELVETICA, regular.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD, bold.c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC, italic.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, bold_italic.c_str());
+    Fl::set_font(FL_HELVETICA, intern_font_name(style_.font_family).c_str());
+    Fl::set_font(FL_HELVETICA_BOLD, intern_font_name(style_.font_family + " bold").c_str());
+    Fl::set_font(FL_HELVETICA_ITALIC, intern_font_name(style_.font_family + " italic").c_str());
+    Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
+                 intern_font_name(style_.font_family + " bold italic").c_str());
 }
 
 int TerminalWidget::scrollbar_width() const

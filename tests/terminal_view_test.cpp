@@ -108,6 +108,10 @@ int main()
     CHECK(manager.focused() == second);
 
     view.equalize();
+    const consola::SplitNode *root_split =
+        manager.tab().layout().split(manager.tab().layout().root());
+    CHECK(root_split != nullptr);
+    CHECK(root_split->ratio == 0.5F);
 
     CHECK(view.close_focused());
     const bool collapsed =
@@ -115,6 +119,13 @@ int main()
     CHECK(collapsed);
     CHECK(manager.tab().layout().contains(REQUIRED(root)));
     CHECK(!manager.tab().layout().contains(REQUIRED(second)));
+
+    // A split that cannot fit the current content area is refused before
+    // launching (DIP 3.3).
+    window.size(10, 10);
+    Fl::check();
+    CHECK(!view.split_focused(Orientation::vertical).has_value());
+    CHECK(manager.tab().terminal_count() == 1);
 
     manager.shutdown();
 

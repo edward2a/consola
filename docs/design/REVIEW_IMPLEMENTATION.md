@@ -497,4 +497,10 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   ASan/UBSan suites pass 15/15; clang-format/clang-tidy clean. Review note: the
   styled face names are now held in an append-only store, because FLTK's global
   face table keeps the pointers and reassigning a string freed a name FLTK still
-  referenced (a second ASan use-after-free in the Xft font path).
+  referenced (a second ASan use-after-free in the Xft font path). Review
+  fixes: the face names are interned in a node-based map (stored once, stable
+  addresses, no growth across pane churn); the view test now asserts the
+  equalize result and that an unfittable split is refused before launch.
+  Divider grab tolerance over pane widgets and non-zero view origins were
+  checked and need no change: the view's `handle` runs before its children and
+  FLTK child coordinates are parent-relative.
