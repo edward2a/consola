@@ -140,6 +140,7 @@ void register_bundled_font()
         }
         if (FcConfigAppFontAddFile(nullptr, reinterpret_cast<const FcChar8 *>(candidate.c_str())) !=
             FcFalse) {
+            log(LogLevel::Info, "registered bundled font: " + candidate.string());
             return;
         }
     }

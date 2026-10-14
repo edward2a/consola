@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -129,11 +130,15 @@ double face_width(int face, int size, const char *text)
     return fl_width(text);
 }
 
-// A monospace face advances 'M', 'i', 'W' and ' ' equally.
-bool monospace_metrics(int size)
+// A usable terminal face advances 'M', 'i', 'W' and ' ' equally and is not a
+// full-width (CJK) fallback, whose ~1em advance would double-space Latin text.
+bool suitable_metrics(int size)
 {
     const double m = face_width(FL_HELVETICA, size, "M");
-    return m > 0.0 && std::abs(m - face_width(FL_HELVETICA, size, "i")) < 0.5 &&
+    if (m <= 0.0 || m > 0.85 * static_cast<double>(size)) {
+        return false;
+    }
+    return std::abs(m - face_width(FL_HELVETICA, size, "i")) < 0.5 &&
            std::abs(m - face_width(FL_HELVETICA, size, "W")) < 0.5 &&
            std::abs(m - face_width(FL_HELVETICA, size, " ")) < 0.5;
 }
@@ -157,16 +162,16 @@ void TerminalWidget::apply_font_family() const
     std::string family = style_.font_family;
     set_family_faces(family);
 
-    // A family that does not resolve to a monospace face (for example when the
-    // bundled font is unavailable) falls back to a proportional font, which
-    // spaces the fixed-width cell grid out. Substitute a monospace family.
-    if (!monospace_metrics(style_.font_size)) {
+    // A family that does not resolve to a usable monospace face (for example
+    // when the bundled font is unavailable) falls back to a proportional or
+    // full-width font, which spaces the fixed-width cell grid out. Substitute a
+    // known Latin monospace family.
+    if (!suitable_metrics(style_.font_size)) {
         for (const char *candidate : kMonospaceFallbacks) {
             set_family_faces(candidate);
-            if (monospace_metrics(style_.font_size)) {
+            if (suitable_metrics(style_.font_size)) {
                 family = candidate;
-                log(LogLevel::Warning,
-                    "configured terminal font is not monospace; using a fallback");
+                log(LogLevel::Warning, "configured terminal font is not usable; using a fallback");
                 break;
             }
         }
@@ -185,6 +190,13 @@ void TerminalWidget::apply_font_family() const
         Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
                      intern_font_name(fltk_raw_font_name(family, true, false)).c_str());
     }
+
+    std::array<char, 192> diagnostic{};
+    std::snprintf(diagnostic.data(), diagnostic.size(),
+                  "terminal font: family='%s' face='%s' advance=%.1f size=%d", family.c_str(),
+                  Fl::get_font(FL_HELVETICA) != nullptr ? Fl::get_font(FL_HELVETICA) : "(null)",
+                  face_width(FL_HELVETICA, style_.font_size, "M"), style_.font_size);
+    log(LogLevel::Info, diagnostic.data());
 }
 
 int TerminalWidget::scrollbar_width() const

@@ -675,4 +675,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   and reuses the base/bold face for any style (e.g. italic) the family does not
   provide so styled text keeps the cell grid. Verified by rendering: the bundled
   font gives a 5px glyph + 1px gap, and the fallback path a 7px + 1px gap — both
-  monospace, versus a spaced 8px + 4px proportional fallback before.
+  monospace, versus a spaced 8px + 4px proportional fallback before. A
+  follow-up guards against a *full-width* (CJK) fallback whose ~1em advance
+  passes a plain monospace test but doubles Latin spacing: `suitable_metrics`
+  rejects an advance greater than 0.85 × font size, and the resolved
+  family/face/advance is logged at Info level (`registered bundled font: …`,
+  `terminal font: …`) for field diagnosis.
