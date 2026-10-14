@@ -26,8 +26,7 @@ TerminalManager::~TerminalManager()
 void TerminalManager::start()
 {
     if (!started_) {
-        loop_->start();
-        started_ = true;
+        started_ = loop_->start();
     }
 }
 
@@ -95,7 +94,36 @@ bool TerminalManager::pump()
     const bool dirty = consume_inbound();
     process_closing();
     drain_events();
+    // If the loop thread has stopped while sessions are still registered (an
+    // unrecoverable poll failure), no further acknowledgements will arrive.
+    if (started_ && !instances_.empty() && !loop_->running()) {
+        fail_remaining();
+    }
     return dirty;
+}
+
+void TerminalManager::fail_remaining()
+{
+    if (instances_.empty()) {
+        return;
+    }
+    log(LogLevel::Error, "I/O loop stopped; cleaning up remaining sessions");
+    // Join the loop so nothing else touches the sessions, then terminate and
+    // reap any child the loop did not reap before releasing it.
+    loop_->stop();
+    std::vector<TerminalId> remaining;
+    remaining.reserve(instances_.size());
+    for (const auto &entry : instances_) {
+        remaining.push_back(entry.first);
+    }
+    for (const TerminalId id : remaining) {
+        TerminalInstance *instance = find(id);
+        if (instance != nullptr && instance->session() != nullptr) {
+            instance->session()->terminate();
+            instance->session()->reap();
+        }
+        finalize(id);
+    }
 }
 
 void TerminalManager::consume_results()
@@ -316,18 +344,10 @@ void TerminalManager::shutdown()
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     if (!instances_.empty()) {
-        // The loop has stopped (unrecoverable poll failure or an external
-        // stop), so no I/O can touch the instances; release them. This is the
-        // defined failure path rather than a timeout.
-        log(LogLevel::Error, "I/O loop stopped before shutdown completed");
-        std::vector<TerminalId> remaining;
-        remaining.reserve(instances_.size());
-        for (const auto &entry : instances_) {
-            remaining.push_back(entry.first);
-        }
-        for (const TerminalId id : remaining) {
-            finalize(id);
-        }
+        // The loop stopped before acknowledging (unrecoverable poll failure):
+        // use the safe fallback that joins the loop and reaps un-reaped
+        // children before releasing them.
+        fail_remaining();
     }
     finish_shutdown();
 }

@@ -32,7 +32,10 @@ class IoLoop {
 public:
     virtual ~IoLoop() = default;
 
-    virtual void start() = 0;
+    // Start the loop thread. Returns false when the loop is unavailable (its
+    // wake FD or SIGCHLD self-pipe could not be created), in which case no
+    // commands are processed.
+    virtual bool start() = 0;
     virtual void stop() = 0;
 
     // True while the loop thread is alive. Becomes false if the loop stops,

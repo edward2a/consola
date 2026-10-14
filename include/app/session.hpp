@@ -54,6 +54,15 @@ public:
     // still reports running() until terminate() is called; the I/O loop uses
     // waitpid() as the authoritative exit signal (DIP 1.4, 1.6).
     [[nodiscard]] virtual bool running() const = 0;
+
+    // Reaping bookkeeping for the I/O-loop failure fallback (DIP 1.6). The loop
+    // calls mark_reaped() when it waitpid()s the direct child. The owner may
+    // call reap() only after the loop has stopped, to kill and reap a child the
+    // loop never reaped; it must not signal a pid the loop already reaped.
+    virtual void mark_reaped()
+    {}
+    virtual void reap()
+    {}
 };
 
 } // namespace consola

@@ -759,6 +759,33 @@ bool test_fail_session_terminates()
 
 } // namespace
 
+bool test_loop_running_state()
+{
+    auto loop = consola::make_linux_io_loop(nullptr, nullptr, std::chrono::milliseconds{200});
+    if (loop->running()) {
+        std::printf("expected loop not running before start\n");
+        return false;
+    }
+    if (!loop->start()) {
+        std::printf("loop start failed\n");
+        return false;
+    }
+    if (!loop->running()) {
+        std::printf("expected loop running after start\n");
+        return false;
+    }
+    if (!loop->start()) {
+        std::printf("second start failed\n");
+        return false;
+    }
+    loop->stop();
+    if (loop->running()) {
+        std::printf("expected loop stopped after stop\n");
+        return false;
+    }
+    return true;
+}
+
 int main()
 {
     if (!test_shell_exit_and_order()) {
@@ -807,6 +834,10 @@ int main()
     }
     if (!test_fail_session_terminates()) {
         std::printf("test_fail_session_terminates failed\n");
+        return 1;
+    }
+    if (!test_loop_running_state()) {
+        std::printf("test_loop_running_state failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");

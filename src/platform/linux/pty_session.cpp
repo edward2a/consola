@@ -561,6 +561,23 @@ bool LinuxPtySession::running() const
     return started_ && !stopping_;
 }
 
+void LinuxPtySession::mark_reaped()
+{
+    reaped_ = true;
+}
+
+void LinuxPtySession::reap()
+{
+    // Fallback only, after the I/O loop has stopped: kill and reap a child the
+    // loop never reaped. Never signal a pid the loop already reaped.
+    if (reaped_ || child_pid_ <= 0) {
+        return;
+    }
+    reaped_ = true;
+    reap_child(child_pid_);
+    child_pid_ = -1;
+}
+
 int LinuxPtySession::master_fd() const noexcept
 {
     return master_fd_;

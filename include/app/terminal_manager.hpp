@@ -123,6 +123,7 @@ private:
     void process_closing();
     void drain_events();
     void finalize(TerminalId id);
+    void fail_remaining();
 
     StartupWorker worker_;
     std::unique_ptr<IoLoop> loop_;

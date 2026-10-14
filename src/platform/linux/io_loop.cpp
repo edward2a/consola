@@ -178,7 +178,7 @@ public:
     LinuxIoLoop(const LinuxIoLoop &) = delete;
     LinuxIoLoop &operator=(const LinuxIoLoop &) = delete;
 
-    void start() override;
+    bool start() override;
     void stop() override;
     [[nodiscard]] bool running() const override;
     bool add(TerminalSession &session, int master_fd, int exit_fd, std::int64_t process_id,
@@ -341,16 +341,20 @@ void LinuxIoLoop::install_sigchld()
     }
 }
 
-void LinuxIoLoop::start()
+bool LinuxIoLoop::start()
 {
-    if (running_ || !available_) {
-        return;
+    if (running_) {
+        return true;
+    }
+    if (!available_) {
+        return false;
     }
     install_sigchld();
     stop_requested_.store(false);
     running_ = true;
     alive_.store(true, std::memory_order_release);
     thread_ = std::thread([this] { run(); });
+    return true;
 }
 
 void LinuxIoLoop::stop()
@@ -919,6 +923,9 @@ void LinuxIoLoop::reap(Registered &session, int status)
     session.reaped = true;
     session.exit_status = decode_wait_status(status);
     session.exit_fd = -1; // retire the exit-notification poll entry
+    if (session.session != nullptr) {
+        session.session->mark_reaped();
+    }
 }
 
 void LinuxIoLoop::retire_master(Registered &session)

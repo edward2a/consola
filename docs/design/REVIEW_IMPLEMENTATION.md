@@ -544,4 +544,12 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `start()`, and `IoLoop::running()` reports whether the loop thread is alive
   (false after an unrecoverable poll error), so the synchronous `shutdown()`
   waits only while the loop runs and finalizes remaining instances only once the
-  loop has stopped (a defined failure path, not a timeout).
+  loop has stopped (a defined failure path, not a timeout). A fourth pass asked
+  for the fallback to terminate and reap remaining children and for the
+  asynchronous path to detect loop failure: `IoLoop::start()` now returns
+  whether the loop started, the loop marks a session reaped when it waitpid()s
+  it (`TerminalSession::mark_reaped`), and `TerminalManager::fail_remaining()`
+  joins the loop and terminates/reaps only un-reaped children before releasing
+  them; `pump()` detects a stopped loop and runs the fallback, so the
+  application's timer completes instead of hanging. `io_loop_test` covers
+  `start()`/`running()`/`stop()`.

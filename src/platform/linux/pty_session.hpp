@@ -25,6 +25,8 @@ public:
     SessionError resize(int cols, int rows) override;
     void terminate() override;
     [[nodiscard]] bool running() const override;
+    void mark_reaped() override;
+    void reap() override;
 
     [[nodiscard]] int master_fd() const noexcept;
     [[nodiscard]] int exit_notification_fd() const noexcept;
@@ -39,6 +41,7 @@ private:
     std::int64_t child_pid_ = -1;
     bool started_ = false;
     bool stopping_ = false;
+    bool reaped_ = false;
 };
 
 } // namespace consola
