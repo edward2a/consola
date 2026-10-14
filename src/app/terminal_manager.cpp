@@ -127,6 +127,12 @@ void TerminalManager::consume_results()
         // through the normal steps (DIP 4.4).
         instance->attach(std::move(result.session), result.master_fd, result.exit_notification_fd,
                          result.process_id);
+        // The emulator may have been resized before the backend attached; keep
+        // the PTY grid in step (DIP 2.11).
+        if (instance->emulator().columns() > 0 && instance->emulator().rows() > 0) {
+            instance->session()->resize(instance->emulator().columns(),
+                                        instance->emulator().rows());
+        }
         if (loop_->add(*instance->session(), instance->master_fd(),
                        instance->exit_notification_fd(), instance->process_id(), instance->id(),
                        instance->options().drain_output_on_close, instance->inbound(),
@@ -363,6 +369,16 @@ TerminalInstance *TerminalManager::find(TerminalId id) noexcept
 {
     const auto it = instances_.find(id);
     return it == instances_.end() ? nullptr : it->second;
+}
+
+std::vector<TerminalInstance *> TerminalManager::terminals() noexcept
+{
+    std::vector<TerminalInstance *> out;
+    out.reserve(instances_.size());
+    for (auto &entry : instances_) {
+        out.push_back(entry.second);
+    }
+    return out;
 }
 
 } // namespace consola

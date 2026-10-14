@@ -130,9 +130,10 @@ target_link_libraries(terminal_session PUBLIC terminal_core terminal_platform)
 add_library(terminal_ui STATIC
     src/ui/application.cpp
     src/ui/key_translator.cpp
+    src/ui/terminal_view.cpp
     src/ui/terminal_widget.cpp
 )
-target_link_libraries(terminal_ui PUBLIC terminal_core)
+target_link_libraries(terminal_ui PUBLIC terminal_session)
 
 include(cmake/deps.cmake)
 include(cmake/licenses.cmake)

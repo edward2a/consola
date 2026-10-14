@@ -69,7 +69,17 @@ add_test(NAME smoke_test
             $<TARGET_FILE:terminal_app> --smoke-test)
 set_tests_properties(smoke_test PROPERTIES TIMEOUT 30)
 
+add_test(NAME session_smoke_test
+    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
+            $<TARGET_FILE:terminal_app>)
+set(session_smoke_env "SHELL=/bin/sh;CONSOLA_EXIT_AFTER_MS=500")
+
 if(CONSOLA_SANITIZERS)
-    set_tests_properties(smoke_test PROPERTIES
-        ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tests/lsan.supp")
+    set(lsan_options "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tests/lsan.supp")
+    set_tests_properties(smoke_test PROPERTIES ENVIRONMENT "${lsan_options}")
+    set(session_smoke_env "${session_smoke_env};${lsan_options}")
 endif()
+
+set_tests_properties(session_smoke_test PROPERTIES
+    TIMEOUT 30
+    ENVIRONMENT "${session_smoke_env}")

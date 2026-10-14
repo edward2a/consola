@@ -9,6 +9,7 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <app/session.hpp>
 #include <app/tab.hpp>
@@ -84,6 +85,10 @@ public:
     void resize(TerminalId id, int columns, int rows);
 
     [[nodiscard]] TerminalInstance *find(TerminalId id) noexcept;
+
+    // All live instances (unordered). For presentation code that needs
+    // non-const access to the emulator; does not allow structural mutation.
+    [[nodiscard]] std::vector<TerminalInstance *> terminals() noexcept;
 
     [[nodiscard]] bool launch_failed() const noexcept
     {

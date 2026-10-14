@@ -455,3 +455,21 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `drain_output_on_close` is false. Added a deterministic late-launch-success
   close test. Debug and ASan/UBSan suites pass 13/13; clang-format/clang-tidy
   clean.
+- **S3-CS5 — FLTK integration (§3.4)**: `include/ui/terminal_view.hpp` adds
+  `TerminalView`, which creates one `TerminalWidget` per terminal node, computes
+  pane geometry with the layout engine (`compute_layout`) and applies it to the
+  widgets; widgets never own layout relationships. The widget bounds use the
+  logical pane rectangle, so the grid derives from it (DIP 2.11) while FLTK
+  clips drawing to the window. Per-terminal callbacks route the emulator's
+  encoded output, pastes, resizes and titles to the manager. `application.cpp`
+  was migrated off the ad-hoc `SessionHost` onto `TerminalManager` +
+  `TerminalView`: it owns the manager, starts the `$SHELL` root terminal, pumps
+  the manager from the FLTK timer, and shuts down through the barrier.
+  `terminal_ui` now links `terminal_session`. `TerminalManager` resizes a
+  session to its emulator's grid when the backend attaches. A headless
+  `session_smoke_test` runs the app against `/bin/sh` with
+  `CONSOLA_EXIT_AFTER_MS`. **Fixed (watchlist #13 class)**: `Fl::set_font()`
+  keeps the `const char *` it is given, but `TerminalWidget::apply_font_family`
+  passed temporaries; the styled face names are now stored on the widget (a
+  heap-use-after-free ASan caught in FLTK's Xft font path). Debug and ASan/UBSan
+  suites pass 14/14; clang-format/clang-tidy clean.

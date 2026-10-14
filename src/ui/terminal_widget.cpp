@@ -95,15 +95,20 @@ TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emu
     update_metrics();
 }
 
-void TerminalWidget::apply_font_family() const
+void TerminalWidget::apply_font_family()
 {
     // Map the configured family to FLTK's base face and its styled variants so
     // bold/italic stay in the same monospace family (fontconfig resolves the
-    // closest available style; see watchlist #13).
-    Fl::set_font(FL_HELVETICA, style_.font_family.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD, (style_.font_family + " bold").c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC, (style_.font_family + " italic").c_str());
-    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, (style_.font_family + " bold italic").c_str());
+    // closest available style; see watchlist #13). FLTK keeps the pointer it is
+    // handed, so the names are stored on the widget.
+    font_regular_ = style_.font_family;
+    font_bold_ = style_.font_family + " bold";
+    font_italic_ = style_.font_family + " italic";
+    font_bold_italic_ = style_.font_family + " bold italic";
+    Fl::set_font(FL_HELVETICA, font_regular_.c_str());
+    Fl::set_font(FL_HELVETICA_BOLD, font_bold_.c_str());
+    Fl::set_font(FL_HELVETICA_ITALIC, font_italic_.c_str());
+    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, font_bold_italic_.c_str());
 }
 
 void TerminalWidget::update_metrics()

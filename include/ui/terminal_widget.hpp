@@ -72,7 +72,7 @@ private:
         {}
     };
 
-    void apply_font_family() const;
+    void apply_font_family();
     void update_metrics();
     [[nodiscard]] Rect cell_rect(int column, int row, int width) const;
     [[nodiscard]] static Rect union_rect(Rect a, Rect b);
@@ -93,6 +93,13 @@ private:
     TerminalEmulator &emulator_;
     TerminalStyle style_;
     FontMetrics metrics_;
+
+    // FLTK's Fl::set_font() keeps the const char* it is given, so the styled
+    // face names must outlive the call.
+    std::string font_regular_;
+    std::string font_bold_;
+    std::string font_italic_;
+    std::string font_bold_italic_;
 
     // Dirty-region state (DIP 2.5).
     ContentAge last_painted_age_ = 0;
