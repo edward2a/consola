@@ -133,13 +133,16 @@ void register_bundled_font()
         log(LogLevel::Warning, "fontconfig initialization failed");
         return;
     }
+    FcConfig *config = FcConfigGetCurrent();
     for (const std::filesystem::path &candidate : bundled_font_candidates()) {
         std::error_code error;
         if (!std::filesystem::exists(candidate, error)) {
             continue;
         }
-        if (FcConfigAppFontAddFile(nullptr, reinterpret_cast<const FcChar8 *>(candidate.c_str())) !=
+        if (FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8 *>(candidate.c_str())) !=
             FcFalse) {
+            // Make the newly added face visible to Xft's font matching.
+            FcConfigBuildFonts(config);
             log(LogLevel::Info, "registered bundled font: " + candidate.string());
             return;
         }

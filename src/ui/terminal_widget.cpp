@@ -143,6 +143,19 @@ bool suitable_metrics(int size)
            std::abs(m - face_width(FL_HELVETICA, size, " ")) < 0.5;
 }
 
+// Diagnostic: report what a requested family actually resolves to.
+void log_family_probe(const std::string &family, int size)
+{
+    std::array<char, 224> buffer{};
+    std::snprintf(buffer.data(), buffer.size(),
+                  "font probe '%s' -> face='%s' M=%.1f i=%.1f W=%.1f space=%.1f size=%d",
+                  family.c_str(),
+                  Fl::get_font(FL_HELVETICA) != nullptr ? Fl::get_font(FL_HELVETICA) : "(null)",
+                  face_width(FL_HELVETICA, size, "M"), face_width(FL_HELVETICA, size, "i"),
+                  face_width(FL_HELVETICA, size, "W"), face_width(FL_HELVETICA, size, " "), size);
+    log(LogLevel::Info, buffer.data());
+}
+
 } // namespace
 
 TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emulator,
@@ -166,9 +179,11 @@ void TerminalWidget::apply_font_family() const
     // when the bundled font is unavailable) falls back to a proportional or
     // full-width font, which spaces the fixed-width cell grid out. Substitute a
     // known Latin monospace family.
+    log_family_probe(style_.font_family, style_.font_size);
     if (!suitable_metrics(style_.font_size)) {
         for (const char *candidate : kMonospaceFallbacks) {
             set_family_faces(candidate);
+            log_family_probe(candidate, style_.font_size);
             if (suitable_metrics(style_.font_size)) {
                 family = candidate;
                 log(LogLevel::Warning, "configured terminal font is not usable; using a fallback");

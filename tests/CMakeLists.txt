@@ -78,6 +78,16 @@ target_link_libraries(consola_font_name_test PRIVATE terminal_ui)
 
 add_test(NAME font_name_test COMMAND consola_font_name_test)
 
+add_executable(consola_font_metrics_test font_metrics_test.cpp)
+target_link_libraries(consola_font_metrics_test PRIVATE terminal_ui)
+target_compile_definitions(consola_font_metrics_test PRIVATE
+    CONSOLA_FONT_FILE="${CMAKE_SOURCE_DIR}/resources/fonts/Inconsolata-Condensed.ttf")
+
+add_test(NAME font_metrics_test
+    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
+            $<TARGET_FILE:consola_font_metrics_test>)
+set_tests_properties(font_metrics_test PROPERTIES TIMEOUT 30)
+
 add_executable(consola_pty_session_test pty_session_test.cpp)
 target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 
@@ -115,6 +125,7 @@ if(CONSOLA_SANITIZERS)
     set_tests_properties(smoke_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(terminal_view_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(terminal_frame_test PROPERTIES ENVIRONMENT "${lsan_options}")
+    set_tests_properties(font_metrics_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set(session_smoke_env "${session_smoke_env};${lsan_options}")
 endif()
 

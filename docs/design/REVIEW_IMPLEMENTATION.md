@@ -680,4 +680,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   passes a plain monospace test but doubles Latin spacing: `suitable_metrics`
   rejects an advance greater than 0.85 × font size, and the resolved
   family/face/advance is logged at Info level (`registered bundled font: …`,
-  `terminal font: …`) for field diagnosis.
+  `terminal font: …`, and per-candidate `font probe '…' -> face=…`) for field
+  diagnosis, and registration now uses the explicit `FcConfigGetCurrent()` and
+  rebuilds fonts. A new headless `font_metrics_test` asserts the widget's cell
+  metrics are positive, monospace and not full-width, exercising the real
+  registration path; suites pass 21/21.
