@@ -438,14 +438,15 @@ void TerminalView::layout()
     const Rect content{0, 0, w(), h()};
     last_layout_ = compute_layout(manager_.tab().layout(), content, metrics());
 
-    // Advertise the tree's minimum size to the window manager (DIP 3.3).
+    // Advertise the tree's minimum size to the window manager (DIP 3.3). The
+    // window minimum includes any chrome above the view (e.g. the tab bar).
     const Size minimum = minimum_size(manager_.tab().layout(), metrics());
     if (minimum.width > 0 && minimum.height > 0 &&
         (minimum.width != last_min_width_ || minimum.height != last_min_height_)) {
         last_min_width_ = minimum.width;
         last_min_height_ = minimum.height;
         if (Fl_Window *win = window()) {
-            win->size_range(minimum.width, minimum.height);
+            win->size_range(minimum.width, minimum.height + top_inset_);
         }
     }
 
@@ -469,9 +470,12 @@ void TerminalView::layout()
         if (it == widgets_.end()) {
             continue;
         }
-        // The logical rectangle drives the grid (DIP 2.11); FLTK clips drawing
-        // to the window when the logical canvas is larger than the content.
-        it->second->resize(pane.logical.x, pane.logical.y, pane.logical.width, pane.logical.height);
+        // FLTK widget coordinates are window-relative, so the view-local layout
+        // rectangle is translated by the view's window position. The logical
+        // rectangle drives the grid (DIP 2.11); FLTK clips drawing to the window
+        // when the logical canvas is larger than the content.
+        it->second->resize(x() + pane.logical.x, y() + pane.logical.y, pane.logical.width,
+                           pane.logical.height);
     }
     redraw();
 }

@@ -38,13 +38,32 @@ void TerminalTabBar::set_close_callback(ActionCallback action, void *context)
 
 void TerminalTabBar::sync()
 {
-    const std::size_t count = manager_.tabs().count();
-    const TabId active = manager_.tabs().active_id();
-    if (count != last_count_ || !last_active_.has_value() || *last_active_ != active) {
-        last_count_ = count;
-        last_active_ = active;
-        redraw();
+    const TabManager &tabs = manager_.tabs();
+    const std::vector<TabId> ids = tabs.ids();
+    bool changed = ids.size() != last_ids_.size() || !last_active_.has_value() ||
+                   *last_active_ != tabs.active_id();
+    if (!changed) {
+        for (std::size_t i = 0; i < ids.size(); ++i) {
+            const Tab *tab = tabs.find(ids[i]);
+            const std::string title = tab != nullptr ? tab->title() : std::string{};
+            if (ids[i] != last_ids_[i] || title != last_titles_[i]) {
+                changed = true;
+                break;
+            }
+        }
     }
+    if (!changed) {
+        return;
+    }
+    last_ids_ = ids;
+    last_titles_.clear();
+    last_titles_.reserve(ids.size());
+    for (const TabId id : ids) {
+        const Tab *tab = tabs.find(id);
+        last_titles_.push_back(tab != nullptr ? tab->title() : std::string{});
+    }
+    last_active_ = tabs.active_id();
+    redraw();
 }
 
 int TerminalTabBar::tab_width() const
@@ -58,7 +77,7 @@ int TerminalTabBar::tab_width() const
 
 std::optional<TabId> TerminalTabBar::tab_at(int local_x) const
 {
-    if (local_x < 0) {
+    if (local_x < 0 || local_x >= w()) {
         return std::nullopt;
     }
     const int width = tab_width();
@@ -72,8 +91,15 @@ std::optional<TabId> TerminalTabBar::tab_at(int local_x) const
 
 bool TerminalTabBar::close_at(int local_x) const
 {
+    if (local_x < 0 || local_x >= w()) {
+        return false;
+    }
     const int width = tab_width();
     if (width <= 0) {
+        return false;
+    }
+    // Only a real tab box has a close glyph; ignore the trailing remainder.
+    if (static_cast<std::size_t>(local_x / width) >= manager_.tabs().count()) {
         return false;
     }
     return (local_x % width) >= width - kCloseWidth;

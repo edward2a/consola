@@ -609,4 +609,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   retitles the window. Tests: `tab_bar_test` (hit testing, close region,
   callbacks, sync), `commands_test` mappings, and `terminal_view_test`
   view-level tab commands. Debug and ASan/UBSan suites pass 18/18;
-  clang-format/clang-tidy clean.
+  clang-format/clang-tidy clean. Review fixes: FLTK widget coordinates are
+  window-relative, so `TerminalView::layout()` now translates the view-local
+  layout rectangle by the view's window position (panes no longer overlap the
+  bar) and the advertised window minimum includes the bar height via
+  `set_top_inset`; `TerminalTabBar::sync()` also detects reordering and title
+  changes, and `tab_at`/`close_at` reject coordinates outside the bar or past
+  the last tab. A new `terminal_frame_test` asserts the bar/view geometry and
+  pane window position under resize; suites pass 19/19.

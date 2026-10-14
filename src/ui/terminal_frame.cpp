@@ -20,6 +20,7 @@ TerminalFrame::TerminalFrame(int x, int y, int w, int h, TerminalManager &manage
     begin();
     tab_bar_ = new TerminalTabBar(x, y, w, kBarHeight, manager);
     view_ = new TerminalView(x, y + kBarHeight, w, std::max(0, h - kBarHeight), manager);
+    view_->set_top_inset(kBarHeight);
     end();
     resizable(view_);
 }

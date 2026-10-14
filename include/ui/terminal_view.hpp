@@ -70,6 +70,13 @@ public:
     }
     [[nodiscard]] TerminalWidget *widget(TerminalId id) noexcept;
 
+    // Vertical space above the view (e.g. a tab bar) that the advertised window
+    // minimum must include (DIP 3.3).
+    void set_top_inset(int inset) noexcept
+    {
+        top_inset_ = inset;
+    }
+
     void resize(int x, int y, int w, int h) override;
     int handle(int event) override;
 
@@ -116,6 +123,7 @@ private:
     int last_height_ = -1;
     int last_min_width_ = 0;
     int last_min_height_ = 0;
+    int top_inset_ = 0;
     LayoutMetrics last_metrics_{};
 };
 

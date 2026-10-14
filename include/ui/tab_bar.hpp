@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include <FL/Fl_Group.H>
 
@@ -52,7 +54,8 @@ private:
     ActionCallback close_callback_ = nullptr;
     void *close_context_ = nullptr;
     std::optional<TabId> last_active_;
-    std::size_t last_count_ = 0;
+    std::vector<TabId> last_ids_;
+    std::vector<std::string> last_titles_;
 };
 
 } // namespace consola
