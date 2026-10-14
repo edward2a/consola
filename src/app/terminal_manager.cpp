@@ -305,7 +305,11 @@ void TerminalManager::begin_shutdown()
                        instance->outbound())) {
             instance->set_state(TerminalState::stopping);
         } else {
-            instance->release_session();
+            // Registration failed: the session was never handed to the loop, so
+            // terminate and reap it before releasing.
+            auto session = instance->release_session();
+            session->terminate();
+            session->reap();
             finalize(result.id);
         }
     }
