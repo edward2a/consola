@@ -58,9 +58,17 @@ bool TerminalView::pump()
 {
     const bool added = create_widgets();
     const bool resized = w() != last_width_ || h() != last_height_;
-    if (added || resized) {
+    const LayoutMetrics current_metrics = metrics();
+    const bool metrics_changed =
+        current_metrics.cell_width != last_metrics_.cell_width ||
+        current_metrics.cell_height != last_metrics_.cell_height ||
+        current_metrics.scrollbar_width != last_metrics_.scrollbar_width ||
+        current_metrics.divider_thickness != last_metrics_.divider_thickness ||
+        current_metrics.pane_border != last_metrics_.pane_border;
+    if (added || resized || metrics_changed) {
         last_width_ = w();
         last_height_ = h();
+        last_metrics_ = current_metrics;
         layout();
     }
 

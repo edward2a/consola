@@ -308,24 +308,12 @@ void TerminalManager::finish_shutdown()
 void TerminalManager::shutdown()
 {
     begin_shutdown();
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (!instances_.empty() && std::chrono::steady_clock::now() < deadline) {
+    // Wait for every child to be reaped and every removal acknowledged. The
+    // loop escalates to SIGKILL, so this terminates for any killable child; a
+    // registered session is never released before its acknowledgement.
+    while (!instances_.empty()) {
         pump();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    if (!instances_.empty()) {
-        // Safety net for a pathological child that never exits: stop the loop
-        // first so no I/O can touch the instances, then release them.
-        log(LogLevel::Error, "shutdown timed out; stopping the I/O loop");
-        loop_->stop();
-        std::vector<TerminalId> remaining;
-        remaining.reserve(instances_.size());
-        for (const auto &entry : instances_) {
-            remaining.push_back(entry.first);
-        }
-        for (const TerminalId id : remaining) {
-            finalize(id);
-        }
     }
     finish_shutdown();
 }

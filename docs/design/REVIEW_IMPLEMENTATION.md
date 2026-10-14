@@ -534,4 +534,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `TerminalView::layout()` now calls `Fl_Window::size_range()` with the tree
   minimum. Added a shutdown-under-output-backpressure test and a forced-
   undersizing test asserting the live PTY grid stays positive. Debug and
-  ASan/UBSan suites pass 16/16; clang-format/clang-tidy clean.
+  ASan/UBSan suites pass 16/16; clang-format/clang-tidy clean. A second exit
+  pass asked for the timeout path to be removed and metric-only relayout: the
+  synchronous `shutdown()` no longer force-finalizes registered sessions (it
+  waits for every acknowledgement; the loop's SIGKILL escalation bounds it),
+  and `TerminalView::pump()` now detects font/DPI metric changes and relayouts,
+  refreshing the advertised window minimum.

@@ -104,6 +104,7 @@ private:
     int last_height_ = -1;
     int last_min_width_ = 0;
     int last_min_height_ = 0;
+    LayoutMetrics last_metrics_{};
 };
 
 } // namespace consola
