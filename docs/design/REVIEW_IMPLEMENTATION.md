@@ -539,4 +539,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   synchronous `shutdown()` no longer force-finalizes registered sessions (it
   waits for every acknowledgement; the loop's SIGKILL escalation bounds it),
   and `TerminalView::pump()` now detects font/DPI metric changes and relayouts,
-  refreshing the advertised window minimum.
+  refreshing the advertised window minimum. A third pass found a pre-start
+  creation hazard and an undefined loop-failure path: creation now requires
+  `start()`, and `IoLoop::running()` reports whether the loop thread is alive
+  (false after an unrecoverable poll error), so the synchronous `shutdown()`
+  waits only while the loop runs and finalizes remaining instances only once the
+  loop has stopped (a defined failure path, not a timeout).

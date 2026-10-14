@@ -180,6 +180,7 @@ public:
 
     void start() override;
     void stop() override;
+    [[nodiscard]] bool running() const override;
     bool add(TerminalSession &session, int master_fd, int exit_fd, std::int64_t process_id,
              TerminalId id, bool drain_output_on_close, SessionInboundQueue &inbound,
              SessionOutboundQueue &outbound) override;
@@ -272,6 +273,7 @@ private:
     int sigchld_write_ = -1;
     std::thread thread_;
     std::atomic<bool> stop_requested_{false};
+    std::atomic<bool> alive_{false};
     bool running_ = false;
     bool available_ = false;
     bool sigchld_installed_ = false;
@@ -347,6 +349,7 @@ void LinuxIoLoop::start()
     install_sigchld();
     stop_requested_.store(false);
     running_ = true;
+    alive_.store(true, std::memory_order_release);
     thread_ = std::thread([this] { run(); });
 }
 
@@ -361,6 +364,7 @@ void LinuxIoLoop::stop()
         thread_.join();
     }
     running_ = false;
+    alive_.store(false, std::memory_order_release);
 }
 
 void LinuxIoLoop::signal_loop() const
@@ -594,6 +598,12 @@ void LinuxIoLoop::run()
             rotation_ = 0;
         }
     }
+    alive_.store(false, std::memory_order_release);
+}
+
+bool LinuxIoLoop::running() const
+{
+    return alive_.load(std::memory_order_acquire);
 }
 
 void LinuxIoLoop::drain_commands()

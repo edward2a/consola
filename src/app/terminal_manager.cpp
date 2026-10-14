@@ -46,7 +46,7 @@ bool TerminalManager::submit(TerminalInstance &instance)
 
 std::optional<TerminalId> TerminalManager::create_root_terminal(const TerminalOptions &options)
 {
-    if (!accepting_ || tab_.terminal_count() != 0) {
+    if (!started_ || !accepting_ || tab_.terminal_count() != 0) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
@@ -69,8 +69,8 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
                                                           const TerminalOptions &options,
                                                           float ratio)
 {
-    if (!accepting_ || !tab_.layout().find_terminal(target).has_value() || !std::isfinite(ratio) ||
-        ratio <= 0.0F || ratio >= 1.0F) {
+    if (!started_ || !accepting_ || !tab_.layout().find_terminal(target).has_value() ||
+        !std::isfinite(ratio) || ratio <= 0.0F || ratio >= 1.0F) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
@@ -311,9 +311,23 @@ void TerminalManager::shutdown()
     // Wait for every child to be reaped and every removal acknowledged. The
     // loop escalates to SIGKILL, so this terminates for any killable child; a
     // registered session is never released before its acknowledgement.
-    while (!instances_.empty()) {
+    while (!instances_.empty() && loop_->running()) {
         pump();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (!instances_.empty()) {
+        // The loop has stopped (unrecoverable poll failure or an external
+        // stop), so no I/O can touch the instances; release them. This is the
+        // defined failure path rather than a timeout.
+        log(LogLevel::Error, "I/O loop stopped before shutdown completed");
+        std::vector<TerminalId> remaining;
+        remaining.reserve(instances_.size());
+        for (const auto &entry : instances_) {
+            remaining.push_back(entry.first);
+        }
+        for (const TerminalId id : remaining) {
+            finalize(id);
+        }
     }
     finish_shutdown();
 }

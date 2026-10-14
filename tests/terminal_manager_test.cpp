@@ -321,6 +321,18 @@ void test_shutdown_under_backpressure()
     CHECK(manager.find(REQUIRED(id)) == nullptr);
 }
 
+void test_create_requires_start()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    // Creation is rejected before start(): the I/O loop must be running for the
+    // lifecycle to make progress.
+    CHECK(!manager.create_root_terminal(shell("printf hi")).has_value());
+    CHECK(manager.tab().terminal_count() == 0);
+
+    manager.start();
+    CHECK(manager.create_root_terminal(shell("printf hi")).has_value());
+}
+
 void test_root_rejected_when_nonempty()
 {
     TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
@@ -345,6 +357,7 @@ int main()
     test_close_late_launch_success();
     test_close_under_backpressure();
     test_shutdown_under_backpressure();
+    test_create_requires_start();
     test_root_rejected_when_nonempty();
 
     if (g_failures != 0) {

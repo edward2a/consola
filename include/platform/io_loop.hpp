@@ -35,6 +35,11 @@ public:
     virtual void start() = 0;
     virtual void stop() = 0;
 
+    // True while the loop thread is alive. Becomes false if the loop stops,
+    // including after an unrecoverable poll error, so a shutdown waiter can
+    // detect that no further acknowledgements will arrive.
+    [[nodiscard]] virtual bool running() const = 0;
+
     // Register a session and its queues. The referenced objects must outlive
     // the registration until remove() is acknowledged. master_fd,
     // exit_fd (may be -1) and process_id come from StartupResult.
