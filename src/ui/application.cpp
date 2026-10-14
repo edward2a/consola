@@ -209,30 +209,30 @@ void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
     // whether Xft resolves differently from a plain fontconfig match.
     fl_open_display();
     if (fl_display != nullptr) {
-        FcPattern *xp = FcPatternCreate();
-        FcPatternAddString(xp, FC_FAMILY,
-                           reinterpret_cast<const FcChar8 *>("Inconsolata Condensed"));
-        FcPatternAddInteger(xp, FC_WEIGHT, FC_WEIGHT_MEDIUM);
-        FcPatternAddInteger(xp, FC_SLANT, FC_SLANT_ROMAN);
-        FcPatternAddDouble(xp, FC_PIXEL_SIZE, 14.0);
-        FcResult xr = FcResultNoMatch;
-        FcPattern *xm = XftFontMatch(fl_display, fl_screen, xp, &xr);
-        FcPatternDestroy(xp);
-        if (xm != nullptr) {
-            FcChar8 *file = nullptr;
-            FcChar8 *family = nullptr;
-            FcPatternGetString(xm, FC_FILE, 0, &file);
-            FcPatternGetString(xm, FC_FAMILY, 0, &family);
-            log(LogLevel::Info, "xft match -> '" +
-                                    std::string(reinterpret_cast<const char *>(
-                                        family != nullptr ? family : (const FcChar8 *)"?")) +
-                                    "' file='" +
-                                    std::string(reinterpret_cast<const char *>(
-                                        file != nullptr ? file : (const FcChar8 *)"?")) +
-                                    "'");
-            FcPatternDestroy(xm);
-        } else {
-            log(LogLevel::Info, "xft match -> null");
+        for (const char *encoding : {"(none)", "iso10646-1", "iso8859-1"}) {
+            FcPattern *xp = FcPatternCreate();
+            FcPatternAddString(xp, FC_FAMILY,
+                               reinterpret_cast<const FcChar8 *>("Inconsolata Condensed"));
+            FcPatternAddInteger(xp, FC_WEIGHT, FC_WEIGHT_MEDIUM);
+            FcPatternAddInteger(xp, FC_SLANT, FC_SLANT_ROMAN);
+            FcPatternAddDouble(xp, FC_PIXEL_SIZE, 14.0);
+            if (std::strcmp(encoding, "(none)") != 0) {
+                FcPatternAddString(xp, "encoding", reinterpret_cast<const FcChar8 *>(encoding));
+            }
+            FcResult xr = FcResultNoMatch;
+            FcPattern *xm = XftFontMatch(fl_display, fl_screen, xp, &xr);
+            FcPatternDestroy(xp);
+            if (xm != nullptr) {
+                FcChar8 *file = nullptr;
+                FcPatternGetString(xm, FC_FILE, 0, &file);
+                log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> '" +
+                                        std::string(reinterpret_cast<const char *>(
+                                            file != nullptr ? file : (const FcChar8 *)"?")) +
+                                        "'");
+                FcPatternDestroy(xm);
+            } else {
+                log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> null");
+            }
         }
     }
 }
