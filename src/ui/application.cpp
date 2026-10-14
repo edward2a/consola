@@ -17,10 +17,8 @@
 
 // Declared directly to avoid the freetype include dependency of Xft.h.
 extern "C" FcPattern *XftFontMatch(Display *dpy, int screen, FcPattern *pattern, FcResult *result);
-struct _XftFont;
-typedef struct _XftFont XftFont;
-extern "C" XftFont *XftFontOpenPattern(Display *dpy, FcPattern *pattern);
-extern "C" void XftFontClose(Display *dpy, XftFont *font);
+extern "C" void *XftFontOpenPattern(Display *dpy, FcPattern *pattern);
+extern "C" void XftFontClose(Display *dpy, void *font);
 
 #include <app/emulator.hpp>
 #include <app/log.hpp>
@@ -229,10 +227,11 @@ void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
             if (xm != nullptr) {
                 FcChar8 *file = nullptr;
                 FcPatternGetString(xm, FC_FILE, 0, &file);
-                XftFont *opened = XftFontOpenPattern(fl_display, xm);
+                const std::string file_text(
+                    reinterpret_cast<const char *>(file != nullptr ? file : (const FcChar8 *)"?"));
+                void *opened = XftFontOpenPattern(fl_display, xm);
                 log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> '" +
-                                        std::string(reinterpret_cast<const char *>(
-                                            file != nullptr ? file : (const FcChar8 *)"?")) +
+                                        file_text +
                                         "' open=" + (opened != nullptr ? "ok" : "FAILED"));
                 if (opened != nullptr) {
                     XftFontClose(fl_display, opened);
