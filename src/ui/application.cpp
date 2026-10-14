@@ -127,6 +127,53 @@ std::vector<std::filesystem::path> bundled_font_candidates()
     return candidates;
 }
 
+// Diagnostic: report the family fontconfig assigns to the bundled file and what
+// it matches for the requested family, to explain font-resolution failures.
+void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
+{
+    FcPattern *pattern = FcPatternCreate();
+    FcObjectSet *objects = FcObjectSetBuild(FC_FAMILY, FC_FILE, static_cast<void *>(nullptr));
+    FcFontSet *fonts = FcFontList(config, pattern, objects);
+    if (fonts != nullptr) {
+        for (int i = 0; i < fonts->nfont; ++i) {
+            FcChar8 *file = nullptr;
+            FcChar8 *family = nullptr;
+            FcPatternGetString(fonts->fonts[i], FC_FILE, 0, &file);
+            FcPatternGetString(fonts->fonts[i], FC_FAMILY, 0, &family);
+            if (file != nullptr && family != nullptr &&
+                std::string(reinterpret_cast<const char *>(file)).find(filename) !=
+                    std::string::npos) {
+                log(LogLevel::Info, "bundled file family: '" +
+                                        std::string(reinterpret_cast<const char *>(family)) + "'");
+            }
+        }
+        FcFontSetDestroy(fonts);
+    }
+    FcObjectSetDestroy(objects);
+    FcPatternDestroy(pattern);
+
+    FcPattern *request = FcNameParse(reinterpret_cast<const FcChar8 *>("Inconsolata Condensed"));
+    FcConfigSubstitute(config, request, FcMatchPattern);
+    FcDefaultSubstitute(request);
+    FcResult result = FcResultNoMatch;
+    FcPattern *match = FcFontMatch(config, request, &result);
+    if (match != nullptr) {
+        FcChar8 *file = nullptr;
+        FcChar8 *family = nullptr;
+        FcPatternGetString(match, FC_FILE, 0, &file);
+        FcPatternGetString(match, FC_FAMILY, 0, &family);
+        log(LogLevel::Info, "fontconfig match 'Inconsolata Condensed' -> '" +
+                                std::string(reinterpret_cast<const char *>(
+                                    family != nullptr ? family : (const FcChar8 *)"?")) +
+                                "' file='" +
+                                std::string(reinterpret_cast<const char *>(
+                                    file != nullptr ? file : (const FcChar8 *)"?")) +
+                                "'");
+        FcPatternDestroy(match);
+    }
+    FcPatternDestroy(request);
+}
+
 void register_bundled_font()
 {
     if (FcInit() == FcFalse) {
@@ -143,7 +190,9 @@ void register_bundled_font()
             FcFalse) {
             // Make the newly added face visible to Xft's font matching.
             FcConfigBuildFonts(config);
+            FcConfigSetCurrent(config);
             log(LogLevel::Info, "registered bundled font: " + candidate.string());
+            log_bundled_font_diagnostics(config, candidate.filename().string());
             return;
         }
     }
