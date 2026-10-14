@@ -17,6 +17,10 @@
 
 // Declared directly to avoid the freetype include dependency of Xft.h.
 extern "C" FcPattern *XftFontMatch(Display *dpy, int screen, FcPattern *pattern, FcResult *result);
+struct _XftFont;
+typedef struct _XftFont XftFont;
+extern "C" XftFont *XftFontOpenPattern(Display *dpy, FcPattern *pattern);
+extern "C" void XftFontClose(Display *dpy, XftFont *font);
 
 #include <app/emulator.hpp>
 #include <app/log.hpp>
@@ -225,11 +229,16 @@ void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
             if (xm != nullptr) {
                 FcChar8 *file = nullptr;
                 FcPatternGetString(xm, FC_FILE, 0, &file);
+                XftFont *opened = XftFontOpenPattern(fl_display, xm);
                 log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> '" +
                                         std::string(reinterpret_cast<const char *>(
                                             file != nullptr ? file : (const FcChar8 *)"?")) +
-                                        "'");
-                FcPatternDestroy(xm);
+                                        "' open=" + (opened != nullptr ? "ok" : "FAILED"));
+                if (opened != nullptr) {
+                    XftFontClose(fl_display, opened);
+                } else {
+                    FcPatternDestroy(xm);
+                }
             } else {
                 log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> null");
             }
