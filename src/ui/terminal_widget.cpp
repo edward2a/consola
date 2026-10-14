@@ -3,6 +3,7 @@
 #include <ui/terminal_widget.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -104,6 +105,39 @@ const std::string &intern_font_name(const std::string &name)
     return store.emplace(name, name).first->second;
 }
 
+// Families tried, in order, when the configured family does not resolve to a
+// monospace face (a missing font would otherwise fall back to a proportional
+// one and space the cell grid out).
+constexpr std::array<const char *, 6> kMonospaceFallbacks = {
+    "Inconsolata", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "FreeMono", "Courier"};
+
+// Install the four FLTK faces for a family with explicit style modifiers.
+void set_family_faces(const std::string &family)
+{
+    Fl::set_font(FL_HELVETICA, intern_font_name(fltk_raw_font_name(family, false, false)).c_str());
+    Fl::set_font(FL_HELVETICA_BOLD,
+                 intern_font_name(fltk_raw_font_name(family, true, false)).c_str());
+    Fl::set_font(FL_HELVETICA_ITALIC,
+                 intern_font_name(fltk_raw_font_name(family, false, true)).c_str());
+    Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
+                 intern_font_name(fltk_raw_font_name(family, true, true)).c_str());
+}
+
+double face_width(int face, int size, const char *text)
+{
+    fl_font(face, size);
+    return fl_width(text);
+}
+
+// A monospace face advances 'M', 'i', 'W' and ' ' equally.
+bool monospace_metrics(int size)
+{
+    const double m = face_width(FL_HELVETICA, size, "M");
+    return m > 0.0 && std::abs(m - face_width(FL_HELVETICA, size, "i")) < 0.5 &&
+           std::abs(m - face_width(FL_HELVETICA, size, "W")) < 0.5 &&
+           std::abs(m - face_width(FL_HELVETICA, size, " ")) < 0.5;
+}
+
 } // namespace
 
 TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emulator,
@@ -117,18 +151,40 @@ TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emu
 
 void TerminalWidget::apply_font_family() const
 {
-    // Map the configured family to FLTK's base face and its styled variants so
-    // bold/italic stay in the same monospace family. FLTK encodes the style in
-    // the leading character of the name, so the modifier must be explicit (see
-    // watchlist #13); a bare family starting with 'I' would be read as italic.
-    Fl::set_font(FL_HELVETICA,
-                 intern_font_name(fltk_raw_font_name(style_.font_family, false, false)).c_str());
-    Fl::set_font(FL_HELVETICA_BOLD,
-                 intern_font_name(fltk_raw_font_name(style_.font_family, true, false)).c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC,
-                 intern_font_name(fltk_raw_font_name(style_.font_family, false, true)).c_str());
-    Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
-                 intern_font_name(fltk_raw_font_name(style_.font_family, true, true)).c_str());
+    // FLTK encodes the style in the leading character of the name, so the
+    // modifier must be explicit (see watchlist #13); a bare family starting
+    // with 'I' would be read as italic.
+    std::string family = style_.font_family;
+    set_family_faces(family);
+
+    // A family that does not resolve to a monospace face (for example when the
+    // bundled font is unavailable) falls back to a proportional font, which
+    // spaces the fixed-width cell grid out. Substitute a monospace family.
+    if (!monospace_metrics(style_.font_size)) {
+        for (const char *candidate : kMonospaceFallbacks) {
+            set_family_faces(candidate);
+            if (monospace_metrics(style_.font_size)) {
+                family = candidate;
+                log(LogLevel::Warning,
+                    "configured terminal font is not monospace; using a fallback");
+                break;
+            }
+        }
+    }
+
+    // A style the family does not provide (e.g. italic in a regular-only font)
+    // resolves to an unrelated fallback whose metrics break the cell grid.
+    // Reuse the base face for that style so styled text stays aligned.
+    const double base = face_width(FL_HELVETICA, style_.font_size, "M");
+    const double bold = face_width(FL_HELVETICA_BOLD, style_.font_size, "M");
+    if (std::abs(face_width(FL_HELVETICA_ITALIC, style_.font_size, "M") - base) > 0.5) {
+        Fl::set_font(FL_HELVETICA_ITALIC,
+                     intern_font_name(fltk_raw_font_name(family, false, false)).c_str());
+    }
+    if (std::abs(face_width(FL_HELVETICA_BOLD_ITALIC, style_.font_size, "M") - bold) > 0.5) {
+        Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
+                     intern_font_name(fltk_raw_font_name(family, true, false)).c_str());
+    }
 }
 
 int TerminalWidget::scrollbar_width() const

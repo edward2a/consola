@@ -665,3 +665,14 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   re-checks target survival even when no poll wake source remains (e.g. a
   reaped leader whose SIGHUP-terminable group member exits on its own);
   `io_loop_test::test_terminate_after_leader_exit_is_prompt` covers it.
+- **Font robustness follow-up**: the italic misparse was only half the font
+  bug. When the configured family does not resolve (for example if the bundled
+  font is unavailable), FLTK falls back to a *proportional* face; because the
+  cell width is measured from "M", every narrow glyph was followed by a wide gap
+  (the reported "characters taking two spaces"). `TerminalWidget::apply_font_family()`
+  now verifies the resolved face is monospace (`monospace_metrics`) and
+  substitutes a monospace family (Inconsolata, DejaVu Sans Mono, …) otherwise,
+  and reuses the base/bold face for any style (e.g. italic) the family does not
+  provide so styled text keeps the cell grid. Verified by rendering: the bundled
+  font gives a 5px glyph + 1px gap, and the fallback path a 7px + 1px gap — both
+  monospace, versus a spaced 8px + 4px proportional fallback before.
