@@ -13,7 +13,7 @@ std::optional<CommandRequest> command_for_key(int key, int state)
     const bool alt = (state & FL_ALT) != 0;
 
     // Terminator's default pane shortcuts.
-    if (ctrl && shift) {
+    if (ctrl && shift && !alt) {
         switch (key) {
         case 'o':
         case 'O':
@@ -42,7 +42,7 @@ std::optional<CommandRequest> command_for_key(int key, int state)
         }
     }
 
-    if (alt && !ctrl) {
+    if (alt && !ctrl && !shift) {
         switch (key) {
         case FL_Left:
             return CommandRequest{.command = Command::FocusLeft, .direction = FocusDirection::left};

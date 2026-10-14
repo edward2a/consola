@@ -514,4 +514,10 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   one cell. Default shortcuts follow Terminator: Ctrl+Shift+O/E split, Ctrl+
   Shift+W close, Alt+Arrow focus, Ctrl+Shift+Arrow resize. Tests: `commands_test`
   (mapping and non-matches) and the view test now drives `execute`. Debug and
-  ASan/UBSan suites pass 16/16; clang-format/clang-tidy clean.
+  ASan/UBSan suites pass 16/16; clang-format/clang-tidy clean. Review fixes: a
+  recognized shortcut is consumed even when the command cannot apply, so it
+  never leaks to the terminal; `resize_focused` requires perpendicular overlap
+  with the focused pane (nested layouts) and refuses to overwrite the stored
+  ratio when a nudge is clamped by a subtree minimum
+  (`split_ratio_for_position` now reports `clamped`); shortcut modifier matches
+  are exact (no extra Ctrl/Shift/Alt).

@@ -348,13 +348,18 @@ void test_split_ratio_for_position()
     };
 
     // available = 98; leaf minima are 26, so the divider spans [26, 72].
-    CHECK(std::abs(ratio_at(49) - 0.5F) < 0.001F);
-    CHECK(std::abs(ratio_at(10) - (26.0F / 98.0F)) < 0.001F);
-    CHECK(std::abs(ratio_at(90) - (72.0F / 98.0F)) < 0.001F);
-    CHECK(std::abs(ratio_at(0) - (26.0F / 98.0F)) < 0.001F);
-    CHECK(std::abs(ratio_at(100) - (72.0F / 98.0F)) < 0.001F);
+    CHECK(std::abs(ratio_at(49).ratio - 0.5F) < 0.001F);
+    CHECK(!ratio_at(49).clamped);
+    CHECK(std::abs(ratio_at(10).ratio - (26.0F / 98.0F)) < 0.001F);
+    CHECK(ratio_at(10).clamped);
+    CHECK(std::abs(ratio_at(90).ratio - (72.0F / 98.0F)) < 0.001F);
+    CHECK(ratio_at(90).clamped);
+    CHECK(std::abs(ratio_at(0).ratio - (26.0F / 98.0F)) < 0.001F);
+    CHECK(ratio_at(0).clamped);
+    CHECK(std::abs(ratio_at(100).ratio - (72.0F / 98.0F)) < 0.001F);
+    CHECK(ratio_at(100).clamped);
 
-    CHECK(consola::split_ratio_for_position(tree, consola::NodeId{999}, area, 50, kMetrics) ==
+    CHECK(consola::split_ratio_for_position(tree, consola::NodeId{999}, area, 50, kMetrics).ratio ==
           0.5F);
 }
 

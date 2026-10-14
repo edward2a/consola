@@ -87,9 +87,17 @@ focus_neighbor(const LayoutResult &layout, TerminalId current, FocusDirection di
 
 // The stored ratio for dragging `split`'s divider to `position` (a coordinate
 // along the split axis) within `area`, clamped so both subtrees keep their
-// minimum size (DIP 3.3, 3.5). Returns 0.5 when the split is not found.
-[[nodiscard]] float split_ratio_for_position(const LayoutTree &tree, NodeId split, const Rect &area,
-                                             int position, const LayoutMetrics &metrics);
+// minimum size (DIP 3.3, 3.5). `clamped` reports that the position was limited
+// by a subtree minimum, so a keyboard nudge can leave the stored ratio alone.
+// `ratio` is 0.5 when the split is not found.
+struct SplitRatio {
+    float ratio = 0.5F;
+    bool clamped = false;
+};
+
+[[nodiscard]] SplitRatio split_ratio_for_position(const LayoutTree &tree, NodeId split,
+                                                  const Rect &area, int position,
+                                                  const LayoutMetrics &metrics);
 
 // Minimum content size the tree needs: two columns by one row per leaf plus
 // pane chrome, combined bottom-up along each split axis (DIP 3.3). The caller

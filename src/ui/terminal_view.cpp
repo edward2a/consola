@@ -192,15 +192,35 @@ bool TerminalView::resize_focused(FocusDirection direction)
         if (!adjacent) {
             continue;
         }
+        // Also require overlap on the perpendicular axis so a divider in
+        // another region that happens to share the coordinate is not moved.
+        if (horizontal_axis) {
+            const bool overlap = divider.rect.y < pane->logical.y + pane->logical.height &&
+                                 pane->logical.y < divider.rect.y + divider.rect.height;
+            if (!overlap) {
+                continue;
+            }
+        } else {
+            const bool overlap = divider.rect.x < pane->logical.x + pane->logical.width &&
+                                 pane->logical.x < divider.rect.x + divider.rect.width;
+            if (!overlap) {
+                continue;
+            }
+        }
 
         const LayoutMetrics current_metrics = metrics();
         const int step = horizontal_axis ? current_metrics.cell_width : current_metrics.cell_height;
         const int current = horizontal_axis ? divider.rect.x : divider.rect.y;
         const int delta =
             (direction == FocusDirection::left || direction == FocusDirection::up) ? -step : step;
-        const float ratio = split_ratio_for_position(
+        const SplitRatio ratio = split_ratio_for_position(
             manager_.tab().layout(), divider.split, divider.area, current + delta, current_metrics);
-        if (manager_.set_split_ratio(divider.split, ratio)) {
+        // A nudge that is clamped by a subtree minimum must not overwrite the
+        // stored ratio (DIP 3.3).
+        if (ratio.clamped) {
+            return false;
+        }
+        if (manager_.set_split_ratio(divider.split, ratio.ratio)) {
             layout();
             redraw();
             return true;
@@ -241,9 +261,9 @@ int TerminalView::handle(int event)
         if (drag_.active) {
             const int position = drag_.orientation == Orientation::horizontal ? Fl::event_y() - y()
                                                                               : Fl::event_x() - x();
-            const float ratio = split_ratio_for_position(manager_.tab().layout(), drag_.split,
-                                                         drag_.area, position, metrics());
-            if (manager_.set_split_ratio(drag_.split, ratio)) {
+            const SplitRatio ratio = split_ratio_for_position(manager_.tab().layout(), drag_.split,
+                                                              drag_.area, position, metrics());
+            if (manager_.set_split_ratio(drag_.split, ratio.ratio)) {
                 layout();
                 redraw();
             }
@@ -442,7 +462,10 @@ bool TerminalView::key_callback(void *context, int key, int state)
     if (!request) {
         return false;
     }
-    return self->view->execute(*request);
+    // A recognized shortcut is consumed even if the command cannot apply, so it
+    // never leaks to the terminal (DIP 3.6).
+    (void)self->view->execute(*request);
+    return true;
 }
 
 } // namespace consola

@@ -289,12 +289,12 @@ std::optional<TerminalId> focus_neighbor(const LayoutResult &layout, TerminalId 
     return best->terminal;
 }
 
-float split_ratio_for_position(const LayoutTree &tree, NodeId split_id, const Rect &area,
-                               int position, const LayoutMetrics &metrics)
+SplitRatio split_ratio_for_position(const LayoutTree &tree, NodeId split_id, const Rect &area,
+                                    int position, const LayoutMetrics &metrics)
 {
     const SplitNode *split = tree.split(split_id);
     if (split == nullptr) {
-        return 0.5F;
+        return SplitRatio{};
     }
     const int divider = non_negative(metrics.divider_thickness);
     const bool horizontal = split->orientation == Orientation::horizontal;
@@ -302,7 +302,7 @@ float split_ratio_for_position(const LayoutTree &tree, NodeId split_id, const Re
     const int extent = horizontal ? area.height : area.width;
     const int available = non_negative(extent - divider);
     if (available <= 0) {
-        return 0.5F;
+        return SplitRatio{};
     }
 
     const Size first_min = node_minimum(tree, split->first, metrics);
@@ -313,10 +313,13 @@ float split_ratio_for_position(const LayoutTree &tree, NodeId split_id, const Re
     const int lower = std::clamp(min_first, 0, available);
     const int upper = available - std::clamp(min_second, 0, available);
     if (upper < lower) {
-        return 0.5F;
+        return SplitRatio{};
     }
-    const int local = std::clamp(position - origin, lower, upper);
-    return static_cast<float>(local) / static_cast<float>(available);
+    const int local = position - origin;
+    const bool clamped = local < lower || local > upper;
+    const int extent_pixels = std::clamp(local, lower, upper);
+    return SplitRatio{.ratio = static_cast<float>(extent_pixels) / static_cast<float>(available),
+                      .clamped = clamped};
 }
 
 } // namespace consola

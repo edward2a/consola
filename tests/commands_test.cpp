@@ -61,6 +61,11 @@ void test_unmapped()
     CHECK(!command_for_key('o', FL_CTRL).has_value());
     CHECK(!command_for_key(FL_Left, 0).has_value());
     CHECK(!command_for_key(FL_Left, FL_CTRL).has_value());
+
+    // Near-miss modifier combinations are not shortcuts.
+    CHECK(!command_for_key('o', FL_CTRL | FL_SHIFT | FL_ALT).has_value());
+    CHECK(!command_for_key(FL_Left, FL_ALT | FL_SHIFT).has_value());
+    CHECK(!command_for_key(FL_Left, FL_ALT | FL_CTRL).has_value());
 }
 
 } // namespace
