@@ -93,6 +93,7 @@ bool TerminalManager::pump()
 {
     consume_results();
     const bool dirty = consume_inbound();
+    process_closing();
     drain_events();
     return dirty;
 }
@@ -113,21 +114,36 @@ void TerminalManager::consume_results()
         TerminalInstance *instance = it->second;
         if (result.session == nullptr) {
             instance->set_state(TerminalState::exited);
-            launch_failed_ = true;
+            if (result.error != SessionError::cancelled) {
+                launch_failed_ = true;
+            }
+            if (instance->closing()) {
+                finalize(result.id);
+            }
             continue;
         }
 
+        // A late launch success on a closing pane is registered and then closed
+        // through the normal steps (DIP 4.4).
         instance->attach(std::move(result.session), result.master_fd, result.exit_notification_fd,
                          result.process_id);
-        if (!loop_->add(*instance->session(), instance->master_fd(),
-                        instance->exit_notification_fd(), instance->process_id(), instance->id(),
-                        instance->options().drain_output_on_close, instance->inbound(),
-                        instance->outbound())) {
+        if (loop_->add(*instance->session(), instance->master_fd(),
+                       instance->exit_notification_fd(), instance->process_id(), instance->id(),
+                       instance->options().drain_output_on_close, instance->inbound(),
+                       instance->outbound())) {
+            if (instance->closing()) {
+                instance->set_state(TerminalState::stopping);
+                loop_->terminate(result.id);
+            }
+        } else {
             log(LogLevel::Error, "session registration failed");
             auto session = instance->release_session();
             session->terminate();
             instance->set_state(TerminalState::exited);
             launch_failed_ = true;
+            if (instance->closing()) {
+                finalize(result.id);
+            }
         }
     }
 }
@@ -165,12 +181,12 @@ void TerminalManager::drain_events()
     }
 }
 
-void TerminalManager::request_removals()
+void TerminalManager::process_closing()
 {
     for (auto &entry : instances_) {
         TerminalInstance *instance = entry.second;
-        if (instance->state() == TerminalState::exited && instance->session() != nullptr &&
-            !remove_requested_.contains(entry.first)) {
+        if (instance->closing() && instance->state() == TerminalState::exited &&
+            instance->session() != nullptr && !remove_requested_.contains(entry.first)) {
             loop_->remove(entry.first);
             remove_requested_.insert(entry.first);
         }
@@ -198,6 +214,11 @@ void TerminalManager::shutdown()
     }
     shutdown_done_ = true;
     accepting_ = false;
+
+    // Every pane is closing for the purpose of removal.
+    for (auto &entry : instances_) {
+        entry.second->set_closing(true);
+    }
 
     // Resolve pending launches: a late success is registered and closed, a
     // failed/cancelled launch completes without a registration (DIP 4.5).
@@ -258,7 +279,6 @@ void TerminalManager::shutdown()
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (!instances_.empty() && std::chrono::steady_clock::now() < deadline) {
         pump();
-        request_removals();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
@@ -273,6 +293,36 @@ void TerminalManager::shutdown()
 
     loop_->shutdown();
     loop_->stop();
+}
+
+bool TerminalManager::close_terminal(TerminalId id)
+{
+    const auto it = instances_.find(id);
+    if (it == instances_.end()) {
+        return false;
+    }
+    TerminalInstance *instance = it->second;
+    if (instance->closing()) {
+        return true;
+    }
+    instance->set_closing(true);
+
+    if (instance->session() != nullptr) {
+        // Running or exited: terminate (unless already exited) and let
+        // process_closing() request removal once `exited` is observed.
+        if (instance->state() != TerminalState::exited) {
+            instance->set_state(TerminalState::stopping);
+            loop_->terminate(id);
+        }
+    } else if (instance->state() == TerminalState::starting) {
+        // Cancel the launch; the instance is retained until the result is
+        // consumed (DIP 4.4).
+        worker_.cancel(id);
+    } else {
+        // Failed launch with no registration; nothing to retire.
+        finalize(id);
+    }
+    return true;
 }
 
 void TerminalManager::send(TerminalId id, std::span<const std::byte> bytes)

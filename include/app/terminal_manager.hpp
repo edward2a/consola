@@ -74,6 +74,13 @@ public:
     // Route encoded terminal output (keys/paste) to a running session.
     void send(TerminalId id, std::span<const std::byte> bytes);
 
+    // Begin closing a pane (DIP 4.4): a Starting pane cancels its launch and is
+    // retained until the result is consumed; a running pane is terminated
+    // through the loop. The pane's instance and layout node are removed once the
+    // loop acknowledges removal, driven by pump(). Returns false for an unknown
+    // id. Idempotent while a close is in progress.
+    bool close_terminal(TerminalId id);
+
     void resize(TerminalId id, int columns, int rows);
 
     [[nodiscard]] TerminalInstance *find(TerminalId id) noexcept;
@@ -88,8 +95,8 @@ private:
     bool submit(TerminalInstance &instance);
     void consume_results();
     bool consume_inbound();
+    void process_closing();
     void drain_events();
-    void request_removals();
     void finalize(TerminalId id);
 
     StartupWorker worker_;

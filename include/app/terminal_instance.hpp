@@ -49,11 +49,22 @@ public:
         state_ = state;
     }
 
-    // Input is accepted only while the backend is attached and running and the
-    // session has not reached EOF.
+    // Input is accepted only while the backend is attached and running, the
+    // session has not reached EOF and the pane is not closing.
     [[nodiscard]] bool input_enabled() const noexcept
     {
-        return state_ == TerminalState::running && !eof_;
+        return state_ == TerminalState::running && !eof_ && !closing_;
+    }
+
+    // The pane has been asked to close (DIP 4.4). It is retained until its
+    // launch resolves and its session is removed.
+    void set_closing(bool value) noexcept
+    {
+        closing_ = value;
+    }
+    [[nodiscard]] bool closing() const noexcept
+    {
+        return closing_;
     }
 
     // The I/O loop reported terminal EOF; no further input is accepted.
@@ -121,6 +132,7 @@ private:
     SessionOptions options_;
     TerminalState state_ = TerminalState::created;
     bool eof_ = false;
+    bool closing_ = false;
     TerminalEmulator emulator_;
     SessionInboundQueue inbound_;
     SessionOutboundQueue outbound_{std::size_t{1} << 20};

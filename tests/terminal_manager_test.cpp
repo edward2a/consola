@@ -199,6 +199,85 @@ void test_shutdown_reaps_sighup_ignoring()
     CHECK(manager.find(REQUIRED(id)) == nullptr);
 }
 
+void test_close_running_pane()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const auto first = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(first.has_value());
+    const auto second =
+        manager.split_terminal(REQUIRED(first), Orientation::vertical, shell("sleep 30"));
+    CHECK(second.has_value());
+
+    const bool both_running = wait_for(
+        [&] {
+            TerminalInstance *a = manager.find(REQUIRED(first));
+            TerminalInstance *b = manager.find(REQUIRED(second));
+            return a != nullptr && b != nullptr && a->state() == TerminalState::running &&
+                   b->state() == TerminalState::running;
+        },
+        5000, manager);
+    CHECK(both_running);
+    CHECK(manager.tab().terminal_count() == 2);
+
+    CHECK(manager.close_terminal(REQUIRED(second)));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(second)) == nullptr; }, 5000, manager);
+    CHECK(removed);
+    CHECK(manager.tab().terminal_count() == 1);
+    CHECK(manager.tab().layout().terminal_count() == 1);
+    CHECK(manager.find(REQUIRED(first)) != nullptr);
+
+    CHECK(manager.close_terminal(REQUIRED(first)));
+    const bool empty = wait_for([&] { return manager.tab().terminal_count() == 0; }, 5000, manager);
+    CHECK(empty);
+    CHECK(manager.tab().layout().empty());
+}
+
+void test_close_starting_pane()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const auto id = manager.create_root_terminal(shell("printf hi"));
+    CHECK(id.has_value());
+    TerminalInstance *instance = manager.find(REQUIRED(id));
+    CHECK(instance != nullptr);
+    CHECK(instance->state() == TerminalState::starting);
+
+    CHECK(manager.close_terminal(REQUIRED(id)));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 5000, manager);
+    CHECK(removed);
+    CHECK(manager.tab().terminal_count() == 0);
+    CHECK(manager.tab().layout().empty());
+    CHECK(!manager.launch_failed());
+}
+
+void test_close_under_backpressure()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    TerminalOptions options;
+    options.session.executable = "/bin/sh";
+    options.session.arguments = {"-c", "dd if=/dev/zero bs=4096 count=10000 2>/dev/null"};
+    const auto id = manager.create_root_terminal(options);
+    CHECK(id.has_value());
+
+    for (int iteration = 0; iteration < 50; ++iteration) {
+        manager.pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    CHECK(manager.close_terminal(REQUIRED(id)));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 8000, manager);
+    CHECK(removed);
+    CHECK(manager.tab().terminal_count() == 0);
+}
+
 void test_root_rejected_when_nonempty()
 {
     TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
@@ -218,6 +297,9 @@ int main()
     test_launch_failure();
     test_send_to_running();
     test_shutdown_reaps_sighup_ignoring();
+    test_close_running_pane();
+    test_close_starting_pane();
+    test_close_under_backpressure();
     test_root_rejected_when_nonempty();
 
     if (g_failures != 0) {

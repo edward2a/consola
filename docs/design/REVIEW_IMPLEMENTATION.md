@@ -436,3 +436,15 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   every child is reaped and every removal acknowledged, then shuts the loop
   down. The destructor calls it. Test: a SIGHUP-ignoring shell is escalated and
   reaped within the 5 s barrier.
+- **S3-CS4 — per-pane close (§4.4)**: `TerminalManager::close_terminal()` marks
+  the pane closing (which disables input) and either cancels a `Starting`
+  launch, terminating a running pane through the loop, or finalizing a failed
+  launch. `pump()` consumes the launch result (a late success is registered and
+  then closed through the normal steps), waits for `exited`, requests `remove`
+  and, on the removal acknowledgement, releases the backend and removes the
+  layout node (which collapses/rebalances the tree). A cancelled launch is no
+  longer counted as a launch failure. Tests: close a running pane (tree
+  collapses to the survivor), close a starting pane before its launch resolves
+  (no launch failure), and close under output backpressure with the default
+  discard-on-close policy. Debug and ASan/UBSan suites pass 13/13;
+  clang-format/clang-tidy clean.
