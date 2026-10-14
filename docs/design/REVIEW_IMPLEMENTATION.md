@@ -552,4 +552,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   joins the loop and terminates/reaps only un-reaped children before releasing
   them; `pump()` detects a stopped loop and runs the fallback, so the
   application's timer completes instead of hanging. `io_loop_test` covers
-  `start()`/`running()`/`stop()`.
+  `start()`/`running()`/`stop()`. A fifth pass closed two fallback corners:
+  `LinuxPtySession::terminate()` no longer signals a child the loop already
+  reaped (reused-pid safety), and any launch result that arrives for an
+  untracked instance (loop-failure race) is terminated and reaped before
+  release; `fail_remaining()` also rejects further creation.

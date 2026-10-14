@@ -108,6 +108,8 @@ void TerminalManager::fail_remaining()
         return;
     }
     log(LogLevel::Error, "I/O loop stopped; cleaning up remaining sessions");
+    // Reject new terminals; the loop cannot serve them.
+    accepting_ = false;
     // Join the loop so nothing else touches the sessions, then terminate and
     // reap any child the loop did not reap before releasing it.
     loop_->stop();
@@ -132,9 +134,11 @@ void TerminalManager::consume_results()
     while (worker_.try_pop(result)) {
         const auto it = instances_.find(result.id);
         if (it == instances_.end()) {
-            // Result for a terminal no longer tracked; best-effort retire.
+            // Result for a terminal no longer tracked: it was never registered
+            // with the loop, so terminate and reap it directly.
             if (result.session != nullptr) {
                 result.session->terminate();
+                result.session->reap();
             }
             continue;
         }
@@ -172,6 +176,7 @@ void TerminalManager::consume_results()
             log(LogLevel::Error, "session registration failed");
             auto session = instance->release_session();
             session->terminate();
+            session->reap();
             instance->set_state(TerminalState::exited);
             launch_failed_ = true;
             if (instance->closing()) {
@@ -282,6 +287,7 @@ void TerminalManager::begin_shutdown()
         if (it == instances_.end()) {
             if (result.session != nullptr) {
                 result.session->terminate();
+                result.session->reap();
             }
             continue;
         }

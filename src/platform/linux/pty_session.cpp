@@ -545,7 +545,9 @@ SessionError LinuxPtySession::resize(int cols, int rows)
 
 void LinuxPtySession::terminate()
 {
-    if (stopping_) {
+    // Never signal a child the loop already reaped: its pid may have been
+    // reused.
+    if (stopping_ || reaped_) {
         return;
     }
     stopping_ = true;
