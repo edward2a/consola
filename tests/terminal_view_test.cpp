@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
+#include <string>
 #include <thread>
 
 #include <FL/Fl.H>
@@ -195,6 +197,31 @@ int main()
     const bool tab_closed = wait_for([&] { return manager.tabs().count() == 1; }, 8000, view);
     CHECK(tab_closed);
     CHECK(manager.terminal_count() == 1);
+
+    // Switching tabs restores the window title from the newly active terminal:
+    // a title update from an inactive tab must not leak, but selecting that tab
+    // must refresh the label.
+    const consola::TabId titled_tab = manager.tabs().active_id();
+    const consola::TabId other_tab = manager.create_tab();
+    const auto other_root =
+        manager.create_root_terminal(other_tab, consola::TerminalOptions{options});
+    CHECK(other_root.has_value());
+    view.pump();
+    const std::string before(window.label());
+    const char *osc = "\x1b]0;hello-title\x07";
+    manager.find(REQUIRED(root))
+        ->emulator()
+        .feed(
+            std::span<const std::byte>(reinterpret_cast<const std::byte *>(osc), std::strlen(osc)));
+    view.pump();
+    CHECK(std::string(window.label()) == before);
+    CHECK(view.select_tab(titled_tab));
+    CHECK(std::string(window.label()) == "hello-title");
+
+    CHECK(manager.close_tab(other_tab));
+    const bool other_closed =
+        wait_for([&] { return manager.find(REQUIRED(other_root)) == nullptr; }, 8000, view);
+    CHECK(other_closed);
 
     manager.shutdown();
 

@@ -492,6 +492,146 @@ void test_shutdown_multiple_tabs()
     CHECK(manager.find(REQUIRED(second)) == nullptr);
 }
 
+void test_close_tab_with_starting_pane()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId tab = manager.create_tab();
+    const auto id = manager.create_root_terminal(tab, shell("sleep 30"));
+    CHECK(id.has_value());
+    CHECK(manager.find(REQUIRED(id))->state() == TerminalState::starting);
+
+    // Close the tab while its only pane is still Starting.
+    CHECK(manager.close_tab(tab));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 8000, manager);
+    CHECK(removed);
+    CHECK(manager.tabs().find(tab) == nullptr);
+    CHECK(manager.tabs().count() == 1);
+    CHECK(!manager.launch_failed());
+}
+
+void test_close_tab_with_late_launch()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId tab = manager.create_tab();
+    const auto id = manager.create_root_terminal(tab, shell("sleep 30"));
+    CHECK(id.has_value());
+    // Let the worker finish the launch without pumping, so closing races with an
+    // already-successful (late) result.
+    std::this_thread::sleep_for(std::chrono::milliseconds{200});
+    CHECK(manager.find(REQUIRED(id))->state() == TerminalState::starting);
+
+    CHECK(manager.close_tab(tab));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 8000, manager);
+    CHECK(removed);
+    CHECK(manager.tabs().find(tab) == nullptr);
+    CHECK(!manager.launch_failed());
+}
+
+void test_close_tab_with_failed_launch()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId tab = manager.create_tab();
+    TerminalOptions bad;
+    bad.session.executable = "/nonexistent/consola-no-such-binary";
+    const auto id = manager.create_root_terminal(tab, bad);
+    CHECK(id.has_value());
+    const bool failed = wait_for(
+        [&] {
+            TerminalInstance *instance = manager.find(REQUIRED(id));
+            return instance != nullptr && instance->state() == TerminalState::exited;
+        },
+        5000, manager);
+    CHECK(failed);
+
+    CHECK(manager.close_tab(tab));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 5000, manager);
+    CHECK(removed);
+    CHECK(manager.tabs().find(tab) == nullptr);
+    CHECK(manager.launch_failed());
+}
+
+void test_close_non_active_tab()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId first_tab = manager.tabs().active_id();
+    const auto first = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(first.has_value());
+
+    const consola::TabId second_tab = manager.create_tab();
+    const auto second = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(second.has_value());
+    CHECK(manager.tabs().active_id() == second_tab);
+
+    // Close the non-active first tab; the active second tab is untouched.
+    CHECK(manager.close_tab(first_tab));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(first)) == nullptr; }, 8000, manager);
+    CHECK(removed);
+    CHECK(manager.tabs().find(first_tab) == nullptr);
+    CHECK(manager.tabs().count() == 1);
+    CHECK(manager.tabs().active_id() == second_tab);
+    CHECK(manager.find(REQUIRED(second)) != nullptr);
+}
+
+void test_rapid_tab_create_destroy()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    for (int i = 0; i < 6; ++i) {
+        const consola::TabId tab = manager.create_tab();
+        const auto id = manager.create_root_terminal(tab, shell("printf rapid"));
+        CHECK(id.has_value());
+        CHECK(manager.close_tab(tab));
+    }
+
+    const bool cleared =
+        wait_for([&] { return manager.terminal_count() == 0 && manager.tabs().count() == 1; },
+                 10000, manager);
+    CHECK(cleared);
+    CHECK(!manager.launch_failed());
+}
+
+void test_shutdown_across_tabs_backpressure()
+{
+    for (const bool drain : {false, true}) {
+        TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+        manager.start();
+
+        TerminalOptions options;
+        options.session.executable = "/bin/sh";
+        options.session.arguments = {"-c", "dd if=/dev/zero bs=4096 count=10000 2>/dev/null"};
+        options.session.drain_output_on_close = drain;
+
+        const auto first = manager.create_root_terminal(options);
+        CHECK(first.has_value());
+        const consola::TabId second_tab = manager.create_tab();
+        const auto second = manager.create_root_terminal(second_tab, options);
+        CHECK(second.has_value());
+
+        for (int iteration = 0; iteration < 50; ++iteration) {
+            manager.pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+
+        manager.shutdown();
+        CHECK(manager.terminal_count() == 0);
+        CHECK(manager.find(REQUIRED(first)) == nullptr);
+        CHECK(manager.find(REQUIRED(second)) == nullptr);
+    }
+}
+
 } // namespace
 
 int main()
@@ -512,6 +652,12 @@ int main()
     test_close_tab();
     test_select_next_previous_tabs();
     test_shutdown_multiple_tabs();
+    test_close_tab_with_starting_pane();
+    test_close_tab_with_late_launch();
+    test_close_tab_with_failed_launch();
+    test_close_non_active_tab();
+    test_rapid_tab_create_destroy();
+    test_shutdown_across_tabs_backpressure();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d terminal manager check(s) failed\n", g_failures);

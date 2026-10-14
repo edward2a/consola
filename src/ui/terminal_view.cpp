@@ -147,6 +147,7 @@ void TerminalView::focus(TerminalId id)
     last_tab_ = manager_.tabs().active_id();
     layout();
     sync_focus();
+    update_window_title();
     redraw();
 }
 
@@ -196,6 +197,7 @@ std::optional<TerminalId> TerminalView::new_tab()
     last_tab_ = manager_.tabs().active_id();
     layout();
     sync_focus();
+    update_window_title();
     return id;
 }
 
@@ -212,6 +214,7 @@ bool TerminalView::select_tab(TabId id)
     last_tab_ = manager_.tabs().active_id();
     layout();
     sync_focus();
+    update_window_title();
     redraw();
     return true;
 }
@@ -225,6 +228,7 @@ bool TerminalView::select_next_tab()
     last_tab_ = *id;
     layout();
     sync_focus();
+    update_window_title();
     redraw();
     return true;
 }
@@ -238,6 +242,7 @@ bool TerminalView::select_previous_tab()
     last_tab_ = *id;
     layout();
     sync_focus();
+    update_window_title();
     redraw();
     return true;
 }
@@ -490,6 +495,26 @@ void TerminalView::sync_focus()
     if (target != nullptr && Fl::focus() != target) {
         target->take_focus();
     }
+}
+
+void TerminalView::update_window_title()
+{
+    Fl_Window *win = window();
+    if (win == nullptr) {
+        return;
+    }
+    // Retitle from the newly active tab's focused terminal, falling back to the
+    // application name when that terminal has not set a title.
+    std::string title = "consola";
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (focused) {
+        TerminalInstance *instance = manager_.find(*focused);
+        if (instance != nullptr && !instance->emulator().title().empty()) {
+            title = instance->emulator().title();
+        }
+    }
+    win->copy_label(title.c_str());
+    win->redraw();
 }
 
 const DividerRect *TerminalView::divider_at(int x, int y) const

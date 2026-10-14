@@ -96,6 +96,7 @@ private:
     bool destroy_stale_widgets();
     void layout();
     void sync_focus();
+    void update_window_title();
     bool resize_focused(FocusDirection direction);
     [[nodiscard]] LayoutMetrics metrics() const;
     [[nodiscard]] const DividerRect *divider_at(int x, int y) const;

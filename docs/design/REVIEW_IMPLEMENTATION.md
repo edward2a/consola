@@ -617,3 +617,15 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   changes, and `tab_at`/`close_at` reject coordinates outside the bar or past
   the last tab. A new `terminal_frame_test` asserts the bar/view geometry and
   pane window position under resize; suites pass 19/19.
+- **S4-CS3 — multi-tab lifecycle (§4.2, 4.4, 4.5)**: hardening and coverage for
+  closing and shutting down across tabs. `TerminalView` refreshes the window
+  title from the newly active tab's focused terminal on tab switch (carried
+  from S4-CS2), so an inactive tab's OSC title update never leaks but selecting
+  its tab restores the label. `terminal_manager_test` adds: closing a tab whose
+  only pane is still `Starting`, closing a tab racing an already-successful
+  (late) launch, closing a tab whose launch failed, closing a non-active tab
+  (the active tab is untouched), rapid create/destroy of six tabs, and
+  application shutdown with two flooding tabs under both
+  `drain_output_on_close` settings. `terminal_view_test` adds the tab-switch
+  window-title check. Debug and ASan/UBSan suites pass 19/19;
+  clang-format/clang-tidy clean.
