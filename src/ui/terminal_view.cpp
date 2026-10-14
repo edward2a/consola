@@ -350,6 +350,18 @@ void TerminalView::layout()
     }
     const Rect content{0, 0, w(), h()};
     last_layout_ = compute_layout(manager_.tab().layout(), content, metrics());
+
+    // Advertise the tree's minimum size to the window manager (DIP 3.3).
+    const Size minimum = minimum_size(manager_.tab().layout(), metrics());
+    if (minimum.width > 0 && minimum.height > 0 &&
+        (minimum.width != last_min_width_ || minimum.height != last_min_height_)) {
+        last_min_width_ = minimum.width;
+        last_min_height_ = minimum.height;
+        if (Fl_Window *win = window()) {
+            win->size_range(minimum.width, minimum.height);
+        }
+    }
+
     for (const PaneRect &pane : last_layout_.panes) {
         const auto it = widgets_.find(pane.terminal);
         if (it == widgets_.end()) {

@@ -519,5 +519,19 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   never leaks to the terminal; `resize_focused` requires perpendicular overlap
   with the focused pane (nested layouts) and refuses to overwrite the stored
   ratio when a nudge is clamped by a subtree minimum
-  (`split_ratio_for_position` now reports `clamped`); shortcut modifier matches
+  (  `split_ratio_for_position` now reports `clamped`); shortcut modifier matches
   are exact (no extra Ctrl/Shift/Alt).
+- **Stage 3 exit review**: Luna-Six returned FAIL on two blocking items, both
+  fixed. (1) The synchronous shutdown waited only 5 s and then force-finalized
+  registered sessions, and the application had already left `Fl::run()`. The
+  manager now exposes `begin_shutdown()` / `shutdown_complete()` /
+  `finish_shutdown()`: the application drives teardown from the FLTK timer
+  (window close and `CONSOLA_EXIT_AFTER_MS` request shutdown without hiding the
+  window), keeping the UI loop alive through reaping and removal; `shutdown()`
+  remains a synchronous convenience for tests and the destructor and only
+  releases registered sessions after the loop has stopped (30 s safety net).
+  (2) The layout minimum was not advertised to the window manager;
+  `TerminalView::layout()` now calls `Fl_Window::size_range()` with the tree
+  minimum. Added a shutdown-under-output-backpressure test and a forced-
+  undersizing test asserting the live PTY grid stays positive. Debug and
+  ASan/UBSan suites pass 16/16; clang-format/clang-tidy clean.

@@ -102,6 +102,8 @@ private:
     DragState drag_;
     int last_width_ = -1;
     int last_height_ = -1;
+    int last_min_width_ = 0;
+    int last_min_height_ = 0;
 };
 
 } // namespace consola

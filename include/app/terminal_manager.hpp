@@ -51,10 +51,19 @@ public:
         return tab_;
     }
 
-    // Orderly teardown (DIP 4.5): reject new terminals, resolve pending
-    // launches (registering a late success and closing it), terminate every
-    // running session through the I/O loop and wait for reaping and removal
-    // acknowledgements before stopping the loop. Idempotent.
+    // Orderly teardown (DIP 4.5). begin_shutdown() rejects new terminals,
+    // resolves pending launches (registering a late success and closing it,
+    // finalizing a failed/cancelled launch) and marks every pane closing; the
+    // caller then keeps pumping until shutdown_complete(), after which
+    // finish_shutdown() stops the loop. This keeps the UI event loop alive
+    // through reaping and removal acknowledgements.
+    void begin_shutdown();
+    [[nodiscard]] bool shutdown_complete() const noexcept;
+    void finish_shutdown();
+
+    // Synchronous convenience used by tests and the destructor: begins shutdown
+    // and pumps until every child is reaped and every removal acknowledged. It
+    // never releases a registered session before its acknowledgement.
     void shutdown();
 
     // Create a terminal as the tab's root. Returns its id, or nullopt when the
@@ -124,7 +133,8 @@ private:
     std::uint64_t next_id_ = 1;
     bool started_ = false;
     bool accepting_ = true;
-    bool shutdown_done_ = false;
+    bool shutdown_started_ = false;
+    bool shutdown_finished_ = false;
     bool launch_failed_ = false;
 };
 

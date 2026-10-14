@@ -89,6 +89,17 @@ int main()
     CHECK(root_running);
     CHECK(manager.focused() == root);
 
+    // Forced undersizing keeps the PTY grid positive (DIP 3.3, 2.11).
+    window.size(1, 1);
+    Fl::check();
+    view.pump();
+    CHECK(manager.find(REQUIRED(root))->emulator().columns() >= 1);
+    CHECK(manager.find(REQUIRED(root))->emulator().rows() >= 1);
+    window.size(500, 300);
+    Fl::check();
+    view.pump();
+    CHECK(manager.find(REQUIRED(root))->emulator().columns() > 1);
+
     const auto second = view.split_focused(Orientation::vertical);
     CHECK(second.has_value());
     CHECK(manager.tab().terminal_count() == 2);

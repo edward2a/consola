@@ -300,6 +300,27 @@ void test_close_under_backpressure()
     CHECK(manager.tab().terminal_count() == 0);
 }
 
+void test_shutdown_under_backpressure()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    TerminalOptions options;
+    options.session.executable = "/bin/sh";
+    options.session.arguments = {"-c", "dd if=/dev/zero bs=4096 count=10000 2>/dev/null"};
+    const auto id = manager.create_root_terminal(options);
+    CHECK(id.has_value());
+
+    for (int iteration = 0; iteration < 50; ++iteration) {
+        manager.pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+
+    manager.shutdown();
+    CHECK(manager.tab().terminal_count() == 0);
+    CHECK(manager.find(REQUIRED(id)) == nullptr);
+}
+
 void test_root_rejected_when_nonempty()
 {
     TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
@@ -323,6 +344,7 @@ int main()
     test_close_starting_pane();
     test_close_late_launch_success();
     test_close_under_backpressure();
+    test_shutdown_under_backpressure();
     test_root_rejected_when_nonempty();
 
     if (g_failures != 0) {

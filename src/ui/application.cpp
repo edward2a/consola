@@ -31,11 +31,49 @@ void smoke_test_exit([[maybe_unused]] void *data)
     Fl::hide_all_windows();
 }
 
-// Test/CI hook: close the window after CONSOLA_EXIT_AFTER_MS to exercise the
+// Test/CI hook: request shutdown after CONSOLA_EXIT_AFTER_MS to exercise the
 // window-close shutdown path headlessly.
-void exit_after_timeout([[maybe_unused]] void *data)
+struct ViewContext {
+    TerminalView *view = nullptr;
+    bool shutdown_requested = false;
+    bool shutdown_started = false;
+};
+
+void request_shutdown(void *data)
 {
-    Fl::hide_all_windows();
+    static_cast<ViewContext *>(data)->shutdown_requested = true;
+}
+
+void window_close([[maybe_unused]] Fl_Widget *widget, void *data)
+{
+    // Do not hide here: keep the UI loop alive until teardown completes.
+    static_cast<ViewContext *>(data)->shutdown_requested = true;
+}
+
+// Drives the managed view and its orderly shutdown from the FLTK event loop
+// (DIP 4.5): the UI loop stays alive through reaping and removal.
+void pump_timer(void *data)
+{
+    auto *context = static_cast<ViewContext *>(data);
+    TerminalManager &manager = context->view->manager();
+
+    if (!context->shutdown_started) {
+        const bool active = context->view->pump();
+        if (!active || context->shutdown_requested) {
+            context->shutdown_started = true;
+            manager.begin_shutdown();
+        }
+        Fl::repeat_timeout(0.016, &pump_timer, data);
+        return;
+    }
+
+    context->view->pump();
+    if (manager.shutdown_complete()) {
+        manager.finish_shutdown();
+        Fl::hide_all_windows();
+        return;
+    }
+    Fl::repeat_timeout(0.016, &pump_timer, data);
 }
 
 struct SmokeFeedContext {
@@ -51,21 +89,6 @@ void smoke_test_feed(void *data)
         std::span<const std::byte>(reinterpret_cast<const std::byte *>(more), std::strlen(more)));
     // Trigger a partial (age-driven) redraw rather than a full one.
     context->terminal->damage(FL_DAMAGE_EXPOSE);
-}
-
-// Drives the managed view from the FLTK event loop.
-struct ViewContext {
-    TerminalView *view;
-};
-
-void pump_timer(void *data)
-{
-    auto *context = static_cast<ViewContext *>(data);
-    if (context->view->pump()) {
-        Fl::repeat_timeout(0.016, &pump_timer, data);
-    } else {
-        Fl::hide_all_windows();
-    }
 }
 
 std::vector<std::filesystem::path> bundled_font_candidates()
@@ -168,13 +191,14 @@ int run_session(int argc, char **argv, Fl_Window &window)
     }
 
     ViewContext context{.view = &view};
+    window.callback(&window_close, &context);
     Fl::add_timeout(0.016, &pump_timer, &context);
 
     if (const char *exit_after = std::getenv("CONSOLA_EXIT_AFTER_MS")) {
         const int milliseconds = std::atoi(exit_after);
         if (milliseconds > 0) {
-            Fl::add_timeout(static_cast<double>(milliseconds) / 1000.0, &exit_after_timeout,
-                            nullptr);
+            Fl::add_timeout(static_cast<double>(milliseconds) / 1000.0, &request_shutdown,
+                            &context);
         }
     }
 
@@ -183,6 +207,7 @@ int run_session(int argc, char **argv, Fl_Window &window)
     log(LogLevel::Debug, "event loop exited");
 
     const bool failed = manager.launch_failed();
+    // Safety net if the event loop ended before the timer completed teardown.
     manager.shutdown();
     return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }

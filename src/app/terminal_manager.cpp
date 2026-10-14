@@ -232,12 +232,12 @@ void TerminalManager::finalize(TerminalId id)
     remove_requested_.erase(id);
 }
 
-void TerminalManager::shutdown()
+void TerminalManager::begin_shutdown()
 {
-    if (shutdown_done_) {
+    if (shutdown_started_) {
         return;
     }
-    shutdown_done_ = true;
+    shutdown_started_ = true;
     accepting_ = false;
 
     // Every pane is closing for the purpose of removal.
@@ -278,7 +278,7 @@ void TerminalManager::shutdown()
 
     // Instances whose launch failed or was cancelled have no loop registration
     // to retire; finalize them directly. Every remaining attached session is
-    // terminated and removed by process_closing() during the wait loop.
+    // terminated and removed by process_closing() while the caller pumps.
     std::vector<TerminalId> unregistered;
     for (const auto &entry : instances_) {
         if (entry.second->session() == nullptr) {
@@ -288,26 +288,46 @@ void TerminalManager::shutdown()
     for (const TerminalId id : unregistered) {
         finalize(id);
     }
+}
 
-    // Keep consuming queues and events until every child is reaped and every
-    // removal acknowledged.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+bool TerminalManager::shutdown_complete() const noexcept
+{
+    return instances_.empty();
+}
+
+void TerminalManager::finish_shutdown()
+{
+    if (shutdown_finished_) {
+        return;
+    }
+    shutdown_finished_ = true;
+    loop_->shutdown();
+    loop_->stop();
+}
+
+void TerminalManager::shutdown()
+{
+    begin_shutdown();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     while (!instances_.empty() && std::chrono::steady_clock::now() < deadline) {
         pump();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-
-    std::vector<TerminalId> remaining;
-    remaining.reserve(instances_.size());
-    for (const auto &entry : instances_) {
-        remaining.push_back(entry.first);
+    if (!instances_.empty()) {
+        // Safety net for a pathological child that never exits: stop the loop
+        // first so no I/O can touch the instances, then release them.
+        log(LogLevel::Error, "shutdown timed out; stopping the I/O loop");
+        loop_->stop();
+        std::vector<TerminalId> remaining;
+        remaining.reserve(instances_.size());
+        for (const auto &entry : instances_) {
+            remaining.push_back(entry.first);
+        }
+        for (const TerminalId id : remaining) {
+            finalize(id);
+        }
     }
-    for (const TerminalId id : remaining) {
-        finalize(id);
-    }
-
-    loop_->shutdown();
-    loop_->stop();
+    finish_shutdown();
 }
 
 bool TerminalManager::close_terminal(TerminalId id)
