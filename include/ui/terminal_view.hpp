@@ -40,7 +40,8 @@ public:
     std::optional<TerminalId> start(const SessionOptions &options);
 
     // Pump the manager, create/destroy widgets for added/removed terminals and
-    // apply geometry. Returns true while the tab still has terminals.
+    // apply geometry. Returns true while the application still has terminals in
+    // any tab.
     bool pump();
 
     // Pane interaction (DIP 3.5).
@@ -100,6 +101,7 @@ private:
     std::unordered_map<TerminalId, std::unique_ptr<Context>> contexts_;
     LayoutResult last_layout_;
     DragState drag_;
+    std::optional<TabId> last_tab_;
     int last_width_ = -1;
     int last_height_ = -1;
     int last_min_width_ = 0;

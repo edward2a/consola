@@ -59,6 +59,8 @@ bool TerminalView::pump()
 {
     const bool added = create_widgets();
     const bool resized = w() != last_width_ || h() != last_height_;
+    const TabId active_tab = manager_.tabs().active_id();
+    const bool tab_changed = !last_tab_.has_value() || *last_tab_ != active_tab;
     const LayoutMetrics current_metrics = metrics();
     const bool metrics_changed =
         current_metrics.cell_width != last_metrics_.cell_width ||
@@ -66,7 +68,8 @@ bool TerminalView::pump()
         current_metrics.scrollbar_width != last_metrics_.scrollbar_width ||
         current_metrics.divider_thickness != last_metrics_.divider_thickness ||
         current_metrics.pane_border != last_metrics_.pane_border;
-    if (added || resized || metrics_changed) {
+    if (added || resized || tab_changed || metrics_changed) {
+        last_tab_ = active_tab;
         last_width_ = w();
         last_height_ = h();
         last_metrics_ = current_metrics;
@@ -79,7 +82,9 @@ bool TerminalView::pump()
     }
     if (dirty) {
         for (auto &entry : widgets_) {
-            entry.second->redraw();
+            if (entry.second->visible() != 0) {
+                entry.second->redraw();
+            }
         }
     }
     sync_focus();
@@ -137,6 +142,10 @@ void TerminalView::equalize()
 void TerminalView::focus(TerminalId id)
 {
     manager_.focus(id);
+    // focus() may select a different tab, so re-apply geometry before syncing
+    // FLTK focus to the newly active tab's pane.
+    last_tab_ = manager_.tabs().active_id();
+    layout();
     sync_focus();
     redraw();
 }

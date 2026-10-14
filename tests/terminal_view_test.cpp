@@ -147,6 +147,37 @@ int main()
     CHECK(!view.split_focused(Orientation::vertical).has_value());
     CHECK(manager.tab().terminal_count() == 1);
 
+    // Switching the active tab relayouts the view (DIP 4.2): the new tab's
+    // widget is shown while the previous tab's is hidden, and switching back
+    // reverses it.
+    window.size(500, 300);
+    Fl::check();
+    view.pump();
+    const consola::TabId first_tab = manager.tabs().active_id();
+    const consola::TabId second_tab = manager.create_tab();
+    SessionOptions tab_options;
+    tab_options.executable = "/bin/sh";
+    tab_options.arguments = {"-c", "sleep 5"};
+    const auto tab_root =
+        manager.create_root_terminal(second_tab, consola::TerminalOptions{tab_options});
+    CHECK(tab_root.has_value());
+    view.pump();
+    CHECK(view.widget(REQUIRED(root)) != nullptr);
+    CHECK(view.widget(REQUIRED(tab_root)) != nullptr);
+    CHECK(view.widget(REQUIRED(root))->visible() == 0);
+    CHECK(view.widget(REQUIRED(tab_root))->visible() != 0);
+
+    CHECK(manager.select_tab(first_tab));
+    view.pump();
+    CHECK(view.widget(REQUIRED(root))->visible() != 0);
+    CHECK(view.widget(REQUIRED(tab_root))->visible() == 0);
+
+    CHECK(manager.close_tab(second_tab));
+    const bool tab_removed =
+        wait_for([&] { return manager.find(REQUIRED(tab_root)) == nullptr; }, 8000, view);
+    CHECK(tab_removed);
+    CHECK(manager.tabs().count() == 1);
+
     manager.shutdown();
 
     if (g_failures != 0) {

@@ -586,4 +586,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   remove-last, remove rejects non-empty) and `terminal_manager_test` additions
   (independent terminals across tabs, split in a non-active tab, close a tab
   with two panes, tab selection/reorder, shutdown across tabs). Debug and
-  ASan/UBSan suites pass 17/17; clang-format/clang-tidy clean.
+  ASan/UBSan suites pass 17/17; clang-format/clang-tidy clean. Review fixes:
+  tab access is const-only (`TabManager`/`Tab` exposed read-only; all mutations
+  go through manager methods, with `set_tab_title` added for the tab bar), and
+  `TerminalView` tracks the last laid-out tab and relayouts when the active tab
+  changes (including after `focus()` selects another tab); `terminal_view_test`
+  covers tab-switch widget visibility.

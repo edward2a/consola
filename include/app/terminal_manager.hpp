@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -46,12 +47,9 @@ public:
 
     void start();
 
-    // Tab ownership (DIP 4.1, 4.2). The manager owns its tabs; they are exposed
-    // read-only so callers cannot remove instances behind the registry.
-    [[nodiscard]] TabManager &tabs() noexcept
-    {
-        return tabs_;
-    }
+    // Tab ownership (DIP 4.1, 4.2). Tabs are exposed read-only so callers cannot
+    // remove instances or mutate layouts behind the manager's registry; tab
+    // mutations go through the manager methods below.
     [[nodiscard]] const TabManager &tabs() const noexcept
     {
         return tabs_;
@@ -61,10 +59,6 @@ public:
     [[nodiscard]] const Tab &tab() const noexcept
     {
         return tabs_.active();
-    }
-    [[nodiscard]] Tab *active_tab() noexcept
-    {
-        return &tabs_.active();
     }
     [[nodiscard]] const Tab *active_tab() const noexcept
     {
@@ -88,6 +82,10 @@ public:
 
     // Reorder a tab to `index` (clamped). Returns false for an unknown id.
     bool move_tab(TabId tab, std::size_t index);
+
+    // Set a tab's presentation label (DIP 4.2 rename). Returns false for an
+    // unknown id. This is the only tab mutation not tied to terminal lifecycle.
+    bool set_tab_title(TabId tab, std::string title);
 
     // The tab that owns a live terminal, or nullopt for an unknown id.
     [[nodiscard]] std::optional<TabId> tab_of(TerminalId id) const noexcept;

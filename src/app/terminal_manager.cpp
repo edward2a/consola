@@ -83,8 +83,8 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
     }
     Tab *tab = tabs_.find(*tab_id);
     if (!started_ || !accepting_ || tab == nullptr ||
-        !tab->layout().find_terminal(target).has_value() || !std::isfinite(ratio) || ratio <= 0.0F ||
-        ratio >= 1.0F) {
+        !tab->layout().find_terminal(target).has_value() || !std::isfinite(ratio) ||
+        ratio <= 0.0F || ratio >= 1.0F) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
@@ -127,6 +127,16 @@ std::optional<TabId> TerminalManager::select_previous_tab()
 bool TerminalManager::move_tab(TabId tab, std::size_t index)
 {
     return tabs_.move(tab, index);
+}
+
+bool TerminalManager::set_tab_title(TabId tab, std::string title)
+{
+    Tab *found = tabs_.find(tab);
+    if (found == nullptr) {
+        return false;
+    }
+    found->set_title(std::move(title));
+    return true;
 }
 
 std::optional<TabId> TerminalManager::tab_of(TerminalId id) const noexcept
