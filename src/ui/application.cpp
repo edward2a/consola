@@ -145,17 +145,18 @@ int run_smoke_test(int argc, char **argv, Fl_Window &window)
 
 int run_session(int argc, char **argv, Fl_Window &window)
 {
+    TerminalManager manager;
+    manager.start();
+
+    TerminalView view(0, 0, window.w(), window.h(), manager);
+    window.resizable(view);
     window.end();
     window.show(argc, argv);
     if (window.shown() == 0) {
         log(LogLevel::Error, "window failed to show");
+        manager.shutdown();
         return EXIT_FAILURE;
     }
-
-    TerminalManager manager;
-    manager.start();
-
-    TerminalView view(window, manager);
 
     SessionOptions options;
     const char *shell = std::getenv("SHELL");

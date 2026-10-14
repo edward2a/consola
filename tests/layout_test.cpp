@@ -270,6 +270,23 @@ void test_equalize()
     CHECK(nested->ratio == 0.5F);
 }
 
+void test_set_split_ratio()
+{
+    consola::LayoutTree tree(tid(1));
+    tree.split_terminal(tid(1), consola::Orientation::vertical, tid(2));
+    const consola::NodeId root = tree.root();
+
+    CHECK(tree.set_split_ratio(root, 0.25F));
+    CHECK(tree.split(root)->ratio == 0.25F);
+    CHECK(!tree.set_split_ratio(root, 0.0F));
+    CHECK(!tree.set_split_ratio(root, 1.0F));
+    CHECK(!tree.set_split_ratio(root, -0.1F));
+    CHECK(!tree.set_split_ratio(root, std::numeric_limits<float>::quiet_NaN()));
+    CHECK(!tree.set_split_ratio(NODE_OF(tree, 1), 0.5F));
+    CHECK(!tree.set_split_ratio(consola::NodeId{999}, 0.5F));
+    CHECK(tree.split(root)->ratio == 0.25F);
+}
+
 } // namespace
 
 int main()
@@ -286,6 +303,7 @@ int main()
     test_focus_moves_into_sibling_subtree();
     test_focus_on_last_removal();
     test_equalize();
+    test_set_split_ratio();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d layout check(s) failed\n", g_failures);

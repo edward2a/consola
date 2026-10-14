@@ -4,47 +4,63 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 #include <vector>
 
-namespace consola {
+#include <FL/Fl.H>
+#include <FL/Fl_Window.H>
 
-TerminalView::TerminalView(Fl_Window &window, TerminalManager &manager, TerminalStyle style)
-    : window_(window), manager_(manager), style_(std::move(style))
-{}
+namespace consola {
+namespace {
+
+// Pixels either side of a divider that still count as a grab.
+constexpr int kDividerGrab = 3;
+
+} // namespace
+
+TerminalView::TerminalView(int x, int y, int w, int h, TerminalManager &manager,
+                           TerminalStyle style)
+    : Fl_Group(x, y, w, h), manager_(manager), style_(std::move(style))
+{
+    box(FL_NO_BOX);
+    end();
+}
 
 TerminalView::~TerminalView()
 {
-    // Clear callbacks on any still-live emulator before the contexts are
-    // destroyed, then remove every child from the group.
+    // Clear callbacks on any still-live emulator, then detach the widgets from
+    // the group so the unique_ptrs (not Fl_Group) destroy them.
     for (auto &entry : widgets_) {
         TerminalInstance *instance = manager_.find(entry.first);
         if (instance != nullptr) {
             instance->emulator().set_output_callback(nullptr, nullptr);
             instance->emulator().set_title_callback(nullptr, nullptr);
         }
-        window_.remove(entry.second.get());
+        Fl_Group::remove(entry.second.get());
     }
 }
 
 std::optional<TerminalId> TerminalView::start(const SessionOptions &options)
 {
+    split_options_ = options;
     const std::optional<TerminalId> id = manager_.create_root_terminal(TerminalOptions{options});
     if (!id) {
         return std::nullopt;
     }
     create_widgets();
     layout();
+    sync_focus();
     return id;
 }
 
 bool TerminalView::pump()
 {
     const bool added = create_widgets();
-    const bool resized = window_.w() != last_width_ || window_.h() != last_height_;
+    const bool resized = w() != last_width_ || h() != last_height_;
     if (added || resized) {
-        last_width_ = window_.w();
-        last_height_ = window_.h();
+        last_width_ = w();
+        last_height_ = h();
         layout();
     }
 
@@ -57,13 +73,116 @@ bool TerminalView::pump()
             entry.second->redraw();
         }
     }
+    sync_focus();
     return manager_.tab().terminal_count() != 0;
+}
+
+std::optional<TerminalId> TerminalView::split_focused(Orientation orientation)
+{
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (!focused || !can_split(*focused, orientation)) {
+        return std::nullopt;
+    }
+    const std::optional<TerminalId> id =
+        manager_.split_terminal(*focused, orientation, TerminalOptions{split_options_});
+    if (!id) {
+        return std::nullopt;
+    }
+    manager_.focus(*id);
+    create_widgets();
+    layout();
+    sync_focus();
+    return id;
+}
+
+bool TerminalView::close_focused()
+{
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (!focused) {
+        return false;
+    }
+    return manager_.close_terminal(*focused);
+}
+
+bool TerminalView::focus_direction(FocusDirection direction)
+{
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (!focused) {
+        return false;
+    }
+    const std::optional<TerminalId> next = focus_neighbor(last_layout_, *focused, direction);
+    if (!next) {
+        return false;
+    }
+    focus(*next);
+    return true;
+}
+
+void TerminalView::equalize()
+{
+    manager_.equalize();
+    layout();
+    redraw();
+}
+
+void TerminalView::focus(TerminalId id)
+{
+    manager_.focus(id);
+    sync_focus();
+    redraw();
 }
 
 TerminalWidget *TerminalView::widget(TerminalId id) noexcept
 {
     const auto it = widgets_.find(id);
     return it == widgets_.end() ? nullptr : it->second.get();
+}
+
+void TerminalView::resize(int x, int y, int w, int h)
+{
+    // Fl_Group::resize scales children; the layout engine owns geometry, so
+    // re-apply it after the group is resized.
+    Fl_Group::resize(x, y, w, h);
+    layout();
+}
+
+int TerminalView::handle(int event)
+{
+    switch (event) {
+    case FL_PUSH: {
+        const DividerRect *divider = divider_at(Fl::event_x() - x(), Fl::event_y() - y());
+        if (divider != nullptr) {
+            drag_ = DragState{.active = true,
+                              .split = divider->split,
+                              .area = divider->area,
+                              .orientation = divider->orientation};
+            return 1;
+        }
+        break;
+    }
+    case FL_DRAG:
+        if (drag_.active) {
+            const int position = drag_.orientation == Orientation::horizontal ? Fl::event_y() - y()
+                                                                              : Fl::event_x() - x();
+            const float ratio = split_ratio_for_position(manager_.tab().layout(), drag_.split,
+                                                         drag_.area, position, metrics());
+            if (manager_.set_split_ratio(drag_.split, ratio)) {
+                layout();
+                redraw();
+            }
+            return 1;
+        }
+        break;
+    case FL_RELEASE:
+        if (drag_.active) {
+            drag_.active = false;
+            return 1;
+        }
+        break;
+    default:
+        break;
+    }
+    return Fl_Group::handle(event);
 }
 
 bool TerminalView::create_widgets()
@@ -106,9 +225,10 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     emulator.set_title_callback(&TerminalView::title_callback, context_ptr);
     widget->set_paste_callback(&TerminalView::paste_callback, context_ptr);
     widget->set_resize_callback(&TerminalView::resize_callback, context_ptr);
+    widget->set_focus_callback(&TerminalView::focus_callback, context_ptr);
 
     TerminalWidget *raw = widget.get();
-    window_.add(raw);
+    add(raw);
     widgets_.emplace(id, std::move(widget));
     return raw;
 }
@@ -119,7 +239,7 @@ void TerminalView::remove_widget(TerminalId id)
     if (it == widgets_.end()) {
         return;
     }
-    window_.remove(it->second.get());
+    Fl_Group::remove(it->second.get());
     contexts_.erase(id);
     widgets_.erase(it);
 }
@@ -127,11 +247,12 @@ void TerminalView::remove_widget(TerminalId id)
 void TerminalView::layout()
 {
     if (widgets_.empty()) {
+        last_layout_ = LayoutResult{};
         return;
     }
-    const Rect content{0, 0, window_.w(), window_.h()};
-    const LayoutResult result = compute_layout(manager_.tab().layout(), content, metrics());
-    for (const PaneRect &pane : result.panes) {
+    const Rect content{0, 0, w(), h()};
+    last_layout_ = compute_layout(manager_.tab().layout(), content, metrics());
+    for (const PaneRect &pane : last_layout_.panes) {
         const auto it = widgets_.find(pane.terminal);
         if (it == widgets_.end()) {
             continue;
@@ -140,7 +261,45 @@ void TerminalView::layout()
         // to the window when the logical canvas is larger than the content.
         it->second->resize(pane.logical.x, pane.logical.y, pane.logical.width, pane.logical.height);
     }
-    window_.redraw();
+    redraw();
+}
+
+void TerminalView::sync_focus()
+{
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (!focused) {
+        return;
+    }
+    TerminalWidget *target = widget(*focused);
+    if (target != nullptr && Fl::focus() != target) {
+        target->take_focus();
+    }
+}
+
+const DividerRect *TerminalView::divider_at(int x, int y) const
+{
+    for (const DividerRect &divider : last_layout_.dividers) {
+        if (x >= divider.rect.x - kDividerGrab &&
+            x < divider.rect.x + divider.rect.width + kDividerGrab &&
+            y >= divider.rect.y - kDividerGrab &&
+            y < divider.rect.y + divider.rect.height + kDividerGrab) {
+            return &divider;
+        }
+    }
+    return nullptr;
+}
+
+bool TerminalView::can_split(TerminalId target, Orientation orientation) const
+{
+    // Reject a split that cannot fit the current content area before launching
+    // (DIP 3.3): preview the tree with a placeholder leaf.
+    LayoutTree preview = manager_.tab().layout();
+    const TerminalId placeholder{std::numeric_limits<std::uint64_t>::max()};
+    if (!preview.split_terminal(target, orientation, placeholder)) {
+        return false;
+    }
+    const Size minimum = minimum_size(preview, metrics());
+    return minimum.width <= w() && minimum.height <= h();
 }
 
 LayoutMetrics TerminalView::metrics() const
@@ -181,9 +340,21 @@ void TerminalView::resize_callback(void *context, int columns, int rows)
 void TerminalView::title_callback(void *context, std::string_view title)
 {
     auto *self = static_cast<Context *>(context);
+    Fl_Window *window = self->view->window();
+    if (window == nullptr) {
+        return;
+    }
     const std::string text(title);
-    self->view->window_.copy_label(text.c_str());
-    self->view->window_.redraw();
+    window->copy_label(text.c_str());
+    window->redraw();
+}
+
+void TerminalView::focus_callback(void *context)
+{
+    // Only record focus here: taking FLTK focus again would recurse through
+    // FL_FOCUS (DIP 3.5).
+    auto *self = static_cast<Context *>(context);
+    self->view->manager_.focus(self->id);
 }
 
 } // namespace consola

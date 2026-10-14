@@ -37,6 +37,14 @@ target_link_libraries(consola_terminal_manager_test PRIVATE terminal_session)
 add_test(NAME terminal_manager_test COMMAND consola_terminal_manager_test)
 set_tests_properties(terminal_manager_test PROPERTIES TIMEOUT 60)
 
+add_executable(consola_terminal_view_test terminal_view_test.cpp)
+target_link_libraries(consola_terminal_view_test PRIVATE terminal_ui)
+
+add_test(NAME terminal_view_test
+    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
+            $<TARGET_FILE:consola_terminal_view_test>)
+set_tests_properties(terminal_view_test PROPERTIES TIMEOUT 30)
+
 add_executable(consola_key_translator_test key_translator_test.cpp)
 target_link_libraries(consola_key_translator_test PRIVATE terminal_ui)
 
@@ -77,6 +85,7 @@ set(session_smoke_env "SHELL=/bin/sh;CONSOLA_EXIT_AFTER_MS=500")
 if(CONSOLA_SANITIZERS)
     set(lsan_options "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tests/lsan.supp")
     set_tests_properties(smoke_test PROPERTIES ENVIRONMENT "${lsan_options}")
+    set_tests_properties(terminal_view_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set(session_smoke_env "${session_smoke_env};${lsan_options}")
 endif()
 

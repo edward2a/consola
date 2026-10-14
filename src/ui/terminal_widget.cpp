@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -89,19 +90,13 @@ unsigned fltk_mouse_modifiers()
 namespace {
 
 // FLTK's face table is process-global and Fl::set_font() keeps the const char*
-// it is handed, so the styled face names must live for the process lifetime
-// (not merely the widget's). See watchlist #13.
-struct FontNames {
-    std::string regular;
-    std::string bold;
-    std::string italic;
-    std::string bold_italic;
-};
-
-FontNames &font_names()
+// it is handed. A deque never invalidates or frees existing elements on growth,
+// so the names handed to FLTK stay valid for the process lifetime (see
+// watchlist #13). Style changes append rather than overwrite.
+std::deque<std::string> &font_name_store()
 {
-    static FontNames names;
-    return names;
+    static std::deque<std::string> store;
+    return store;
 }
 
 } // namespace
@@ -120,15 +115,20 @@ void TerminalWidget::apply_font_family() const
     // Map the configured family to FLTK's base face and its styled variants so
     // bold/italic stay in the same monospace family (fontconfig resolves the
     // closest available style; see watchlist #13).
-    FontNames &names = font_names();
-    names.regular = style_.font_family;
-    names.bold = style_.font_family + " bold";
-    names.italic = style_.font_family + " italic";
-    names.bold_italic = style_.font_family + " bold italic";
-    Fl::set_font(FL_HELVETICA, names.regular.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD, names.bold.c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC, names.italic.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, names.bold_italic.c_str());
+    std::deque<std::string> &store = font_name_store();
+    store.push_back(style_.font_family);
+    store.push_back(style_.font_family + " bold");
+    store.push_back(style_.font_family + " italic");
+    store.push_back(style_.font_family + " bold italic");
+    auto it = store.end();
+    const std::string &bold_italic = *(--it);
+    const std::string &italic = *(--it);
+    const std::string &bold = *(--it);
+    const std::string &regular = *(--it);
+    Fl::set_font(FL_HELVETICA, regular.c_str());
+    Fl::set_font(FL_HELVETICA_BOLD, bold.c_str());
+    Fl::set_font(FL_HELVETICA_ITALIC, italic.c_str());
+    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, bold_italic.c_str());
 }
 
 int TerminalWidget::scrollbar_width() const
@@ -191,6 +191,12 @@ void TerminalWidget::set_resize_callback(ResizeCallback resize_callback, void *c
 {
     resize_callback_ = resize_callback;
     resize_context_ = context;
+}
+
+void TerminalWidget::set_focus_callback(FocusCallback focus_callback, void *context)
+{
+    focus_callback_ = focus_callback;
+    focus_context_ = context;
 }
 
 void TerminalWidget::resize(int x, int y, int w, int h)
@@ -485,9 +491,16 @@ int TerminalWidget::handle(int event)
 {
     switch (event) {
     case FL_FOCUS:
+        if (focus_callback_ != nullptr) {
+            focus_callback_(focus_context_);
+        }
+        return 1;
     case FL_UNFOCUS:
         return 1;
     case FL_PUSH:
+        if (focus_callback_ != nullptr) {
+            focus_callback_(focus_context_);
+        }
         return handle_push();
     case FL_DRAG:
         return handle_drag();

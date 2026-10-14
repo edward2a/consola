@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <layout/layout_tree.hpp>
@@ -55,14 +57,20 @@ struct PaneRect {
     Rect visible;
 };
 
-// A split's divider strip, for hit-testing and drag-resize (DIP 3.5). `visible`
-// is its intersection with the content area, matching PaneRect.
+// A split's divider strip, for hit-testing and drag-resize (DIP 3.5). `area` is
+// the split's whole rectangle (both children plus the divider), needed to map a
+// drag position back to a ratio; `visible` is its intersection with the content
+// area, matching PaneRect.
 struct DividerRect {
     NodeId split;
     Orientation orientation;
     Rect rect;
+    Rect area;
     Rect visible;
 };
+
+// Direction for focus navigation (DIP 3.5).
+enum class FocusDirection : std::uint8_t { left, right, up, down };
 
 struct LayoutResult {
     std::vector<PaneRect> panes;       // depth-first order
@@ -70,6 +78,18 @@ struct LayoutResult {
     Rect content;                      // requested content area (non-negative)
     Rect canvas;                       // logical canvas actually laid out
 };
+
+// The nearest terminal in `direction` from `current` on the logical pane
+// rectangles: candidates must lie in the direction and overlap the current pane
+// on the perpendicular axis; ties break on the perpendicular centre distance.
+[[nodiscard]] std::optional<TerminalId>
+focus_neighbor(const LayoutResult &layout, TerminalId current, FocusDirection direction);
+
+// The stored ratio for dragging `split`'s divider to `position` (a coordinate
+// along the split axis) within `area`, clamped so both subtrees keep their
+// minimum size (DIP 3.3, 3.5). Returns 0.5 when the split is not found.
+[[nodiscard]] float split_ratio_for_position(const LayoutTree &tree, NodeId split, const Rect &area,
+                                             int position, const LayoutMetrics &metrics);
 
 // Minimum content size the tree needs: two columns by one row per leaf plus
 // pane chrome, combined bottom-up along each split axis (DIP 3.3). The caller

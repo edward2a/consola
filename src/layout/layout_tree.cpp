@@ -208,6 +208,23 @@ void LayoutTree::equalize() noexcept
     }
 }
 
+bool LayoutTree::set_split_ratio(NodeId split_id, float ratio) noexcept
+{
+    if (!std::isfinite(ratio) || ratio <= 0.0F || ratio >= 1.0F) {
+        return false;
+    }
+    auto it = nodes_.find(split_id.value);
+    if (it == nodes_.end()) {
+        return false;
+    }
+    auto *sn = std::get_if<SplitNode>(&it->second.node);
+    if (sn == nullptr) {
+        return false;
+    }
+    sn->ratio = ratio;
+    return true;
+}
+
 NodeId LayoutTree::allocate() noexcept
 {
     return NodeId{next_id_++};

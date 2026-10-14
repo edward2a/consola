@@ -481,3 +481,20 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   strip before deriving columns and the manager skips a PTY resize when the grid
   is unchanged (DIP 2.11); `TerminalManager::terminals()` was replaced by the
   constrained `terminal_ids()` + `emulator(id)`.
+- **S3-CS6 — pane interaction (§3.5)**: the layout engine gains
+  `LayoutTree::set_split_ratio`, `focus_neighbor` (directional focus on the
+  logical pane rectangles) and `split_ratio_for_position` (drag position to a
+  ratio, clamped to both subtree minimums); `DividerRect` now carries the
+  split's `area`. `TerminalManager` forwards `focus`/`focused`/
+  `set_split_ratio`/`equalize`. `TerminalView` is now an `Fl_Group` (so it sees
+  events in the divider gaps) and implements focus-click (a widget focus
+  callback), directional focus, `split_focused` (with a minimum-size preview
+  that refuses an unfittable split before launching), `close_focused`, divider
+  drag-resize and `equalize`; it keeps the FLTK focus on the focused terminal.
+  Tests: core `set_split_ratio`, `focus_neighbor` and
+  `split_ratio_for_position`, plus a headless `terminal_view_test` that splits,
+  navigates focus, equalizes and closes a pane through the view. Debug and
+  ASan/UBSan suites pass 15/15; clang-format/clang-tidy clean. Review note: the
+  styled face names are now held in an append-only store, because FLTK's global
+  face table keeps the pointers and reassigning a string freed a name FLTK still
+  referenced (a second ASan use-after-free in the Xft font path).

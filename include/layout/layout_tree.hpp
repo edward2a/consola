@@ -97,6 +97,10 @@ public:
     // Set every split ratio to 0.5 (equalize splits, DIP 3.5).
     void equalize() noexcept;
 
+    // Set one split's stored ratio (drag-resize, DIP 3.5). Returns false when
+    // `split` is not a split node or `ratio` is not in (0, 1).
+    bool set_split_ratio(NodeId split, float ratio) noexcept;
+
 private:
     struct Entry {
         NodeId parent; // zero for the root

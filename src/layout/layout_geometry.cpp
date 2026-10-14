@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <unordered_map>
 
@@ -70,6 +71,12 @@ Size build_minimums(const LayoutTree &tree, NodeId id, const LayoutMetrics &metr
     return size;
 }
 
+Size node_minimum(const LayoutTree &tree, NodeId id, const LayoutMetrics &metrics)
+{
+    std::unordered_map<std::uint64_t, Size> cache;
+    return build_minimums(tree, id, metrics, cache);
+}
+
 int split_extent(int available, float ratio, int first_minimum, int second_minimum)
 {
     if (available <= 0) {
@@ -127,6 +134,7 @@ void place(const LayoutTree &tree, NodeId id, const Rect &rect, const LayoutMetr
             out.dividers.push_back(DividerRect{.split = id,
                                                .orientation = split->orientation,
                                                .rect = divider_rect,
+                                               .area = rect,
                                                .visible = Rect{}});
         }
         place(tree, split->first, first_rect, metrics, minimums, out);
@@ -143,6 +151,7 @@ void place(const LayoutTree &tree, NodeId id, const Rect &rect, const LayoutMetr
             out.dividers.push_back(DividerRect{.split = id,
                                                .orientation = split->orientation,
                                                .rect = divider_rect,
+                                               .area = rect,
                                                .visible = Rect{}});
         }
         place(tree, split->first, first_rect, metrics, minimums, out);
@@ -199,6 +208,115 @@ LayoutResult compute_layout(const LayoutTree &tree, const Rect &content,
         divider.visible = intersect(divider.rect, result.content);
     }
     return result;
+}
+
+std::optional<TerminalId> focus_neighbor(const LayoutResult &layout, TerminalId current,
+                                         FocusDirection direction)
+{
+    const PaneRect *from = nullptr;
+    for (const PaneRect &pane : layout.panes) {
+        if (pane.terminal == current) {
+            from = &pane;
+            break;
+        }
+    }
+    if (from == nullptr) {
+        return std::nullopt;
+    }
+
+    const int from_left = from->logical.x;
+    const int from_top = from->logical.y;
+    const int from_right = from->logical.x + from->logical.width;
+    const int from_bottom = from->logical.y + from->logical.height;
+    const int from_cx = from_left + (from->logical.width / 2);
+    const int from_cy = from_top + (from->logical.height / 2);
+
+    const PaneRect *best = nullptr;
+    long long best_primary = 0;
+    long long best_secondary = 0;
+
+    for (const PaneRect &pane : layout.panes) {
+        if (pane.terminal == current) {
+            continue;
+        }
+        const int left = pane.logical.x;
+        const int top = pane.logical.y;
+        const int right = left + pane.logical.width;
+        const int bottom = top + pane.logical.height;
+        const int cx = left + (pane.logical.width / 2);
+        const int cy = top + (pane.logical.height / 2);
+
+        bool candidate = false;
+        long long primary = 0;
+        long long secondary = 0;
+        switch (direction) {
+        case FocusDirection::right:
+            candidate = cx > from_cx && std::min(bottom, from_bottom) > std::max(top, from_top);
+            primary = static_cast<long long>(left) - from_right;
+            secondary = std::abs(cy - from_cy);
+            break;
+        case FocusDirection::left:
+            candidate = cx < from_cx && std::min(bottom, from_bottom) > std::max(top, from_top);
+            primary = static_cast<long long>(from_left) - right;
+            secondary = std::abs(cy - from_cy);
+            break;
+        case FocusDirection::down:
+            candidate = cy > from_cy && std::min(right, from_right) > std::max(left, from_left);
+            primary = static_cast<long long>(top) - from_bottom;
+            secondary = std::abs(cx - from_cx);
+            break;
+        case FocusDirection::up:
+            candidate = cy < from_cy && std::min(right, from_right) > std::max(left, from_left);
+            primary = static_cast<long long>(from_top) - bottom;
+            secondary = std::abs(cx - from_cx);
+            break;
+        }
+        if (!candidate) {
+            continue;
+        }
+        primary = std::max<long long>(primary, 0);
+        if (best == nullptr || primary < best_primary ||
+            (primary == best_primary && secondary < best_secondary)) {
+            best = &pane;
+            best_primary = primary;
+            best_secondary = secondary;
+        }
+    }
+
+    if (best == nullptr) {
+        return std::nullopt;
+    }
+    return best->terminal;
+}
+
+float split_ratio_for_position(const LayoutTree &tree, NodeId split_id, const Rect &area,
+                               int position, const LayoutMetrics &metrics)
+{
+    const SplitNode *split = tree.split(split_id);
+    if (split == nullptr) {
+        return 0.5F;
+    }
+    const int divider = non_negative(metrics.divider_thickness);
+    const bool horizontal = split->orientation == Orientation::horizontal;
+    const int origin = horizontal ? area.y : area.x;
+    const int extent = horizontal ? area.height : area.width;
+    const int available = non_negative(extent - divider);
+    if (available <= 0) {
+        return 0.5F;
+    }
+
+    const Size first_min = node_minimum(tree, split->first, metrics);
+    const Size second_min = node_minimum(tree, split->second, metrics);
+    const int min_first = horizontal ? first_min.height : first_min.width;
+    const int min_second = horizontal ? second_min.height : second_min.width;
+
+    const int lower = std::clamp(min_first, 0, available);
+    const int upper = available - std::clamp(min_second, 0, available);
+    if (upper < lower) {
+        return 0.5F;
+    }
+    const int local = std::clamp(position - origin, lower, upper);
+    return static_cast<float>(local) / static_cast<float>(available);
 }
 
 } // namespace consola

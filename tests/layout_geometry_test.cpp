@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -309,6 +310,54 @@ void test_extreme_origin()
     CHECK(result.panes[0].visible == Rect(minimum, minimum, 10, 10));
 }
 
+void test_focus_neighbor()
+{
+    LayoutTree tree(tid(1));
+    tree.split_terminal(tid(1), Orientation::vertical, tid(2));
+    tree.split_terminal(tid(1), Orientation::horizontal, tid(3));
+    tree.split_terminal(tid(2), Orientation::horizontal, tid(4));
+    const LayoutResult layout = consola::compute_layout(tree, Rect{0, 0, 200, 100}, kMetrics);
+
+    using consola::FocusDirection;
+    auto neighbor = [&](std::uint64_t from, FocusDirection direction) {
+        return consola::focus_neighbor(layout, tid(from), direction);
+    };
+
+    CHECK(neighbor(1, FocusDirection::right) == std::optional<TerminalId>(tid(2)));
+    CHECK(neighbor(1, FocusDirection::down) == std::optional<TerminalId>(tid(3)));
+    CHECK(!neighbor(1, FocusDirection::up).has_value());
+    CHECK(!neighbor(1, FocusDirection::left).has_value());
+    CHECK(neighbor(3, FocusDirection::up) == std::optional<TerminalId>(tid(1)));
+    CHECK(neighbor(3, FocusDirection::right) == std::optional<TerminalId>(tid(4)));
+    CHECK(neighbor(2, FocusDirection::left) == std::optional<TerminalId>(tid(1)));
+    CHECK(neighbor(2, FocusDirection::down) == std::optional<TerminalId>(tid(4)));
+    CHECK(neighbor(4, FocusDirection::left) == std::optional<TerminalId>(tid(3)));
+    CHECK(neighbor(4, FocusDirection::up) == std::optional<TerminalId>(tid(2)));
+    CHECK(!consola::focus_neighbor(layout, tid(99), FocusDirection::right).has_value());
+}
+
+void test_split_ratio_for_position()
+{
+    LayoutTree tree(tid(1));
+    tree.split_terminal(tid(1), Orientation::vertical, tid(2));
+    const consola::NodeId root = tree.root();
+    const Rect area{0, 0, 100, 22};
+
+    auto ratio_at = [&](int position) {
+        return consola::split_ratio_for_position(tree, root, area, position, kMetrics);
+    };
+
+    // available = 98; leaf minima are 26, so the divider spans [26, 72].
+    CHECK(std::abs(ratio_at(49) - 0.5F) < 0.001F);
+    CHECK(std::abs(ratio_at(10) - (26.0F / 98.0F)) < 0.001F);
+    CHECK(std::abs(ratio_at(90) - (72.0F / 98.0F)) < 0.001F);
+    CHECK(std::abs(ratio_at(0) - (26.0F / 98.0F)) < 0.001F);
+    CHECK(std::abs(ratio_at(100) - (72.0F / 98.0F)) < 0.001F);
+
+    CHECK(consola::split_ratio_for_position(tree, consola::NodeId{999}, area, 50, kMetrics) ==
+          0.5F);
+}
+
 } // namespace
 
 int main()
@@ -328,6 +377,8 @@ int main()
     test_negative_content_normalized();
     test_extreme_metrics_clamped();
     test_extreme_origin();
+    test_focus_neighbor();
+    test_split_ratio_for_position();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d layout geometry check(s) failed\n", g_failures);

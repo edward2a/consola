@@ -49,6 +49,11 @@ public:
     using ResizeCallback = void (*)(void *context, int columns, int rows);
     void set_resize_callback(ResizeCallback resize_callback, void *context);
 
+    // Notified when the pane gains focus (click or FLTK focus), for pane focus
+    // tracking (DIP 3.5).
+    using FocusCallback = void (*)(void *context);
+    void set_focus_callback(FocusCallback focus_callback, void *context);
+
     [[nodiscard]] TerminalEmulator &emulator() noexcept
     {
         return emulator_;
@@ -130,6 +135,10 @@ private:
     // Resize notification (DIP 2.11).
     ResizeCallback resize_callback_ = nullptr;
     void *resize_context_ = nullptr;
+
+    // Focus notification (DIP 3.5).
+    FocusCallback focus_callback_ = nullptr;
+    void *focus_context_ = nullptr;
 };
 
 } // namespace consola

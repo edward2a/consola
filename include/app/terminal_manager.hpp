@@ -84,6 +84,13 @@ public:
 
     void resize(TerminalId id, int columns, int rows);
 
+    // Pane focus and layout operations forwarded to the tab's layout tree
+    // (DIP 3.5). focus() ignores ids that are not present.
+    void focus(TerminalId id) noexcept;
+    [[nodiscard]] std::optional<TerminalId> focused() const noexcept;
+    bool set_split_ratio(NodeId split, float ratio) noexcept;
+    void equalize() noexcept;
+
     [[nodiscard]] TerminalInstance *find(TerminalId id) noexcept;
 
     // Ids of all live terminals, for presentation code that must iterate them

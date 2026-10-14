@@ -375,6 +375,26 @@ TerminalInstance *TerminalManager::find(TerminalId id) noexcept
     return it == instances_.end() ? nullptr : it->second;
 }
 
+void TerminalManager::focus(TerminalId id) noexcept
+{
+    tab_.layout().focus(id);
+}
+
+std::optional<TerminalId> TerminalManager::focused() const noexcept
+{
+    return tab_.layout().focused();
+}
+
+bool TerminalManager::set_split_ratio(NodeId split, float ratio) noexcept
+{
+    return tab_.layout().set_split_ratio(split, ratio);
+}
+
+void TerminalManager::equalize() noexcept
+{
+    tab_.layout().equalize();
+}
+
 std::vector<TerminalId> TerminalManager::terminal_ids() const
 {
     std::vector<TerminalId> out;
