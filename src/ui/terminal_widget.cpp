@@ -18,6 +18,7 @@
 #include <ui/key_translator.hpp>
 
 #include <app/log.hpp>
+#include <ui/font_name.hpp>
 
 namespace consola {
 namespace {
@@ -117,13 +118,17 @@ TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emu
 void TerminalWidget::apply_font_family() const
 {
     // Map the configured family to FLTK's base face and its styled variants so
-    // bold/italic stay in the same monospace family (fontconfig resolves the
-    // closest available style; see watchlist #13).
-    Fl::set_font(FL_HELVETICA, intern_font_name(style_.font_family).c_str());
-    Fl::set_font(FL_HELVETICA_BOLD, intern_font_name(style_.font_family + " bold").c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC, intern_font_name(style_.font_family + " italic").c_str());
+    // bold/italic stay in the same monospace family. FLTK encodes the style in
+    // the leading character of the name, so the modifier must be explicit (see
+    // watchlist #13); a bare family starting with 'I' would be read as italic.
+    Fl::set_font(FL_HELVETICA,
+                 intern_font_name(fltk_raw_font_name(style_.font_family, false, false)).c_str());
+    Fl::set_font(FL_HELVETICA_BOLD,
+                 intern_font_name(fltk_raw_font_name(style_.font_family, true, false)).c_str());
+    Fl::set_font(FL_HELVETICA_ITALIC,
+                 intern_font_name(fltk_raw_font_name(style_.font_family, false, true)).c_str());
     Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
-                 intern_font_name(style_.font_family + " bold italic").c_str());
+                 intern_font_name(fltk_raw_font_name(style_.font_family, true, true)).c_str());
 }
 
 int TerminalWidget::scrollbar_width() const

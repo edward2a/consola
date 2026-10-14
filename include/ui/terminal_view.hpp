@@ -94,6 +94,7 @@ private:
 
     bool create_widgets();
     bool destroy_stale_widgets();
+    void close_exited();
     void layout();
     void sync_focus();
     void update_window_title();

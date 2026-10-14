@@ -73,6 +73,11 @@ target_link_libraries(consola_commands_test PRIVATE terminal_ui)
 
 add_test(NAME commands_test COMMAND consola_commands_test)
 
+add_executable(consola_font_name_test font_name_test.cpp)
+target_link_libraries(consola_font_name_test PRIVATE terminal_ui)
+
+add_test(NAME font_name_test COMMAND consola_font_name_test)
+
 add_executable(consola_pty_session_test pty_session_test.cpp)
 target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 

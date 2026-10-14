@@ -238,6 +238,21 @@ int main()
     view.focus(REQUIRED(root));
     CHECK(std::string(window.label()) == "root-title");
 
+    // A pane whose process exits closes itself, and its tab closes once empty
+    // while other tabs remain (DIP 4.4).
+    const consola::TabId short_tab = manager.create_tab();
+    SessionOptions short_options;
+    short_options.executable = "/bin/sh";
+    short_options.arguments = {"-c", "printf bye"};
+    const auto short_root =
+        manager.create_root_terminal(short_tab, consola::TerminalOptions{short_options});
+    CHECK(short_root.has_value());
+    const bool auto_closed =
+        wait_for([&] { return manager.find(REQUIRED(short_root)) == nullptr; }, 8000, view);
+    CHECK(auto_closed);
+    CHECK(manager.tabs().find(short_tab) == nullptr);
+    CHECK(manager.tabs().count() == 1);
+
     manager.shutdown();
 
     if (g_failures != 0) {

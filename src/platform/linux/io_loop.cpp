@@ -147,6 +147,16 @@ bool group_in_session(pid_t pgid, pid_t session_id, int master_fd)
     return sid.has_value() && *sid == session_id;
 }
 
+// True while a process group still exists (kill(2) reports EPERM for a live
+// group we cannot signal, ESRCH only once it is gone).
+bool group_exists(pid_t pgid)
+{
+    if (pgid <= 0) {
+        return false;
+    }
+    return ::kill(-pgid, 0) == 0 || errno != ESRCH;
+}
+
 struct LoopCommand {
     enum class Kind : std::uint8_t {
         add,
@@ -1019,9 +1029,13 @@ void LinuxIoLoop::start_termination(Registered &session)
         }
         if (group_in_session(pgid, session_id, session.master_fd)) {
             session.termination.targets.push_back(pgid);
-        } else {
+        } else if (group_exists(pgid)) {
+            // The group still exists but cannot be verified as ours; skip and
+            // log rather than risk signaling a reused, unrelated PID/PGID.
             log(LogLevel::Warning, "skipping termination target not in the terminal session");
         }
+        // A group that no longer exists is skipped silently: it is the normal
+        // case once the child has exited, and there is nothing to signal.
     }
 
     for (const pid_t pgid : session.termination.targets) {
@@ -1039,14 +1053,30 @@ void LinuxIoLoop::service_deadlines()
         if (session.remove_acked || !session.termination.active || session.termination.completed) {
             continue;
         }
+        // If no target group survives, the signal sequence is already complete;
+        // do not wait for the kill deadline. This runs every iteration (the loop
+        // wakes on child exit), so close stays responsive after a child exits.
+        bool any_alive = false;
+        for (const pid_t pgid : session.termination.targets) {
+            if (group_exists(pgid)) {
+                any_alive = true;
+                break;
+            }
+        }
+        if (!any_alive) {
+            session.termination.completed = true;
+            continue;
+        }
         if (now < session.termination.deadline) {
             continue;
         }
         const auto session_id = static_cast<pid_t>(session.process_id);
         for (const pid_t pgid : session.termination.targets) {
             if (!group_in_session(pgid, session_id, session.master_fd)) {
-                log(LogLevel::Warning,
-                    "skipping SIGKILL for a group no longer in the terminal session");
+                if (group_exists(pgid)) {
+                    log(LogLevel::Warning,
+                        "skipping SIGKILL for a group no longer in the terminal session");
+                }
                 continue;
             }
             if (::kill(-pgid, SIGKILL) != 0 && errno != ESRCH) {

@@ -639,3 +639,25 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   queue-fed chunks, cancel-paste, `paste_finished`, deferred keys/replies,
   reserve integration) is explicitly deferred until after the application is
   complete and is not part of Stage 4's exit criteria.
+- **Post-Stage-4 UX fixes**:
+  (1) The default font rendered italic because FLTK's Xft driver reads the first
+  character of a font name as a style modifier ('I'/'B'/'P'/' '), so the family
+  "Inconsolata Condensed" was misread as italic. New `include/ui/font_name.hpp`
+  / `src/ui/font_name.cpp` encode the modifier explicitly
+  (`fltk_raw_font_name`), `TerminalWidget::apply_font_family()` uses it, and
+  `font_name_test` covers the encoding (including families that begin with a
+  style letter).
+  (2) An exited terminal left a dead pane on screen. `TerminalView::close_exited()`
+  now closes any pane whose process has exited (the loop always drains final
+  output before `exited`, DIP 1.6) and removes a tab that becomes empty while
+  other tabs remain; the last tab is kept so the app can shut down once empty.
+  (3) Closing was slow and noisy: terminating an already-exited child waited the
+  full kill deadline and logged "skipping termination target not in the terminal
+  session". `LinuxIoLoop` now skips a target group that no longer exists
+  silently (`group_exists`) and `service_deadlines()` completes the signal
+  sequence as soon as no target group survives instead of waiting for the
+  deadline; the `session_smoke_test` runtime dropped from ~2.7s to ~0.7s. New
+  `io_loop_test::test_terminate_after_exit_is_prompt` uses a 5s kill deadline and
+  asserts removal is acknowledged within 1.5s; `terminal_view_test` covers pane
+  and empty-tab auto-close. Debug and ASan/UBSan suites pass 20/20;
+  clang-format/clang-tidy clean.

@@ -77,6 +77,7 @@ bool TerminalView::pump()
     }
 
     const bool dirty = manager_.pump();
+    close_exited();
     if (destroy_stale_widgets()) {
         layout();
     }
@@ -398,6 +399,30 @@ bool TerminalView::destroy_stale_widgets()
         remove_widget(id);
     }
     return !stale.empty();
+}
+
+void TerminalView::close_exited()
+{
+    // A pane whose process has exited closes itself (DIP 4.4). Ordinary child
+    // exit always drains, so the loop has already fed the final output before
+    // publishing `exited`; the pane is removed and the layout rebalances.
+    for (const TerminalId id : manager_.terminal_ids()) {
+        TerminalInstance *instance = manager_.find(id);
+        if (instance != nullptr && instance->state() == TerminalState::exited &&
+            !instance->closing()) {
+            manager_.close_terminal(id);
+        }
+    }
+    // Remove a tab that has become empty while other tabs remain; the last tab is
+    // kept so the application can shut down cleanly once it is empty.
+    if (manager_.tabs().count() > 1) {
+        for (const TabId tab : manager_.tabs().ids()) {
+            const Tab *found = manager_.tabs().find(tab);
+            if (found != nullptr && found->terminal_count() == 0) {
+                manager_.close_tab(tab);
+            }
+        }
+    }
 }
 
 TerminalWidget *TerminalView::add_widget(TerminalId id)

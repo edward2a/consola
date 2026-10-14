@@ -45,10 +45,13 @@ struct Harness {
     consola::SessionOutboundQueue outbound{1U << 20};
     consola::SessionInboundQueue inbound;
     consola::StartupWorker worker{nullptr, nullptr};
-    std::unique_ptr<consola::IoLoop> loop =
-        consola::make_linux_io_loop(nullptr, nullptr, std::chrono::milliseconds{300});
+    std::unique_ptr<consola::IoLoop> loop;
     consola::StartupResult result;
     bool drain_output_on_close = true;
+
+    explicit Harness(std::chrono::milliseconds kill_timeout = std::chrono::milliseconds{300})
+        : loop(consola::make_linux_io_loop(nullptr, nullptr, kill_timeout))
+    {}
 
     ~Harness()
     {
@@ -786,6 +789,56 @@ bool test_loop_running_state()
     return true;
 }
 
+bool test_terminate_after_exit_is_prompt()
+{
+    // A long kill deadline: terminating a child that has already exited must
+    // complete the signal sequence at once, not wait for the deadline.
+    Harness harness(std::chrono::milliseconds{5000});
+    harness.loop->start();
+
+    const consola::TerminalId id{77};
+    if (!harness.launch(id, "/bin/sh", {"-c", "exit 0"})) {
+        std::printf("launch failed\n");
+        return false;
+    }
+    if (!harness.add(id)) {
+        std::printf("add failed\n");
+        return false;
+    }
+    consola::LoopEvent event;
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::added, 5000, event)) {
+        return false;
+    }
+
+    const Drain drained = drain_session(harness, id, 5000, true);
+    if (!drained.exited) {
+        std::printf("child did not exit\n");
+        return false;
+    }
+
+    harness.loop->terminate(id);
+    const auto start = Clock::now();
+    if (!harness.loop->remove(id)) {
+        std::printf("remove rejected\n");
+        return false;
+    }
+    if (!wait_event(*harness.loop, consola::LoopEvent::Kind::removed, 2000, event)) {
+        std::printf("removal after exit not acknowledged\n");
+        return false;
+    }
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start);
+    if (elapsed > std::chrono::milliseconds{1500}) {
+        std::printf("removal after exit took %lldms\n", static_cast<long long>(elapsed.count()));
+        return false;
+    }
+
+    harness.loop->shutdown();
+    wait_event(*harness.loop, consola::LoopEvent::Kind::shutdown_done, 5000, event);
+    harness.loop->stop();
+    return true;
+}
+
 int main()
 {
     if (!test_shell_exit_and_order()) {
@@ -838,6 +891,10 @@ int main()
     }
     if (!test_loop_running_state()) {
         std::printf("test_loop_running_state failed\n");
+        return 1;
+    }
+    if (!test_terminate_after_exit_is_prompt()) {
+        std::printf("test_terminate_after_exit_is_prompt failed\n");
         return 1;
     }
     std::printf("io_loop_test ok\n");
