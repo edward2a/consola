@@ -26,6 +26,7 @@ std::unique_ptr<TerminalSession> TerminalInstance::release_session() noexcept
     master_fd_ = -1;
     exit_fd_ = -1;
     process_id_ = -1;
+    state_ = TerminalState::closed;
     return std::move(session_);
 }
 

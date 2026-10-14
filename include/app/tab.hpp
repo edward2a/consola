@@ -38,9 +38,9 @@ public:
     [[nodiscard]] TerminalInstance *find(TerminalId id) noexcept;
     [[nodiscard]] const TerminalInstance *find(TerminalId id) const noexcept;
 
-    // Insert an instance and make it the layout root. Precondition: the tab is
-    // empty.
-    TerminalInstance &add_root(std::unique_ptr<TerminalInstance> instance);
+    // Insert an instance and make it the layout root. Returns null when the tab
+    // is not empty or the id is already present; the instance is then dropped.
+    TerminalInstance *add_root(std::unique_ptr<TerminalInstance> instance);
 
     // Insert an instance and split `target`'s leaf, placing the new terminal in
     // the second half. Returns the new layout leaf, or nullopt when `target` is

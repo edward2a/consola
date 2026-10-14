@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <app/session.hpp>
 #include <app/tab.hpp>
@@ -42,22 +43,27 @@ public:
 
     void start();
 
-    [[nodiscard]] Tab &tab() noexcept
-    {
-        return tab_;
-    }
+    // The manager owns its tab; it is exposed read-only so callers cannot
+    // remove instances behind the manager's registry.
     [[nodiscard]] const Tab &tab() const noexcept
     {
         return tab_;
     }
 
+    // Orderly teardown (DIP 4.5): reject new terminals, resolve pending
+    // launches (registering a late success and closing it), terminate every
+    // running session through the I/O loop and wait for reaping and removal
+    // acknowledgements before stopping the loop. Idempotent.
+    void shutdown();
+
     // Create a terminal as the tab's root. Returns its id, or nullopt when the
-    // tab is not empty or the launch could not be queued.
+    // tab is not empty, the manager is shutting down, or the launch could not
+    // be queued.
     std::optional<TerminalId> create_root_terminal(const TerminalOptions &options);
 
     // Create a terminal and split `target`'s leaf, placing it in the second
-    // half. Returns its id, or nullopt when the target/ratio is invalid or the
-    // launch could not be queued.
+    // half. Returns its id, or nullopt when the target/ratio is invalid, the
+    // manager is shutting down, or the launch could not be queued.
     std::optional<TerminalId> split_terminal(TerminalId target, Orientation orientation,
                                              const TerminalOptions &options, float ratio = 0.5F);
 
@@ -82,13 +88,19 @@ private:
     bool submit(TerminalInstance &instance);
     void consume_results();
     bool consume_inbound();
+    void drain_events();
+    void request_removals();
+    void finalize(TerminalId id);
 
     StartupWorker worker_;
     std::unique_ptr<IoLoop> loop_;
     std::unordered_map<TerminalId, TerminalInstance *> instances_;
+    std::unordered_set<TerminalId> remove_requested_;
     Tab tab_;
     std::uint64_t next_id_ = 1;
     bool started_ = false;
+    bool accepting_ = true;
+    bool shutdown_done_ = false;
     bool launch_failed_ = false;
 };
 

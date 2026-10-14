@@ -91,9 +91,10 @@ void test_tab_ownership()
     CHECK(tab.terminal_count() == 0);
 
     auto first = std::make_unique<TerminalInstance>(tid(1), SessionOptions{});
-    TerminalInstance &root = tab.add_root(std::move(first));
+    TerminalInstance *root = tab.add_root(std::move(first));
+    CHECK(root != nullptr);
     CHECK(tab.terminal_count() == 1);
-    CHECK(tab.find(tid(1)) == &root);
+    CHECK(tab.find(tid(1)) == root);
     CHECK(tab.layout().contains(tid(1)));
     CHECK(tab.layout().terminal_count() == 1);
 
@@ -140,6 +141,15 @@ void test_tab_removal()
     CHECK(tab.remove_terminal(tid(99)) == nullptr);
 }
 
+void test_add_root_rejections()
+{
+    Tab tab;
+    CHECK(tab.add_root(std::make_unique<TerminalInstance>(tid(1), SessionOptions{})) != nullptr);
+    CHECK(tab.add_root(std::make_unique<TerminalInstance>(tid(2), SessionOptions{})) == nullptr);
+    CHECK(tab.terminal_count() == 1);
+    CHECK(tab.find(tid(2)) == nullptr);
+}
+
 } // namespace
 
 int main()
@@ -148,6 +158,7 @@ int main()
     test_tab_ownership();
     test_tab_rejections();
     test_tab_removal();
+    test_add_root_rejections();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d tab check(s) failed\n", g_failures);

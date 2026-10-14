@@ -18,13 +18,16 @@ const TerminalInstance *Tab::find(TerminalId id) const noexcept
     return it == terminals_.end() ? nullptr : it->second.get();
 }
 
-TerminalInstance &Tab::add_root(std::unique_ptr<TerminalInstance> instance)
+TerminalInstance *Tab::add_root(std::unique_ptr<TerminalInstance> instance)
 {
     const TerminalId id = instance->id();
-    auto [it, inserted] = terminals_.emplace(id, std::move(instance));
-    (void)inserted;
+    if (!layout_.empty() || terminals_.contains(id)) {
+        return nullptr;
+    }
+    TerminalInstance *raw = instance.get();
+    terminals_.emplace(id, std::move(instance));
     layout_ = LayoutTree(id);
-    return *it->second;
+    return raw;
 }
 
 std::optional<NodeId> Tab::split_terminal(TerminalId target, Orientation orientation,

@@ -100,7 +100,7 @@ TerminalOptions shell(const std::string &command)
 
 void test_independent_terminals()
 {
-    TerminalManager manager;
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
     manager.start();
     const auto first = manager.create_root_terminal(shell("printf one"));
     CHECK(first.has_value());
@@ -137,7 +137,7 @@ void test_independent_terminals()
 
 void test_launch_failure()
 {
-    TerminalManager manager;
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
     manager.start();
     TerminalOptions options;
     options.session.executable = "/nonexistent/consola-no-such-binary";
@@ -154,7 +154,7 @@ void test_launch_failure()
 
 void test_send_to_running()
 {
-    TerminalManager manager;
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
     manager.start();
     TerminalOptions options;
     options.session.executable = "/bin/cat";
@@ -177,9 +177,31 @@ void test_send_to_running()
     CHECK(echoed);
 }
 
+void test_shutdown_reaps_sighup_ignoring()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    TerminalOptions options;
+    options.session.executable = "/bin/sh";
+    options.session.arguments = {"-c", "trap '' HUP; sleep 30"};
+    const auto id = manager.create_root_terminal(options);
+    CHECK(id.has_value());
+
+    TerminalInstance *instance = manager.find(REQUIRED(id));
+    CHECK(instance != nullptr);
+    const bool running =
+        wait_for([&] { return instance->state() == TerminalState::running; }, 5000, manager);
+    CHECK(running);
+
+    manager.shutdown();
+    CHECK(manager.tab().terminal_count() == 0);
+    CHECK(manager.find(REQUIRED(id)) == nullptr);
+}
+
 void test_root_rejected_when_nonempty()
 {
-    TerminalManager manager;
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
     manager.start();
     const auto first = manager.create_root_terminal(shell("printf first"));
     CHECK(first.has_value());
@@ -195,6 +217,7 @@ int main()
     test_independent_terminals();
     test_launch_failure();
     test_send_to_running();
+    test_shutdown_reaps_sighup_ignoring();
     test_root_rejected_when_nonempty();
 
     if (g_failures != 0) {

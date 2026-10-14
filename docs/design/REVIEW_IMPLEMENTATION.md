@@ -403,3 +403,36 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   64-bit intermediate geometry with clamping; per-call minimum caching (removes
   quadratic recomputation); divider `visible` intersection added; added
   non-zero-origin partial-clip and extreme-value tests.
+- **S3-CS3 — single-tab ownership and asynchronous factory (§3.0, §4.1,
+  §4.3)**: `include/app/terminal_instance.hpp` adds `TerminalInstance` (state
+  machine, emulator, session queues, attached backend); `include/app/tab.hpp`
+  adds `Tab`, which owns the `LayoutTree` and the `TerminalId ->
+  unique_ptr<TerminalInstance>` map; `include/app/terminal_manager.hpp` adds
+  `TerminalManager`, which owns the application-wide `StartupWorker` and
+  `IoLoop`, owns the single Stage 3 `Tab`, allocates application-wide
+  `TerminalId`s and is the single asynchronous factory. `create_root_terminal`
+  / `split_terminal` create a `Starting` instance and queue the launch;
+  `pump()` consumes results (attaching the backend and registering with the
+  loop), inbound data and loop events; input is disabled until startup
+  succeeds. `std::hash<TerminalId>` was added. A new `terminal_session` library
+  target links `terminal_core` + `terminal_platform`; `terminal_ui` does not use
+  it yet (the FLTK application migration is S3-CS5). Tests: independent PTYs
+  through the factory, launch failure, send-to-running, root rejection, and
+  SIGHUP-ignoring shutdown reaping. Review fixes: the manager now owns its tab
+  (the previous external-tab API caused a manager-registry use-after-free caught
+  by ASan); `tab()` is read-only so callers cannot destroy instances behind the
+  registry; instances enter `starting` before launch and `attach()` sets
+  `running`; `release_session()` disables input; EOF disables input; `add_root`
+  enforces its empty/no-duplicate precondition. Review follow-ups still open:
+  the running application still uses the old `SessionHost` (S3-CS5), and full
+  per-pane close (§4.4) remains for S3-CS4. **Deferred to S3-CS4**: per-pane
+  `close_terminal` (cancel a starting pane, close a running pane, rebalance).
+  `terminal_session`, `tab_test` and `terminal_manager_test` are wired into
+  CTest; Debug and ASan/UBSan suites pass 13/13; clang-format/clang-tidy clean.
+- **S3-CS3 shutdown barrier (§4.5)**: `TerminalManager::shutdown()` rejects new
+  terminals, resolves pending launches (registering a late success and closing
+  it, finalizing a failed/cancelled launch), terminates running sessions through
+  the loop (SIGHUP/SIGKILL escalation owned by the loop), keeps pumping until
+  every child is reaped and every removal acknowledged, then shuts the loop
+  down. The destructor calls it. Test: a SIGHUP-ignoring shell is escalated and
+  reaped within the 5 s barrier.

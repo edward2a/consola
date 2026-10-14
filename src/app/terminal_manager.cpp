@@ -2,9 +2,12 @@
 
 #include <app/terminal_manager.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <memory>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include <app/log.hpp>
 
@@ -17,21 +20,7 @@ TerminalManager::TerminalManager(WakeCallback wake, void *wake_context,
 
 TerminalManager::~TerminalManager()
 {
-    worker_.stop();
-    StartupResult result;
-    while (worker_.try_pop(result)) {
-        if (result.session != nullptr) {
-            result.session->terminate();
-        }
-    }
-    for (auto &entry : instances_) {
-        if (entry.second->session() != nullptr) {
-            entry.second->session()->terminate();
-        }
-    }
-    if (loop_) {
-        loop_->stop();
-    }
+    shutdown();
 }
 
 void TerminalManager::start()
@@ -57,16 +46,21 @@ bool TerminalManager::submit(TerminalInstance &instance)
 
 std::optional<TerminalId> TerminalManager::create_root_terminal(const TerminalOptions &options)
 {
-    if (tab_.terminal_count() != 0) {
+    if (!accepting_ || tab_.terminal_count() != 0) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
     auto instance = std::make_unique<TerminalInstance>(id, options.session);
+    instance->set_state(TerminalState::starting);
     if (!submit(*instance)) {
         return std::nullopt;
     }
     instances_.emplace(id, instance.get());
-    tab_.add_root(std::move(instance));
+    if (tab_.add_root(std::move(instance)) == nullptr) {
+        worker_.cancel(id);
+        instances_.erase(id);
+        return std::nullopt;
+    }
     return id;
 }
 
@@ -75,12 +69,13 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
                                                           const TerminalOptions &options,
                                                           float ratio)
 {
-    if (!tab_.layout().find_terminal(target).has_value() || !std::isfinite(ratio) ||
+    if (!accepting_ || !tab_.layout().find_terminal(target).has_value() || !std::isfinite(ratio) ||
         ratio <= 0.0F || ratio >= 1.0F) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
     auto instance = std::make_unique<TerminalInstance>(id, options.session);
+    instance->set_state(TerminalState::starting);
     if (!submit(*instance)) {
         return std::nullopt;
     }
@@ -98,10 +93,7 @@ bool TerminalManager::pump()
 {
     consume_results();
     const bool dirty = consume_inbound();
-    LoopEvent event;
-    while (loop_->try_pop_event(event)) {
-        // Registration/removal/shutdown acknowledgements are handled in S3-CS4.
-    }
+    drain_events();
     return dirty;
 }
 
@@ -111,8 +103,7 @@ void TerminalManager::consume_results()
     while (worker_.try_pop(result)) {
         const auto it = instances_.find(result.id);
         if (it == instances_.end()) {
-            // Result for a terminal no longer tracked; S3-CS4 adds the cleanup
-            // barrier, this is a best-effort retire for now.
+            // Result for a terminal no longer tracked; best-effort retire.
             if (result.session != nullptr) {
                 result.session->terminate();
             }
@@ -151,6 +142,8 @@ bool TerminalManager::consume_inbound()
             if (message.kind == InboundMessage::Kind::data) {
                 instance->emulator().feed(message.bytes);
                 dirty = true;
+            } else if (message.kind == InboundMessage::Kind::eof) {
+                instance->mark_eof();
             } else if (message.kind == InboundMessage::Kind::exited) {
                 instance->set_state(TerminalState::exited);
             }
@@ -160,6 +153,126 @@ bool TerminalManager::consume_inbound()
         }
     }
     return dirty;
+}
+
+void TerminalManager::drain_events()
+{
+    LoopEvent event;
+    while (loop_->try_pop_event(event)) {
+        if (event.kind == LoopEvent::Kind::removed) {
+            finalize(event.id);
+        }
+    }
+}
+
+void TerminalManager::request_removals()
+{
+    for (auto &entry : instances_) {
+        TerminalInstance *instance = entry.second;
+        if (instance->state() == TerminalState::exited && instance->session() != nullptr &&
+            !remove_requested_.contains(entry.first)) {
+            loop_->remove(entry.first);
+            remove_requested_.insert(entry.first);
+        }
+    }
+}
+
+void TerminalManager::finalize(TerminalId id)
+{
+    const auto it = instances_.find(id);
+    if (it == instances_.end()) {
+        return;
+    }
+    // The loop has retired this session's poll entries, so the backend can be
+    // released and the instance destroyed.
+    it->second->release_session();
+    tab_.remove_terminal(id);
+    instances_.erase(it);
+    remove_requested_.erase(id);
+}
+
+void TerminalManager::shutdown()
+{
+    if (shutdown_done_) {
+        return;
+    }
+    shutdown_done_ = true;
+    accepting_ = false;
+
+    // Resolve pending launches: a late success is registered and closed, a
+    // failed/cancelled launch completes without a registration (DIP 4.5).
+    worker_.stop();
+    StartupResult result;
+    while (worker_.try_pop(result)) {
+        const auto it = instances_.find(result.id);
+        if (it == instances_.end()) {
+            if (result.session != nullptr) {
+                result.session->terminate();
+            }
+            continue;
+        }
+        TerminalInstance *instance = it->second;
+        if (result.session == nullptr) {
+            instance->set_state(TerminalState::exited);
+            finalize(result.id);
+            continue;
+        }
+        instance->attach(std::move(result.session), result.master_fd, result.exit_notification_fd,
+                         result.process_id);
+        if (loop_->add(*instance->session(), instance->master_fd(),
+                       instance->exit_notification_fd(), instance->process_id(), instance->id(),
+                       instance->options().drain_output_on_close, instance->inbound(),
+                       instance->outbound())) {
+            instance->set_state(TerminalState::stopping);
+            loop_->terminate(result.id);
+        } else {
+            instance->release_session();
+            finalize(result.id);
+        }
+    }
+
+    // Terminate every running session through the loop (kill escalation lives
+    // in the loop, DIP 1.6).
+    for (auto &entry : instances_) {
+        TerminalInstance *instance = entry.second;
+        if (instance->session() != nullptr && instance->state() == TerminalState::running) {
+            instance->set_state(TerminalState::stopping);
+            loop_->terminate(entry.first);
+        }
+    }
+
+    // Instances whose launch failed or was cancelled have no loop registration
+    // to retire; finalize them directly.
+    std::vector<TerminalId> unregistered;
+    for (const auto &entry : instances_) {
+        if (entry.second->session() == nullptr) {
+            unregistered.push_back(entry.first);
+        }
+    }
+    for (const TerminalId id : unregistered) {
+        finalize(id);
+    }
+
+    // Keep consuming queues and events until every child is reaped and every
+    // removal acknowledged.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!instances_.empty() && std::chrono::steady_clock::now() < deadline) {
+        pump();
+        request_removals();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    std::vector<TerminalId> remaining;
+    remaining.reserve(instances_.size());
+    for (const auto &entry : instances_) {
+        remaining.push_back(entry.first);
+    }
+    for (const TerminalId id : remaining) {
+        finalize(id);
+    }
+
+    loop_->shutdown();
+    loop_->stop();
 }
 
 void TerminalManager::send(TerminalId id, std::span<const std::byte> bytes)
