@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -13,6 +14,7 @@
 
 #include <app/session.hpp>
 #include <app/tab.hpp>
+#include <app/tab_manager.hpp>
 #include <app/terminal_instance.hpp>
 #include <platform/io_loop.hpp>
 #include <platform/startup.hpp>
@@ -25,11 +27,11 @@ struct TerminalOptions {
 };
 
 // Owns the application-wide startup worker and I/O loop and is the single
-// asynchronous terminal factory (DIP 3.0, 4.3). It also owns the single Stage 3
-// tab, so terminal instances outlive the loop they are registered with and are
+// asynchronous terminal factory (DIP 3.0, 4.3). It owns the TabManager, so
+// terminal instances outlive the loop they are registered with and are
 // destroyed only after the manager has terminated them and stopped the loop.
 // UI-thread only. The create_* methods queue a launch and return a Starting
-// instance owned by the tab; pump() consumes launch results, loop events and
+// instance owned by a tab; pump() consumes launch results, loop events and
 // inbound data. Close and shutdown barriers are added in S3-CS4.
 class TerminalManager {
 public:
@@ -44,12 +46,51 @@ public:
 
     void start();
 
-    // The manager owns its tab; it is exposed read-only so callers cannot
-    // remove instances behind the manager's registry.
+    // Tab ownership (DIP 4.1, 4.2). The manager owns its tabs; they are exposed
+    // read-only so callers cannot remove instances behind the registry.
+    [[nodiscard]] TabManager &tabs() noexcept
+    {
+        return tabs_;
+    }
+    [[nodiscard]] const TabManager &tabs() const noexcept
+    {
+        return tabs_;
+    }
+
+    // The active tab (always valid: TabManager keeps at least one).
     [[nodiscard]] const Tab &tab() const noexcept
     {
-        return tab_;
+        return tabs_.active();
     }
+    [[nodiscard]] Tab *active_tab() noexcept
+    {
+        return &tabs_.active();
+    }
+    [[nodiscard]] const Tab *active_tab() const noexcept
+    {
+        return &tabs_.active();
+    }
+
+    // Number of live terminals across every tab.
+    [[nodiscard]] std::size_t terminal_count() const noexcept
+    {
+        return instances_.size();
+    }
+
+    // Append a new empty tab and make it active (DIP 4.2).
+    TabId create_tab();
+
+    // Select a tab, or move the selection with wraparound. next/previous return
+    // the new active id, or nullopt when there is only one tab.
+    bool select_tab(TabId tab);
+    std::optional<TabId> select_next_tab();
+    std::optional<TabId> select_previous_tab();
+
+    // Reorder a tab to `index` (clamped). Returns false for an unknown id.
+    bool move_tab(TabId tab, std::size_t index);
+
+    // The tab that owns a live terminal, or nullopt for an unknown id.
+    [[nodiscard]] std::optional<TabId> tab_of(TerminalId id) const noexcept;
 
     // Orderly teardown (DIP 4.5). begin_shutdown() rejects new terminals,
     // resolves pending launches (registering a late success and closing it,
@@ -66,16 +107,25 @@ public:
     // never releases a registered session before its acknowledgement.
     void shutdown();
 
-    // Create a terminal as the tab's root. Returns its id, or nullopt when the
-    // tab is not empty, the manager is shutting down, or the launch could not
-    // be queued.
+    // Create a terminal as the active tab's root. Returns its id, or nullopt
+    // when the tab is not empty, the manager is shutting down, or the launch
+    // could not be queued.
     std::optional<TerminalId> create_root_terminal(const TerminalOptions &options);
+
+    // Create a terminal as `tab`'s root. Returns nullopt for an unknown or
+    // non-empty tab, when shutting down, or when the launch could not be queued.
+    std::optional<TerminalId> create_root_terminal(TabId tab, const TerminalOptions &options);
 
     // Create a terminal and split `target`'s leaf, placing it in the second
     // half. Returns its id, or nullopt when the target/ratio is invalid, the
     // manager is shutting down, or the launch could not be queued.
     std::optional<TerminalId> split_terminal(TerminalId target, Orientation orientation,
                                              const TerminalOptions &options, float ratio = 0.5F);
+
+    // Begin closing a tab (DIP 4.2): every terminal in it is closed through the
+    // normal pane-close path, and the tab is removed once it is empty. Returns
+    // false for an unknown tab.
+    bool close_tab(TabId tab);
 
     // Consume launch results, loop events and inbound data for all live
     // terminals. Returns true when any emulator was fed (a redraw is needed).
@@ -128,9 +178,11 @@ private:
     StartupWorker worker_;
     std::unique_ptr<IoLoop> loop_;
     std::unordered_map<TerminalId, TerminalInstance *> instances_;
+    std::unordered_map<TerminalId, TabId> instance_tab_;
     std::unordered_set<TerminalId> terminate_sent_;
     std::unordered_set<TerminalId> remove_requested_;
-    Tab tab_;
+    std::unordered_set<TabId> closing_tabs_;
+    TabManager tabs_;
     std::uint64_t next_id_ = 1;
     bool started_ = false;
     bool accepting_ = true;

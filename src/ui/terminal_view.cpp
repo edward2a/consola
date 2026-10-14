@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -82,7 +83,7 @@ bool TerminalView::pump()
         }
     }
     sync_focus();
-    return manager_.tab().terminal_count() != 0;
+    return manager_.terminal_count() != 0;
 }
 
 std::optional<TerminalId> TerminalView::split_focused(Orientation orientation)
@@ -370,6 +371,21 @@ void TerminalView::layout()
         }
     }
 
+    // Only the active tab's panes are shown; widgets for other tabs are kept
+    // (preserving their emulator state) but hidden until their tab is active.
+    // Active widgets are left untouched so a redundant hide/show never steals
+    // FLTK focus from the focused pane.
+    std::unordered_set<TerminalId> active;
+    for (const PaneRect &pane : last_layout_.panes) {
+        active.insert(pane.terminal);
+    }
+    for (auto &entry : widgets_) {
+        if (!active.contains(entry.first)) {
+            entry.second->hide();
+        } else if (entry.second->visible() == 0) {
+            entry.second->show();
+        }
+    }
     for (const PaneRect &pane : last_layout_.panes) {
         const auto it = widgets_.find(pane.terminal);
         if (it == widgets_.end()) {

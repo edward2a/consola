@@ -344,6 +344,154 @@ void test_root_rejected_when_nonempty()
     CHECK(manager.tab().terminal_count() == 1);
 }
 
+void test_multiple_tabs_independent()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId first_tab = manager.tabs().active_id();
+    const auto first = manager.create_root_terminal(shell("printf one"));
+    CHECK(first.has_value());
+
+    const consola::TabId second_tab = manager.create_tab();
+    CHECK(second_tab != first_tab);
+    CHECK(manager.tabs().active_id() == second_tab);
+    const auto second = manager.create_root_terminal(shell("printf two"));
+    CHECK(second.has_value());
+
+    CHECK(manager.tabs().count() == 2);
+    CHECK(manager.terminal_count() == 2);
+    CHECK(manager.tab_of(REQUIRED(first)) == first_tab);
+    CHECK(manager.tab_of(REQUIRED(second)) == second_tab);
+
+    TerminalInstance *a = manager.find(REQUIRED(first));
+    TerminalInstance *b = manager.find(REQUIRED(second));
+    CHECK(a != nullptr);
+    CHECK(b != nullptr);
+    const bool saw_one = wait_for(
+        [&] {
+            return a->state() == TerminalState::exited &&
+                   screen_text(a->emulator()).find("one") != std::string::npos;
+        },
+        5000, manager);
+    const bool saw_two = wait_for(
+        [&] {
+            return b->state() == TerminalState::exited &&
+                   screen_text(b->emulator()).find("two") != std::string::npos;
+        },
+        5000, manager);
+    CHECK(saw_one);
+    CHECK(saw_two);
+    CHECK(screen_text(a->emulator()).find("two") == std::string::npos);
+    CHECK(screen_text(b->emulator()).find("one") == std::string::npos);
+    CHECK(!manager.launch_failed());
+}
+
+void test_split_in_non_active_tab()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId first_tab = manager.tabs().active_id();
+    const auto first = manager.create_root_terminal(shell("printf first"));
+    CHECK(first.has_value());
+
+    const consola::TabId second_tab = manager.create_tab();
+    const auto second = manager.create_root_terminal(shell("printf second"));
+    CHECK(second.has_value());
+    CHECK(manager.tabs().active_id() == second_tab);
+
+    // Split a pane that belongs to the now-inactive first tab.
+    const auto split =
+        manager.split_terminal(REQUIRED(first), Orientation::vertical, shell("printf third"));
+    CHECK(split.has_value());
+    CHECK(manager.tab_of(REQUIRED(split)) == first_tab);
+    CHECK(manager.tabs().find(first_tab)->layout().terminal_count() == 2);
+    CHECK(manager.tabs().find(second_tab)->layout().terminal_count() == 1);
+    CHECK(manager.terminal_count() == 3);
+}
+
+void test_close_tab()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId first_tab = manager.tabs().active_id();
+    const auto first = manager.create_root_terminal(shell("sleep 30"));
+    const auto first_split =
+        manager.split_terminal(REQUIRED(first), Orientation::vertical, shell("sleep 30"));
+    CHECK(first_split.has_value());
+
+    const consola::TabId second_tab = manager.create_tab();
+    const auto second = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(second.has_value());
+    CHECK(manager.tabs().count() == 2);
+
+    CHECK(manager.close_tab(first_tab));
+    const bool removed = wait_for(
+        [&] {
+            return manager.find(REQUIRED(first)) == nullptr &&
+                   manager.find(REQUIRED(first_split)) == nullptr;
+        },
+        8000, manager);
+    CHECK(removed);
+    CHECK(manager.tabs().count() == 1);
+    CHECK(manager.tabs().find(first_tab) == nullptr);
+    CHECK(manager.tabs().active_id() == second_tab);
+    CHECK(manager.find(REQUIRED(second)) != nullptr);
+    CHECK(!manager.launch_failed());
+
+    CHECK(!manager.close_tab(consola::TabId{9999}));
+}
+
+void test_select_next_previous_tabs()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId first_tab = manager.tabs().active_id();
+    const consola::TabId second_tab = manager.create_tab();
+    const consola::TabId third_tab = manager.create_tab();
+    CHECK(manager.tabs().count() == 3);
+
+    CHECK(manager.select_tab(first_tab));
+    CHECK(manager.tabs().active_id() == first_tab);
+    CHECK(manager.select_next_tab() == second_tab);
+    CHECK(manager.select_next_tab() == third_tab);
+    CHECK(manager.select_next_tab() == first_tab);
+    CHECK(manager.select_previous_tab() == third_tab);
+    CHECK(manager.move_tab(third_tab, 0));
+    CHECK(manager.tabs().ids().front() == third_tab);
+    CHECK(!manager.select_tab(consola::TabId{1234}));
+}
+
+void test_shutdown_multiple_tabs()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const auto first = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(first.has_value());
+    manager.create_tab();
+    const auto second = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(second.has_value());
+
+    const bool both_running = wait_for(
+        [&] {
+            TerminalInstance *a = manager.find(REQUIRED(first));
+            TerminalInstance *b = manager.find(REQUIRED(second));
+            return a != nullptr && b != nullptr && a->state() == TerminalState::running &&
+                   b->state() == TerminalState::running;
+        },
+        5000, manager);
+    CHECK(both_running);
+
+    manager.shutdown();
+    CHECK(manager.terminal_count() == 0);
+    CHECK(manager.find(REQUIRED(first)) == nullptr);
+    CHECK(manager.find(REQUIRED(second)) == nullptr);
+}
+
 } // namespace
 
 int main()
@@ -359,6 +507,11 @@ int main()
     test_shutdown_under_backpressure();
     test_create_requires_start();
     test_root_rejected_when_nonempty();
+    test_multiple_tabs_independent();
+    test_split_in_non_active_tab();
+    test_close_tab();
+    test_select_next_previous_tabs();
+    test_shutdown_multiple_tabs();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d terminal manager check(s) failed\n", g_failures);

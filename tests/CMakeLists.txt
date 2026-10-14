@@ -31,6 +31,11 @@ target_link_libraries(consola_tab_test PRIVATE terminal_core)
 
 add_test(NAME tab_test COMMAND consola_tab_test)
 
+add_executable(consola_tab_manager_test tab_manager_test.cpp)
+target_link_libraries(consola_tab_manager_test PRIVATE terminal_core)
+
+add_test(NAME tab_manager_test COMMAND consola_tab_manager_test)
+
 add_executable(consola_terminal_manager_test terminal_manager_test.cpp)
 target_link_libraries(consola_terminal_manager_test PRIVATE terminal_session)
 

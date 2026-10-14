@@ -5,7 +5,9 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <app/session.hpp>
@@ -16,10 +18,21 @@ namespace consola {
 
 // A tab owns one layout tree and its terminal instances (DIP 4.1). The layout
 // refers to terminals only by TerminalId. Stage 3 uses a single tab;
-// TabManager is added in Stage 4.
+// TabManager owns the ordered set in Stage 4.
 class Tab {
 public:
     Tab() = default;
+
+    // Optional presentation label (DIP 4.2 rename). Empty by default; the tab
+    // bar falls back to a positional label.
+    [[nodiscard]] const std::string &title() const noexcept
+    {
+        return title_;
+    }
+    void set_title(std::string title)
+    {
+        title_ = std::move(title);
+    }
 
     [[nodiscard]] LayoutTree &layout() noexcept
     {
@@ -59,6 +72,7 @@ public:
 private:
     LayoutTree layout_;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalInstance>> terminals_;
+    std::string title_;
 };
 
 } // namespace consola

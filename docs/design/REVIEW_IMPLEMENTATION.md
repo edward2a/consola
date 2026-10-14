@@ -563,3 +563,27 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   are defensive paths without dedicated failure-injection tests. Stage 4 carries
   the planned multi-tab scope (`TabManager`, independent tab layouts, tab
   lifecycle); no Stage 3 lifecycle blocker carries forward.
+- **S4-CS1 — TabManager and multi-tab ownership (§4.1, §4.2)**:
+  `include/app/tab_manager.hpp` and `src/app/tab_manager.cpp` add an
+  application-wide `TabId` and a `TabManager` that owns the ordered tabs and the
+  active selection. It always holds at least one tab (so the active tab is
+  always valid); operations are create, select, next/previous (wrapping), move
+  (clamped, keeping the active tab), and remove (empty tabs only; removing the
+  last replaces it with a fresh empty one). `Tab` gains an optional title for
+  the Stage 4 tab bar. `TerminalManager` now owns a `TabManager` instead of a
+  single `Tab`, keeps the app-wide `TerminalId` registry plus a
+  `TerminalId → TabId` index, and adds `create_tab`, `create_root_terminal(tab,
+  …)`, `close_tab`, `select_tab`/`select_next_tab`/`select_previous_tab`,
+  `move_tab`, `tab_of`, and app-wide `terminal_count`. `split_terminal` resolves
+  its tab from the target id, so a pane in any tab can split. `focus(id)`
+  selects the tab that owns the id before focusing, so clicking a pane selects
+  its tab. `close_tab` closes every pane through the normal path and removes the
+  tab once its last terminal is finalized. `TerminalView::pump()` now reports
+  app-wide activity (`terminal_count`), and `layout()` shows only the active
+  tab's panes while hiding (but retaining) the other tabs' widgets, so per-tab
+  emulator state survives a switch. Tests: a new `tab_manager_test` (start
+  state, create/select, wrapping next/previous, move, remove-empty and
+  remove-last, remove rejects non-empty) and `terminal_manager_test` additions
+  (independent terminals across tabs, split in a non-active tab, close a tab
+  with two panes, tab selection/reorder, shutdown across tabs). Debug and
+  ASan/UBSan suites pass 17/17; clang-format/clang-tidy clean.

@@ -45,7 +45,14 @@ bool TerminalManager::submit(TerminalInstance &instance)
 
 std::optional<TerminalId> TerminalManager::create_root_terminal(const TerminalOptions &options)
 {
-    if (!started_ || !accepting_ || tab_.terminal_count() != 0) {
+    return create_root_terminal(tabs_.active_id(), options);
+}
+
+std::optional<TerminalId> TerminalManager::create_root_terminal(TabId tab_id,
+                                                                const TerminalOptions &options)
+{
+    Tab *tab = tabs_.find(tab_id);
+    if (!started_ || !accepting_ || tab == nullptr || tab->terminal_count() != 0) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
@@ -55,9 +62,11 @@ std::optional<TerminalId> TerminalManager::create_root_terminal(const TerminalOp
         return std::nullopt;
     }
     instances_.emplace(id, instance.get());
-    if (tab_.add_root(std::move(instance)) == nullptr) {
+    instance_tab_.emplace(id, tab_id);
+    if (tab->add_root(std::move(instance)) == nullptr) {
         worker_.cancel(id);
         instances_.erase(id);
+        instance_tab_.erase(id);
         return std::nullopt;
     }
     return id;
@@ -68,8 +77,14 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
                                                           const TerminalOptions &options,
                                                           float ratio)
 {
-    if (!started_ || !accepting_ || !tab_.layout().find_terminal(target).has_value() ||
-        !std::isfinite(ratio) || ratio <= 0.0F || ratio >= 1.0F) {
+    const std::optional<TabId> tab_id = tab_of(target);
+    if (!tab_id) {
+        return std::nullopt;
+    }
+    Tab *tab = tabs_.find(*tab_id);
+    if (!started_ || !accepting_ || tab == nullptr ||
+        !tab->layout().find_terminal(target).has_value() || !std::isfinite(ratio) || ratio <= 0.0F ||
+        ratio >= 1.0F) {
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
@@ -79,13 +94,67 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
         return std::nullopt;
     }
     const std::optional<NodeId> leaf =
-        tab_.split_terminal(target, orientation, std::move(instance), ratio);
+        tab->split_terminal(target, orientation, std::move(instance), ratio);
     if (!leaf) {
         worker_.cancel(id);
         return std::nullopt;
     }
-    instances_.emplace(id, tab_.find(id));
+    instances_.emplace(id, tab->find(id));
+    instance_tab_.emplace(id, *tab_id);
     return id;
+}
+
+TabId TerminalManager::create_tab()
+{
+    return tabs_.create();
+}
+
+bool TerminalManager::select_tab(TabId tab)
+{
+    return tabs_.select(tab);
+}
+
+std::optional<TabId> TerminalManager::select_next_tab()
+{
+    return tabs_.select_next();
+}
+
+std::optional<TabId> TerminalManager::select_previous_tab()
+{
+    return tabs_.select_previous();
+}
+
+bool TerminalManager::move_tab(TabId tab, std::size_t index)
+{
+    return tabs_.move(tab, index);
+}
+
+std::optional<TabId> TerminalManager::tab_of(TerminalId id) const noexcept
+{
+    const auto it = instance_tab_.find(id);
+    if (it == instance_tab_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+bool TerminalManager::close_tab(TabId tab_id)
+{
+    Tab *tab = tabs_.find(tab_id);
+    if (tab == nullptr) {
+        return false;
+    }
+    if (tab->terminal_count() == 0) {
+        tabs_.remove(tab_id);
+        return true;
+    }
+    // Close every pane; finalize() removes the tab once the last one is gone.
+    closing_tabs_.insert(tab_id);
+    const std::vector<TerminalId> ids = tab->layout().terminals();
+    for (const TerminalId id : ids) {
+        close_terminal(id);
+    }
+    return true;
 }
 
 bool TerminalManager::pump()
@@ -259,10 +328,26 @@ void TerminalManager::finalize(TerminalId id)
     // The loop has retired this session's poll entries, so the backend can be
     // released and the instance destroyed.
     it->second->release_session();
-    tab_.remove_terminal(id);
+    TabId tab_id{};
+    const auto tab_it = instance_tab_.find(id);
+    if (tab_it != instance_tab_.end()) {
+        tab_id = tab_it->second;
+        if (Tab *tab = tabs_.find(tab_id); tab != nullptr) {
+            tab->remove_terminal(id);
+        }
+        instance_tab_.erase(tab_it);
+    }
     instances_.erase(it);
     terminate_sent_.erase(id);
     remove_requested_.erase(id);
+    // A tab being closed is removed once its last terminal is finalized.
+    if (tab_id.value != 0 && closing_tabs_.contains(tab_id)) {
+        Tab *tab = tabs_.find(tab_id);
+        if (tab != nullptr && tab->terminal_count() == 0) {
+            closing_tabs_.erase(tab_id);
+            tabs_.remove(tab_id);
+        }
+    }
 }
 
 void TerminalManager::begin_shutdown()
@@ -429,22 +514,29 @@ TerminalInstance *TerminalManager::find(TerminalId id) noexcept
 
 void TerminalManager::focus(TerminalId id) noexcept
 {
-    tab_.layout().focus(id);
+    const std::optional<TabId> tab_id = tab_of(id);
+    if (!tab_id) {
+        return;
+    }
+    tabs_.select(*tab_id);
+    if (Tab *tab = tabs_.find(*tab_id); tab != nullptr) {
+        tab->layout().focus(id);
+    }
 }
 
 std::optional<TerminalId> TerminalManager::focused() const noexcept
 {
-    return tab_.layout().focused();
+    return tabs_.active().layout().focused();
 }
 
 bool TerminalManager::set_split_ratio(NodeId split, float ratio) noexcept
 {
-    return tab_.layout().set_split_ratio(split, ratio);
+    return tabs_.active().layout().set_split_ratio(split, ratio);
 }
 
 void TerminalManager::equalize() noexcept
 {
-    tab_.layout().equalize();
+    tabs_.active().layout().equalize();
 }
 
 std::vector<TerminalId> TerminalManager::terminal_ids() const
