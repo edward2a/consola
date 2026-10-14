@@ -9,8 +9,8 @@
 
 namespace consola {
 
-// Application-level pane commands (DIP 3.6). Shortcuts are mapped to these
-// separately by command_for_key().
+// Application-level pane and tab commands (DIP 3.6, 4.2). Shortcuts are mapped
+// to these separately by command_for_key().
 enum class Command : std::uint8_t {
     SplitHorizontal,
     SplitVertical,
@@ -20,6 +20,10 @@ enum class Command : std::uint8_t {
     FocusUp,
     FocusDown,
     ResizePane,
+    NewTab,
+    CloseTab,
+    NextTab,
+    PreviousTab,
 };
 
 // A resolved shortcut: the command plus the direction it applies to. The

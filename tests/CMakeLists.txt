@@ -55,6 +55,11 @@ target_link_libraries(consola_key_translator_test PRIVATE terminal_ui)
 
 add_test(NAME key_translator_test COMMAND consola_key_translator_test)
 
+add_executable(consola_tab_bar_test tab_bar_test.cpp)
+target_link_libraries(consola_tab_bar_test PRIVATE terminal_ui)
+
+add_test(NAME tab_bar_test COMMAND consola_tab_bar_test)
+
 add_executable(consola_commands_test commands_test.cpp)
 target_link_libraries(consola_commands_test PRIVATE terminal_ui)
 

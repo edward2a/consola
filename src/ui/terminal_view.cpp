@@ -169,8 +169,77 @@ bool TerminalView::execute(const CommandRequest &request)
         return focus_direction(FocusDirection::down);
     case Command::ResizePane:
         return resize_focused(request.direction);
+    case Command::NewTab:
+        return new_tab().has_value();
+    case Command::CloseTab:
+        return close_tab(manager_.tabs().active_id());
+    case Command::NextTab:
+        return select_next_tab();
+    case Command::PreviousTab:
+        return select_previous_tab();
     }
     return false;
+}
+
+std::optional<TerminalId> TerminalView::new_tab()
+{
+    const TabId tab = manager_.create_tab();
+    const std::optional<TerminalId> id =
+        manager_.create_root_terminal(tab, TerminalOptions{split_options_});
+    if (!id) {
+        // Roll back the empty tab so a failed launch does not leave a blank tab.
+        manager_.close_tab(tab);
+        return std::nullopt;
+    }
+    manager_.focus(*id);
+    create_widgets();
+    last_tab_ = manager_.tabs().active_id();
+    layout();
+    sync_focus();
+    return id;
+}
+
+bool TerminalView::close_tab(TabId id)
+{
+    return manager_.close_tab(id);
+}
+
+bool TerminalView::select_tab(TabId id)
+{
+    if (!manager_.select_tab(id)) {
+        return false;
+    }
+    last_tab_ = manager_.tabs().active_id();
+    layout();
+    sync_focus();
+    redraw();
+    return true;
+}
+
+bool TerminalView::select_next_tab()
+{
+    const std::optional<TabId> id = manager_.select_next_tab();
+    if (!id) {
+        return false;
+    }
+    last_tab_ = *id;
+    layout();
+    sync_focus();
+    redraw();
+    return true;
+}
+
+bool TerminalView::select_previous_tab()
+{
+    const std::optional<TabId> id = manager_.select_previous_tab();
+    if (!id) {
+        return false;
+    }
+    last_tab_ = *id;
+    layout();
+    sync_focus();
+    redraw();
+    return true;
 }
 
 bool TerminalView::resize_focused(FocusDirection direction)
@@ -483,6 +552,12 @@ void TerminalView::resize_callback(void *context, int columns, int rows)
 void TerminalView::title_callback(void *context, std::string_view title)
 {
     auto *self = static_cast<Context *>(context);
+    // Only the active tab's terminal may retitle the window; an inactive tab
+    // keeps updating its emulator title but must not overwrite the window label.
+    const std::optional<TabId> tab = self->view->manager_.tab_of(self->id);
+    if (!tab || *tab != self->view->manager_.tabs().active_id()) {
+        return;
+    }
     Fl_Window *window = self->view->window();
     if (window == nullptr) {
         return;

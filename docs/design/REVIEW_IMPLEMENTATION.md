@@ -592,3 +592,21 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `TerminalView` tracks the last laid-out tab and relayouts when the active tab
   changes (including after `focus()` selects another tab); `terminal_view_test`
   covers tab-switch widget visibility.
+- **S4-CS2 — FLTK tab bar and per-tab view (§4.2)**:
+  `include/ui/tab_bar.hpp` + `src/ui/tab_bar.cpp` add `TerminalTabBar`, a
+  pure-view FLTK strip (one box per tab, active tab highlighted, a close glyph
+  on each) that fires select/close callbacks and exposes hit testing
+  (`tab_at`/`close_at`) plus a cheap `sync()` for redraw-on-change.
+  `include/ui/terminal_frame.hpp` + `src/ui/terminal_frame.cpp` add
+  `TerminalFrame`, a window container that lays out the bar above the view and
+  is the window's resizable. `TerminalView` gains
+  `new_tab`/`close_tab`/`select_tab`/`select_next_tab`/`select_previous_tab` and
+  dispatches the new commands; `Command` gains
+  `NewTab`/`CloseTab`/`NextTab`/`PreviousTab` with `command_for_key` mapping
+  Ctrl+Shift+T, Ctrl+Shift+X, Ctrl+PageDown and Ctrl+PageUp. The application
+  builds the frame, routes the bar's select/close callbacks through the view,
+  and syncs the bar each frame. An inactive tab's terminal title no longer
+  retitles the window. Tests: `tab_bar_test` (hit testing, close region,
+  callbacks, sync), `commands_test` mappings, and `terminal_view_test`
+  view-level tab commands. Debug and ASan/UBSan suites pass 18/18;
+  clang-format/clang-tidy clean.

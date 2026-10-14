@@ -17,6 +17,7 @@
 #include <app/log.hpp>
 #include <app/session.hpp>
 #include <app/terminal_manager.hpp>
+#include <ui/terminal_frame.hpp>
 #include <ui/terminal_view.hpp>
 #include <ui/terminal_widget.hpp>
 
@@ -34,7 +35,7 @@ void smoke_test_exit([[maybe_unused]] void *data)
 // Test/CI hook: request shutdown after CONSOLA_EXIT_AFTER_MS to exercise the
 // window-close shutdown path headlessly.
 struct ViewContext {
-    TerminalView *view = nullptr;
+    TerminalFrame *frame = nullptr;
     bool shutdown_requested = false;
     bool shutdown_started = false;
 };
@@ -50,15 +51,26 @@ void window_close([[maybe_unused]] Fl_Widget *widget, void *data)
     static_cast<ViewContext *>(data)->shutdown_requested = true;
 }
 
+void tab_selected(void *data, TabId tab)
+{
+    static_cast<ViewContext *>(data)->frame->view().select_tab(tab);
+}
+
+void tab_close_requested(void *data, TabId tab)
+{
+    static_cast<ViewContext *>(data)->frame->view().close_tab(tab);
+}
+
 // Drives the managed view and its orderly shutdown from the FLTK event loop
 // (DIP 4.5): the UI loop stays alive through reaping and removal.
 void pump_timer(void *data)
 {
     auto *context = static_cast<ViewContext *>(data);
-    TerminalManager &manager = context->view->manager();
+    TerminalManager &manager = context->frame->view().manager();
+    context->frame->tab_bar().sync();
 
     if (!context->shutdown_started) {
-        const bool active = context->view->pump();
+        const bool active = context->frame->view().pump();
         if (!active || context->shutdown_requested) {
             context->shutdown_started = true;
             manager.begin_shutdown();
@@ -67,7 +79,7 @@ void pump_timer(void *data)
         return;
     }
 
-    context->view->pump();
+    context->frame->view().pump();
     if (manager.shutdown_complete()) {
         manager.finish_shutdown();
         Fl::hide_all_windows();
@@ -171,8 +183,8 @@ int run_session(int argc, char **argv, Fl_Window &window)
     TerminalManager manager;
     manager.start();
 
-    TerminalView view(0, 0, window.w(), window.h(), manager);
-    window.resizable(view);
+    TerminalFrame frame(0, 0, window.w(), window.h(), manager);
+    window.resizable(frame);
     window.end();
     window.show(argc, argv);
     if (window.shown() == 0) {
@@ -184,13 +196,15 @@ int run_session(int argc, char **argv, Fl_Window &window)
     SessionOptions options;
     const char *shell = std::getenv("SHELL");
     options.executable = (shell != nullptr && shell[0] != '\0') ? shell : "/bin/sh";
-    if (!view.start(options)) {
+    if (!frame.view().start(options)) {
         log(LogLevel::Error, "failed to create the initial terminal");
         manager.shutdown();
         return EXIT_FAILURE;
     }
 
-    ViewContext context{.view = &view};
+    ViewContext context{.frame = &frame};
+    frame.tab_bar().set_select_callback(&tab_selected, &context);
+    frame.tab_bar().set_close_callback(&tab_close_requested, &context);
     window.callback(&window_close, &context);
     Fl::add_timeout(0.016, &pump_timer, &context);
 

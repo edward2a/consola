@@ -178,6 +178,24 @@ int main()
     CHECK(tab_removed);
     CHECK(manager.tabs().count() == 1);
 
+    // View-level tab commands (DIP 4.2).
+    CHECK(view.execute(consola::CommandRequest{consola::Command::NewTab, FocusDirection::left}));
+    CHECK(manager.tabs().count() == 2);
+    const consola::TabId new_active = manager.tabs().active_id();
+    CHECK(manager.tabs().find(new_active)->terminal_count() == 1);
+    CHECK(manager.tabs().active_id() != first_tab);
+
+    CHECK(
+        view.execute(consola::CommandRequest{consola::Command::PreviousTab, FocusDirection::left}));
+    CHECK(manager.tabs().active_id() == first_tab);
+    CHECK(view.execute(consola::CommandRequest{consola::Command::NextTab, FocusDirection::left}));
+    CHECK(manager.tabs().active_id() == new_active);
+
+    CHECK(view.execute(consola::CommandRequest{consola::Command::CloseTab, FocusDirection::left}));
+    const bool tab_closed = wait_for([&] { return manager.tabs().count() == 1; }, 8000, view);
+    CHECK(tab_closed);
+    CHECK(manager.terminal_count() == 1);
+
     manager.shutdown();
 
     if (g_failures != 0) {

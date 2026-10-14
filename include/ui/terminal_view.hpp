@@ -51,6 +51,16 @@ public:
     void equalize();
     void focus(TerminalId id);
 
+    // Tab interaction (DIP 4.2). new_tab() creates an empty tab with a root
+    // terminal using the initial session options; close_tab() closes a tab's
+    // panes and removes the tab once empty. Selection applies geometry and
+    // focus immediately.
+    std::optional<TerminalId> new_tab();
+    bool close_tab(TabId id);
+    bool select_tab(TabId id);
+    bool select_next_tab();
+    bool select_previous_tab();
+
     // Execute a resolved command (DIP 3.6). Returns true when it applied.
     bool execute(const CommandRequest &request);
 

@@ -43,6 +43,11 @@ void test_shortcuts()
     check('o', cs, Command::SplitHorizontal, FocusDirection::left);
     check('E', cs, Command::SplitVertical, FocusDirection::left);
     check('w', cs, Command::ClosePane, FocusDirection::left);
+    check('t', cs, Command::NewTab, FocusDirection::left);
+    check('X', cs, Command::CloseTab, FocusDirection::left);
+
+    check(FL_Page_Down, FL_CTRL, Command::NextTab, FocusDirection::left);
+    check(FL_Page_Up, FL_CTRL, Command::PreviousTab, FocusDirection::left);
 
     check(FL_Left, alt, Command::FocusLeft, FocusDirection::left);
     check(FL_Right, alt, Command::FocusRight, FocusDirection::right);
@@ -61,6 +66,9 @@ void test_unmapped()
     CHECK(!command_for_key('o', FL_CTRL).has_value());
     CHECK(!command_for_key(FL_Left, 0).has_value());
     CHECK(!command_for_key(FL_Left, FL_CTRL).has_value());
+    CHECK(!command_for_key(FL_Page_Down, 0).has_value());
+    CHECK(!command_for_key(FL_Page_Down, FL_CTRL | FL_SHIFT).has_value());
+    CHECK(!command_for_key('t', FL_CTRL).has_value());
 
     // Near-miss modifier combinations are not shortcuts.
     CHECK(!command_for_key('o', FL_CTRL | FL_SHIFT | FL_ALT).has_value());
