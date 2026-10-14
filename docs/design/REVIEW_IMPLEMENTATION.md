@@ -628,4 +628,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   application shutdown with two flooding tabs under both
   `drain_output_on_close` settings. `terminal_view_test` adds the tab-switch
   window-title check. Debug and ASan/UBSan suites pass 19/19;
-  clang-format/clang-tidy clean.
+  clang-format/clang-tidy clean. Review fix: the window title follows the
+  *focused* terminal of the active tab — `title_callback` now ignores
+  background panes (not just inactive tabs) and `focus_callback` refreshes the
+  label on focus change; added a test that closes a tab after one of its panes
+  has already entered the close path.

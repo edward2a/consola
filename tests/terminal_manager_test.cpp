@@ -502,7 +502,9 @@ void test_close_tab_with_starting_pane()
     CHECK(id.has_value());
     CHECK(manager.find(REQUIRED(id))->state() == TerminalState::starting);
 
-    // Close the tab while its only pane is still Starting.
+    // Close immediately, before the worker can plausibly complete, so this
+    // exercises the cancellation path; test_close_tab_with_late_launch covers
+    // the completed-but-unpumped launch result.
     CHECK(manager.close_tab(tab));
     const bool removed =
         wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 8000, manager);
@@ -584,6 +586,43 @@ void test_close_non_active_tab()
     CHECK(manager.find(REQUIRED(second)) != nullptr);
 }
 
+void test_close_tab_with_pane_already_closing()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const consola::TabId tab = manager.tabs().active_id();
+    const auto first = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(first.has_value());
+    const auto second =
+        manager.split_terminal(REQUIRED(first), Orientation::vertical, shell("sleep 30"));
+    CHECK(second.has_value());
+
+    // Let one pane enter the close path before closing the whole tab.
+    const bool running = wait_for(
+        [&] {
+            TerminalInstance *a = manager.find(REQUIRED(first));
+            TerminalInstance *b = manager.find(REQUIRED(second));
+            return a != nullptr && b != nullptr && a->state() == TerminalState::running &&
+                   b->state() == TerminalState::running;
+        },
+        5000, manager);
+    CHECK(running);
+    CHECK(manager.close_terminal(REQUIRED(second)));
+
+    CHECK(manager.close_tab(tab));
+    const bool removed = wait_for(
+        [&] {
+            return manager.find(REQUIRED(first)) == nullptr &&
+                   manager.find(REQUIRED(second)) == nullptr;
+        },
+        8000, manager);
+    CHECK(removed);
+    CHECK(manager.tabs().find(tab) == nullptr);
+    CHECK(manager.terminal_count() == 0);
+    CHECK(!manager.launch_failed());
+}
+
 void test_rapid_tab_create_destroy()
 {
     TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
@@ -656,6 +695,7 @@ int main()
     test_close_tab_with_late_launch();
     test_close_tab_with_failed_launch();
     test_close_non_active_tab();
+    test_close_tab_with_pane_already_closing();
     test_rapid_tab_create_destroy();
     test_shutdown_across_tabs_backpressure();
 

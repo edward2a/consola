@@ -581,10 +581,10 @@ void TerminalView::resize_callback(void *context, int columns, int rows)
 void TerminalView::title_callback(void *context, std::string_view title)
 {
     auto *self = static_cast<Context *>(context);
-    // Only the active tab's terminal may retitle the window; an inactive tab
-    // keeps updating its emulator title but must not overwrite the window label.
-    const std::optional<TabId> tab = self->view->manager_.tab_of(self->id);
-    if (!tab || *tab != self->view->manager_.tabs().active_id()) {
+    // Only the focused terminal of the active tab drives the window title; a
+    // background pane must not retitle the window.
+    const std::optional<TerminalId> focused = self->view->manager_.focused();
+    if (!focused || *focused != self->id) {
         return;
     }
     Fl_Window *window = self->view->window();
@@ -592,16 +592,17 @@ void TerminalView::title_callback(void *context, std::string_view title)
         return;
     }
     const std::string text(title);
-    window->copy_label(text.c_str());
+    window->copy_label(text.empty() ? "consola" : text.c_str());
     window->redraw();
 }
 
 void TerminalView::focus_callback(void *context)
 {
     // Only record focus here: taking FLTK focus again would recurse through
-    // FL_FOCUS (DIP 3.5).
+    // FL_FOCUS (DIP 3.5). The window title follows the focused pane.
     auto *self = static_cast<Context *>(context);
     self->view->manager_.focus(self->id);
+    self->view->update_window_title();
 }
 
 bool TerminalView::key_callback(void *context, int key, int state)
