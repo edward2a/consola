@@ -132,6 +132,83 @@ void TerminalView::focus(TerminalId id)
     redraw();
 }
 
+bool TerminalView::execute(const CommandRequest &request)
+{
+    switch (request.command) {
+    case Command::SplitHorizontal:
+        return split_focused(Orientation::horizontal).has_value();
+    case Command::SplitVertical:
+        return split_focused(Orientation::vertical).has_value();
+    case Command::ClosePane:
+        return close_focused();
+    case Command::FocusLeft:
+        return focus_direction(FocusDirection::left);
+    case Command::FocusRight:
+        return focus_direction(FocusDirection::right);
+    case Command::FocusUp:
+        return focus_direction(FocusDirection::up);
+    case Command::FocusDown:
+        return focus_direction(FocusDirection::down);
+    case Command::ResizePane:
+        return resize_focused(request.direction);
+    }
+    return false;
+}
+
+bool TerminalView::resize_focused(FocusDirection direction)
+{
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (!focused) {
+        return false;
+    }
+    const PaneRect *pane = nullptr;
+    for (const PaneRect &candidate : last_layout_.panes) {
+        if (candidate.terminal == *focused) {
+            pane = &candidate;
+            break;
+        }
+    }
+    if (pane == nullptr) {
+        return false;
+    }
+
+    const bool horizontal_axis =
+        direction == FocusDirection::left || direction == FocusDirection::right;
+    for (const DividerRect &divider : last_layout_.dividers) {
+        const bool divider_vertical = divider.orientation == Orientation::vertical;
+        if (horizontal_axis != divider_vertical) {
+            continue;
+        }
+        bool adjacent = false;
+        if (direction == FocusDirection::left) {
+            adjacent = divider.rect.x + divider.rect.width == pane->logical.x;
+        } else if (direction == FocusDirection::right) {
+            adjacent = divider.rect.x == pane->logical.x + pane->logical.width;
+        } else if (direction == FocusDirection::up) {
+            adjacent = divider.rect.y + divider.rect.height == pane->logical.y;
+        } else {
+            adjacent = divider.rect.y == pane->logical.y + pane->logical.height;
+        }
+        if (!adjacent) {
+            continue;
+        }
+
+        const LayoutMetrics current_metrics = metrics();
+        const int step = horizontal_axis ? current_metrics.cell_width : current_metrics.cell_height;
+        const int current = horizontal_axis ? divider.rect.x : divider.rect.y;
+        const int delta =
+            (direction == FocusDirection::left || direction == FocusDirection::up) ? -step : step;
+        const float ratio = split_ratio_for_position(
+            manager_.tab().layout(), divider.split, divider.area, current + delta, current_metrics);
+        if (manager_.set_split_ratio(divider.split, ratio)) {
+            layout();
+            redraw();
+            return true;
+        }
+    }
+    return false;
+}
+
 TerminalWidget *TerminalView::widget(TerminalId id) noexcept
 {
     const auto it = widgets_.find(id);
@@ -226,6 +303,7 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     widget->set_paste_callback(&TerminalView::paste_callback, context_ptr);
     widget->set_resize_callback(&TerminalView::resize_callback, context_ptr);
     widget->set_focus_callback(&TerminalView::focus_callback, context_ptr);
+    widget->set_key_callback(&TerminalView::key_callback, context_ptr);
 
     TerminalWidget *raw = widget.get();
     add(raw);
@@ -355,6 +433,16 @@ void TerminalView::focus_callback(void *context)
     // FL_FOCUS (DIP 3.5).
     auto *self = static_cast<Context *>(context);
     self->view->manager_.focus(self->id);
+}
+
+bool TerminalView::key_callback(void *context, int key, int state)
+{
+    auto *self = static_cast<Context *>(context);
+    const std::optional<CommandRequest> request = command_for_key(key, state);
+    if (!request) {
+        return false;
+    }
+    return self->view->execute(*request);
 }
 
 } // namespace consola

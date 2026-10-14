@@ -107,6 +107,15 @@ int main()
     CHECK(view.focus_direction(FocusDirection::right));
     CHECK(manager.focused() == second);
 
+    // Command dispatch (DIP 3.6).
+    CHECK(
+        view.execute(consola::CommandRequest{consola::Command::ResizePane, FocusDirection::left}));
+    CHECK(view.execute(consola::CommandRequest{consola::Command::FocusLeft, FocusDirection::left}));
+    CHECK(manager.focused() == root);
+    CHECK(
+        view.execute(consola::CommandRequest{consola::Command::FocusRight, FocusDirection::right}));
+    CHECK(manager.focused() == second);
+
     view.equalize();
     const consola::SplitNode *root_split =
         manager.tab().layout().split(manager.tab().layout().root());

@@ -504,3 +504,14 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   Divider grab tolerance over pane widgets and non-zero view origins were
   checked and need no change: the view's `handle` runs before its children and
   FLTK child coordinates are parent-relative.
+- **S3-CS7 — command abstraction and shortcuts (§3.6)**: `include/ui/commands.hpp`
+  adds `enum class Command` (split/close/focus/resize) and `CommandRequest`
+  (command + direction); `command_for_key` maps FLTK keys and modifiers to a
+  command, keeping the shortcut table separate from the command set.
+  `TerminalWidget` gains a key callback consulted before terminal input;
+  `TerminalView::execute` dispatches commands to split/close/directional-focus/
+  resize, and `resize_focused` moves the divider adjacent to the focused pane by
+  one cell. Default shortcuts follow Terminator: Ctrl+Shift+O/E split, Ctrl+
+  Shift+W close, Alt+Arrow focus, Ctrl+Shift+Arrow resize. Tests: `commands_test`
+  (mapping and non-matches) and the view test now drives `execute`. Debug and
+  ASan/UBSan suites pass 16/16; clang-format/clang-tidy clean.

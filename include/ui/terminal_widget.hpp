@@ -54,6 +54,11 @@ public:
     using FocusCallback = void (*)(void *context);
     void set_focus_callback(FocusCallback focus_callback, void *context);
 
+    // Consulted for each key press before the terminal consumes it; return true
+    // to consume the key as an application command (DIP 3.6).
+    using KeyCallback = bool (*)(void *context, int key, int state);
+    void set_key_callback(KeyCallback key_callback, void *context);
+
     [[nodiscard]] TerminalEmulator &emulator() noexcept
     {
         return emulator_;
@@ -139,6 +144,10 @@ private:
     // Focus notification (DIP 3.5).
     FocusCallback focus_callback_ = nullptr;
     void *focus_context_ = nullptr;
+
+    // Application command shortcut hook (DIP 3.6).
+    KeyCallback key_callback_ = nullptr;
+    void *key_context_ = nullptr;
 };
 
 } // namespace consola

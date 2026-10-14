@@ -15,6 +15,7 @@
 #include <app/terminal_manager.hpp>
 #include <app/terminal_style.hpp>
 #include <layout/layout_geometry.hpp>
+#include <ui/commands.hpp>
 #include <ui/terminal_widget.hpp>
 
 namespace consola {
@@ -49,6 +50,9 @@ public:
     void equalize();
     void focus(TerminalId id);
 
+    // Execute a resolved command (DIP 3.6). Returns true when it applied.
+    bool execute(const CommandRequest &request);
+
     [[nodiscard]] TerminalManager &manager() noexcept
     {
         return manager_;
@@ -74,6 +78,7 @@ private:
     bool destroy_stale_widgets();
     void layout();
     void sync_focus();
+    bool resize_focused(FocusDirection direction);
     [[nodiscard]] LayoutMetrics metrics() const;
     [[nodiscard]] const DividerRect *divider_at(int x, int y) const;
     [[nodiscard]] bool can_split(TerminalId target, Orientation orientation) const;
@@ -85,6 +90,7 @@ private:
     static void resize_callback(void *context, int columns, int rows);
     static void title_callback(void *context, std::string_view title);
     static void focus_callback(void *context);
+    static bool key_callback(void *context, int key, int state);
 
     TerminalManager &manager_;
     TerminalStyle style_;

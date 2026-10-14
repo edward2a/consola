@@ -194,6 +194,12 @@ void TerminalWidget::set_focus_callback(FocusCallback focus_callback, void *cont
     focus_context_ = context;
 }
 
+void TerminalWidget::set_key_callback(KeyCallback key_callback, void *context)
+{
+    key_callback_ = key_callback;
+    key_context_ = context;
+}
+
 void TerminalWidget::resize(int x, int y, int w, int h)
 {
     Fl_Widget::resize(x, y, w, h);
@@ -536,6 +542,11 @@ int TerminalWidget::handle(int event)
                 redraw();
                 return 1;
             }
+        }
+        // Application commands (pane split/close/focus/resize) take precedence
+        // over terminal input (DIP 3.6).
+        if (key_callback_ != nullptr && key_callback_(key_context_, key, state)) {
+            return 1;
         }
         // A byte-producing key returns the view to live (DIP 2.9).
         if (emulator_.scrollback_line_pos() != emulator_.scrollback_line_count()) {
