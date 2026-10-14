@@ -54,11 +54,11 @@ private:
         TerminalId id;
     };
 
-    void create_widgets();
-    void destroy_stale_widgets();
+    bool create_widgets();
+    bool destroy_stale_widgets();
     void layout();
     [[nodiscard]] LayoutMetrics metrics() const;
-    TerminalWidget *add_widget(TerminalInstance &instance);
+    TerminalWidget *add_widget(TerminalId id);
     void remove_widget(TerminalId id);
 
     static void output_callback(void *context, std::span<const std::byte> bytes);

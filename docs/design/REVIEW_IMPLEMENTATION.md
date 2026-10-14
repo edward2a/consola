@@ -472,4 +472,12 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   keeps the `const char *` it is given, but `TerminalWidget::apply_font_family`
   passed temporaries; the styled face names are now stored on the widget (a
   heap-use-after-free ASan caught in FLTK's Xft font path). Debug and ASan/UBSan
-  suites pass 14/14; clang-format/clang-tidy clean.
+  suites pass 14/14; clang-format/clang-tidy clean. Review fixes: the styled
+  face names now live in process-lifetime storage (FLTK's face table is global
+  and holds the pointers past any one widget); `TerminalView::~TerminalView`
+  clears emulator output/title callbacks before the callback contexts are
+  destroyed; `pump()` relayouts when the terminal topology changes (added or
+  removed panes), not only on window resize; the widget reserves the scrollbar
+  strip before deriving columns and the manager skips a PTY resize when the grid
+  is unchanged (DIP 2.11); `TerminalManager::terminals()` was replaced by the
+  constrained `terminal_ids()` + `emulator(id)`.

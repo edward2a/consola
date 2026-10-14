@@ -15,8 +15,14 @@ TerminalView::TerminalView(Fl_Window &window, TerminalManager &manager, Terminal
 
 TerminalView::~TerminalView()
 {
-    // Remove every child from the group before the widgets are destroyed.
+    // Clear callbacks on any still-live emulator before the contexts are
+    // destroyed, then remove every child from the group.
     for (auto &entry : widgets_) {
+        TerminalInstance *instance = manager_.find(entry.first);
+        if (instance != nullptr) {
+            instance->emulator().set_output_callback(nullptr, nullptr);
+            instance->emulator().set_title_callback(nullptr, nullptr);
+        }
         window_.remove(entry.second.get());
     }
 }
@@ -34,15 +40,18 @@ std::optional<TerminalId> TerminalView::start(const SessionOptions &options)
 
 bool TerminalView::pump()
 {
-    create_widgets();
-    if (window_.w() != last_width_ || window_.h() != last_height_) {
+    const bool added = create_widgets();
+    const bool resized = window_.w() != last_width_ || window_.h() != last_height_;
+    if (added || resized) {
         last_width_ = window_.w();
         last_height_ = window_.h();
         layout();
     }
 
     const bool dirty = manager_.pump();
-    destroy_stale_widgets();
+    if (destroy_stale_widgets()) {
+        layout();
+    }
     if (dirty) {
         for (auto &entry : widgets_) {
             entry.second->redraw();
@@ -57,16 +66,19 @@ TerminalWidget *TerminalView::widget(TerminalId id) noexcept
     return it == widgets_.end() ? nullptr : it->second.get();
 }
 
-void TerminalView::create_widgets()
+bool TerminalView::create_widgets()
 {
-    for (TerminalInstance *instance : manager_.terminals()) {
-        if (!widgets_.contains(instance->id())) {
-            add_widget(*instance);
+    bool added = false;
+    for (const TerminalId id : manager_.terminal_ids()) {
+        if (!widgets_.contains(id)) {
+            add_widget(id);
+            added = true;
         }
     }
+    return added;
 }
 
-void TerminalView::destroy_stale_widgets()
+bool TerminalView::destroy_stale_widgets()
 {
     std::vector<TerminalId> stale;
     for (const auto &entry : widgets_) {
@@ -77,25 +89,27 @@ void TerminalView::destroy_stale_widgets()
     for (const TerminalId id : stale) {
         remove_widget(id);
     }
+    return !stale.empty();
 }
 
-TerminalWidget *TerminalView::add_widget(TerminalInstance &instance)
+TerminalWidget *TerminalView::add_widget(TerminalId id)
 {
     auto context = std::make_unique<Context>();
     context->view = this;
-    context->id = instance.id();
+    context->id = id;
     Context *context_ptr = context.get();
-    contexts_[instance.id()] = std::move(context);
+    contexts_[id] = std::move(context);
 
-    auto widget = std::make_unique<TerminalWidget>(0, 0, 1, 1, instance.emulator(), style_);
-    instance.emulator().set_output_callback(&TerminalView::output_callback, context_ptr);
-    instance.emulator().set_title_callback(&TerminalView::title_callback, context_ptr);
+    TerminalEmulator &emulator = manager_.emulator(id);
+    auto widget = std::make_unique<TerminalWidget>(0, 0, 1, 1, emulator, style_);
+    emulator.set_output_callback(&TerminalView::output_callback, context_ptr);
+    emulator.set_title_callback(&TerminalView::title_callback, context_ptr);
     widget->set_paste_callback(&TerminalView::paste_callback, context_ptr);
     widget->set_resize_callback(&TerminalView::resize_callback, context_ptr);
 
     TerminalWidget *raw = widget.get();
     window_.add(raw);
-    widgets_.emplace(instance.id(), std::move(widget));
+    widgets_.emplace(id, std::move(widget));
     return raw;
 }
 

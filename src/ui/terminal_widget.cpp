@@ -86,6 +86,26 @@ unsigned fltk_mouse_modifiers()
 
 } // namespace
 
+namespace {
+
+// FLTK's face table is process-global and Fl::set_font() keeps the const char*
+// it is handed, so the styled face names must live for the process lifetime
+// (not merely the widget's). See watchlist #13.
+struct FontNames {
+    std::string regular;
+    std::string bold;
+    std::string italic;
+    std::string bold_italic;
+};
+
+FontNames &font_names()
+{
+    static FontNames names;
+    return names;
+}
+
+} // namespace
+
 TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emulator,
                                TerminalStyle style)
     : Fl_Widget(x, y, w, h, nullptr), emulator_(emulator), style_(std::move(style))
@@ -95,20 +115,25 @@ TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emu
     update_metrics();
 }
 
-void TerminalWidget::apply_font_family()
+void TerminalWidget::apply_font_family() const
 {
     // Map the configured family to FLTK's base face and its styled variants so
     // bold/italic stay in the same monospace family (fontconfig resolves the
-    // closest available style; see watchlist #13). FLTK keeps the pointer it is
-    // handed, so the names are stored on the widget.
-    font_regular_ = style_.font_family;
-    font_bold_ = style_.font_family + " bold";
-    font_italic_ = style_.font_family + " italic";
-    font_bold_italic_ = style_.font_family + " bold italic";
-    Fl::set_font(FL_HELVETICA, font_regular_.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD, font_bold_.c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC, font_italic_.c_str());
-    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, font_bold_italic_.c_str());
+    // closest available style; see watchlist #13).
+    FontNames &names = font_names();
+    names.regular = style_.font_family;
+    names.bold = style_.font_family + " bold";
+    names.italic = style_.font_family + " italic";
+    names.bold_italic = style_.font_family + " bold italic";
+    Fl::set_font(FL_HELVETICA, names.regular.c_str());
+    Fl::set_font(FL_HELVETICA_BOLD, names.bold.c_str());
+    Fl::set_font(FL_HELVETICA_ITALIC, names.italic.c_str());
+    Fl::set_font(FL_HELVETICA_BOLD_ITALIC, names.bold_italic.c_str());
+}
+
+int TerminalWidget::scrollbar_width() const
+{
+    return std::max(4, static_cast<int>(metrics_.cell_width / 4));
 }
 
 void TerminalWidget::update_metrics()
@@ -174,8 +199,11 @@ void TerminalWidget::resize(int x, int y, int w, int h)
     update_metrics();
     full_redraw_requested_ = true;
     if (resize_callback_ != nullptr) {
+        // Reserve the scrollbar strip before converting pixels to cells (DIP
+        // 2.11).
+        const int content_width = std::max(0, w - scrollbar_width());
         const int columns =
-            std::max(1, static_cast<int>(static_cast<double>(w) / metrics_.cell_width));
+            std::max(1, static_cast<int>(static_cast<double>(content_width) / metrics_.cell_width));
         const int rows = std::max(1, h / metrics_.cell_height);
         resize_callback_(resize_context_, columns, rows);
     }
@@ -435,7 +463,7 @@ void TerminalWidget::draw_scrollbar()
     if (lines <= 0) {
         return;
     }
-    const int bar_width = std::max(4, static_cast<int>(metrics_.cell_width / 4));
+    const int bar_width = scrollbar_width();
     const int bar_x = x() + w() - bar_width;
 
     fl_color(static_cast<unsigned char>(style_.foreground.r / 2),

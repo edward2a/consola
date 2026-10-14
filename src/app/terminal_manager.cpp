@@ -359,6 +359,10 @@ void TerminalManager::resize(TerminalId id, int columns, int rows)
         return;
     }
     TerminalInstance *instance = it->second;
+    // Send a resize only when the resulting grid changes (DIP 2.11).
+    if (columns == instance->emulator().columns() && rows == instance->emulator().rows()) {
+        return;
+    }
     instance->emulator().resize(columns, rows);
     if (instance->session() != nullptr) {
         instance->session()->resize(columns, rows);
@@ -371,14 +375,19 @@ TerminalInstance *TerminalManager::find(TerminalId id) noexcept
     return it == instances_.end() ? nullptr : it->second;
 }
 
-std::vector<TerminalInstance *> TerminalManager::terminals() noexcept
+std::vector<TerminalId> TerminalManager::terminal_ids() const
 {
-    std::vector<TerminalInstance *> out;
+    std::vector<TerminalId> out;
     out.reserve(instances_.size());
-    for (auto &entry : instances_) {
-        out.push_back(entry.second);
+    for (const auto &entry : instances_) {
+        out.push_back(entry.first);
     }
     return out;
+}
+
+TerminalEmulator &TerminalManager::emulator(TerminalId id) noexcept
+{
+    return instances_.at(id)->emulator();
 }
 
 } // namespace consola

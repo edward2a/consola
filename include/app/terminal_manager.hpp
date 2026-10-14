@@ -86,9 +86,13 @@ public:
 
     [[nodiscard]] TerminalInstance *find(TerminalId id) noexcept;
 
-    // All live instances (unordered). For presentation code that needs
-    // non-const access to the emulator; does not allow structural mutation.
-    [[nodiscard]] std::vector<TerminalInstance *> terminals() noexcept;
+    // Ids of all live terminals, for presentation code that must iterate them
+    // without gaining structural or lifecycle access to the instances.
+    [[nodiscard]] std::vector<TerminalId> terminal_ids() const;
+
+    // The emulator of a live terminal. Precondition: the id exists (obtain it
+    // from terminal_ids() or find()).
+    [[nodiscard]] TerminalEmulator &emulator(TerminalId id) noexcept;
 
     [[nodiscard]] bool launch_failed() const noexcept
     {
