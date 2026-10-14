@@ -223,6 +223,21 @@ int main()
         wait_for([&] { return manager.find(REQUIRED(other_root)) == nullptr; }, 8000, view);
     CHECK(other_closed);
 
+    // A background pane's title must not retitle the window; focusing that pane
+    // does. The split pane becomes focused, so root is background.
+    const auto split_pane = view.split_focused(Orientation::vertical);
+    CHECK(split_pane.has_value());
+    const std::string focused_label(window.label());
+    const char *root_osc = "\x1b]0;root-title\x07";
+    manager.find(REQUIRED(root))
+        ->emulator()
+        .feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(root_osc),
+                                         std::strlen(root_osc)));
+    view.pump();
+    CHECK(std::string(window.label()) == focused_label);
+    view.focus(REQUIRED(root));
+    CHECK(std::string(window.label()) == "root-title");
+
     manager.shutdown();
 
     if (g_failures != 0) {
