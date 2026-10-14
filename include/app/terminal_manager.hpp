@@ -102,6 +102,7 @@ private:
     StartupWorker worker_;
     std::unique_ptr<IoLoop> loop_;
     std::unordered_map<TerminalId, TerminalInstance *> instances_;
+    std::unordered_set<TerminalId> terminate_sent_;
     std::unordered_set<TerminalId> remove_requested_;
     Tab tab_;
     std::uint64_t next_id_ = 1;

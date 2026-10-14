@@ -446,5 +446,12 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   longer counted as a launch failure. Tests: close a running pane (tree
   collapses to the survivor), close a starting pane before its launch resolves
   (no launch failure), and close under output backpressure with the default
-  discard-on-close policy. Debug and ASan/UBSan suites pass 13/13;
-  clang-format/clang-tidy clean.
+  discard-on-close policy. Review fixes: loop commands are retried until the
+  bounded queue accepts them (`remove` is only recorded as requested once
+  accepted, and `terminate` is tracked so it is sent once); every attached
+  session — including an already-exited one — gets `terminate` so the removal
+  acknowledgement covers the foreground signal sequence; and queued data for a
+  closing pane is discarded without feeding the emulator when
+  `drain_output_on_close` is false. Added a deterministic late-launch-success
+  close test. Debug and ASan/UBSan suites pass 13/13; clang-format/clang-tidy
+  clean.

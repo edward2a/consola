@@ -133,7 +133,6 @@ void TerminalManager::consume_results()
                        instance->outbound())) {
             if (instance->closing()) {
                 instance->set_state(TerminalState::stopping);
-                loop_->terminate(result.id);
             }
         } else {
             log(LogLevel::Error, "session registration failed");
@@ -153,11 +152,16 @@ bool TerminalManager::consume_inbound()
     bool dirty = false;
     for (auto &entry : instances_) {
         TerminalInstance *instance = entry.second;
+        const bool discard = instance->closing() && !instance->options().drain_output_on_close;
         InboundMessage message;
         while (instance->inbound().try_pop(message)) {
             if (message.kind == InboundMessage::Kind::data) {
-                instance->emulator().feed(message.bytes);
-                dirty = true;
+                // Explicit-close discard policy: consume queued data without
+                // feeding it or triggering a redraw (DIP 1.6).
+                if (!discard) {
+                    instance->emulator().feed(message.bytes);
+                    dirty = true;
+                }
             } else if (message.kind == InboundMessage::Kind::eof) {
                 instance->mark_eof();
             } else if (message.kind == InboundMessage::Kind::exited) {
@@ -185,10 +189,24 @@ void TerminalManager::process_closing()
 {
     for (auto &entry : instances_) {
         TerminalInstance *instance = entry.second;
-        if (instance->closing() && instance->state() == TerminalState::exited &&
-            instance->session() != nullptr && !remove_requested_.contains(entry.first)) {
-            loop_->remove(entry.first);
-            remove_requested_.insert(entry.first);
+        if (!instance->closing() || instance->session() == nullptr) {
+            continue;
+        }
+        // Send terminate once (it is idempotent in the loop); retry until the
+        // bounded command queue accepts it.
+        if (!terminate_sent_.contains(entry.first)) {
+            if (!loop_->terminate(entry.first)) {
+                continue;
+            }
+            terminate_sent_.insert(entry.first);
+        }
+        // Request removal only after terminate was accepted and the child has
+        // exited, so the acknowledgement covers the termination sequence.
+        if (instance->state() == TerminalState::exited &&
+            !remove_requested_.contains(entry.first)) {
+            if (loop_->remove(entry.first)) {
+                remove_requested_.insert(entry.first);
+            }
         }
     }
 }
@@ -204,6 +222,7 @@ void TerminalManager::finalize(TerminalId id)
     it->second->release_session();
     tab_.remove_terminal(id);
     instances_.erase(it);
+    terminate_sent_.erase(id);
     remove_requested_.erase(id);
 }
 
@@ -245,25 +264,15 @@ void TerminalManager::shutdown()
                        instance->options().drain_output_on_close, instance->inbound(),
                        instance->outbound())) {
             instance->set_state(TerminalState::stopping);
-            loop_->terminate(result.id);
         } else {
             instance->release_session();
             finalize(result.id);
         }
     }
 
-    // Terminate every running session through the loop (kill escalation lives
-    // in the loop, DIP 1.6).
-    for (auto &entry : instances_) {
-        TerminalInstance *instance = entry.second;
-        if (instance->session() != nullptr && instance->state() == TerminalState::running) {
-            instance->set_state(TerminalState::stopping);
-            loop_->terminate(entry.first);
-        }
-    }
-
     // Instances whose launch failed or was cancelled have no loop registration
-    // to retire; finalize them directly.
+    // to retire; finalize them directly. Every remaining attached session is
+    // terminated and removed by process_closing() during the wait loop.
     std::vector<TerminalId> unregistered;
     for (const auto &entry : instances_) {
         if (entry.second->session() == nullptr) {
@@ -307,21 +316,18 @@ bool TerminalManager::close_terminal(TerminalId id)
     }
     instance->set_closing(true);
 
-    if (instance->session() != nullptr) {
-        // Running or exited: terminate (unless already exited) and let
-        // process_closing() request removal once `exited` is observed.
-        if (instance->state() != TerminalState::exited) {
-            instance->set_state(TerminalState::stopping);
-            loop_->terminate(id);
+    if (instance->session() == nullptr) {
+        if (instance->state() == TerminalState::starting) {
+            // Cancel the launch; the instance is retained until the result is
+            // consumed (DIP 4.4).
+            worker_.cancel(id);
+        } else {
+            // Failed launch with no registration; nothing to retire.
+            finalize(id);
         }
-    } else if (instance->state() == TerminalState::starting) {
-        // Cancel the launch; the instance is retained until the result is
-        // consumed (DIP 4.4).
-        worker_.cancel(id);
-    } else {
-        // Failed launch with no registration; nothing to retire.
-        finalize(id);
     }
+    // Attached sessions are terminated and removed by process_closing(), which
+    // retries bounded loop commands until they are accepted.
     return true;
 }
 

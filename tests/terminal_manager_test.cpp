@@ -255,6 +255,28 @@ void test_close_starting_pane()
     CHECK(!manager.launch_failed());
 }
 
+void test_close_late_launch_success()
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+
+    const auto id = manager.create_root_terminal(shell("sleep 30"));
+    CHECK(id.has_value());
+    // Let the worker complete the launch without pumping, so closing races with
+    // an already-successful (late) launch result.
+    std::this_thread::sleep_for(std::chrono::milliseconds{200});
+    TerminalInstance *instance = manager.find(REQUIRED(id));
+    CHECK(instance != nullptr);
+    CHECK(instance->state() == TerminalState::starting);
+
+    CHECK(manager.close_terminal(REQUIRED(id)));
+    const bool removed =
+        wait_for([&] { return manager.find(REQUIRED(id)) == nullptr; }, 5000, manager);
+    CHECK(removed);
+    CHECK(manager.tab().terminal_count() == 0);
+    CHECK(!manager.launch_failed());
+}
+
 void test_close_under_backpressure()
 {
     TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
@@ -299,6 +321,7 @@ int main()
     test_shutdown_reaps_sighup_ignoring();
     test_close_running_pane();
     test_close_starting_pane();
+    test_close_late_launch_success();
     test_close_under_backpressure();
     test_root_rejected_when_nonempty();
 
