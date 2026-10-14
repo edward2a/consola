@@ -556,4 +556,10 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `LinuxPtySession::terminate()` no longer signals a child the loop already
   reaped (reused-pid safety), and any launch result that arrives for an
   untracked instance (loop-failure race) is terminated and reaped before
-  release; `fail_remaining()` also rejects further creation.
+  release; `fail_remaining()` also rejects further creation. A sixth pass fixed
+  the remaining `begin_shutdown()` registration-failure branch (terminate+reap
+  before release). **Stage 3 exit review verdict: PASS** — no blocking findings.
+  Non-blocking: the registration-failure and unrecoverable-loop-failure branches
+  are defensive paths without dedicated failure-injection tests. Stage 4 carries
+  the planned multi-tab scope (`TabManager`, independent tab layouts, tab
+  lifecycle); no Stage 3 lifecycle blocker carries forward.
