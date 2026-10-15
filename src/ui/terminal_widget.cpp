@@ -25,6 +25,16 @@
 namespace consola {
 namespace {
 
+// Dedicated FLTK font numbers for the terminal faces. FLTK caches font
+// descriptors per font number and only invalidates them when the face name
+// changes, so reusing a built-in face (e.g. FL_HELVETICA) can pick up a
+// descriptor created before the terminal set its family. Private numbers avoid
+// that entirely (watchlist #13).
+constexpr Fl_Font kTerminalNormalFace = FL_FREE_FONT;
+constexpr Fl_Font kTerminalBoldFace = FL_FREE_FONT + 1;
+constexpr Fl_Font kTerminalItalicFace = FL_FREE_FONT + 2;
+constexpr Fl_Font kTerminalBoldItalicFace = FL_FREE_FONT + 3;
+
 int clamp_int(int value, int low, int high)
 {
     return std::max(low, std::min(value, high));
@@ -33,15 +43,15 @@ int clamp_int(int value, int low, int high)
 int face_for(const CellAttributes &attributes)
 {
     if (attributes.bold && attributes.italic) {
-        return FL_HELVETICA_BOLD_ITALIC;
+        return kTerminalBoldItalicFace;
     }
     if (attributes.bold) {
-        return FL_HELVETICA_BOLD;
+        return kTerminalBoldFace;
     }
     if (attributes.italic) {
-        return FL_HELVETICA_ITALIC;
+        return kTerminalItalicFace;
     }
-    return FL_HELVETICA;
+    return kTerminalNormalFace;
 }
 
 Rgb dim(Rgb color)
@@ -115,12 +125,13 @@ constexpr std::array<const char *, 6> kMonospaceFallbacks = {
 // Install the four FLTK faces for a family with explicit style modifiers.
 void set_family_faces(const std::string &family)
 {
-    Fl::set_font(FL_HELVETICA, intern_font_name(fltk_raw_font_name(family, false, false)).c_str());
-    Fl::set_font(FL_HELVETICA_BOLD,
+    Fl::set_font(kTerminalNormalFace,
+                 intern_font_name(fltk_raw_font_name(family, false, false)).c_str());
+    Fl::set_font(kTerminalBoldFace,
                  intern_font_name(fltk_raw_font_name(family, true, false)).c_str());
-    Fl::set_font(FL_HELVETICA_ITALIC,
+    Fl::set_font(kTerminalItalicFace,
                  intern_font_name(fltk_raw_font_name(family, false, true)).c_str());
-    Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
+    Fl::set_font(kTerminalBoldItalicFace,
                  intern_font_name(fltk_raw_font_name(family, true, true)).c_str());
 }
 
@@ -134,25 +145,26 @@ double face_width(int face, int size, const char *text)
 // full-width (CJK) fallback, whose ~1em advance would double-space Latin text.
 bool suitable_metrics(int size)
 {
-    const double m = face_width(FL_HELVETICA, size, "M");
+    const double m = face_width(kTerminalNormalFace, size, "M");
     if (m <= 0.0 || m > 0.85 * static_cast<double>(size)) {
         return false;
     }
-    return std::abs(m - face_width(FL_HELVETICA, size, "i")) < 0.5 &&
-           std::abs(m - face_width(FL_HELVETICA, size, "W")) < 0.5 &&
-           std::abs(m - face_width(FL_HELVETICA, size, " ")) < 0.5;
+    return std::abs(m - face_width(kTerminalNormalFace, size, "i")) < 0.5 &&
+           std::abs(m - face_width(kTerminalNormalFace, size, "W")) < 0.5 &&
+           std::abs(m - face_width(kTerminalNormalFace, size, " ")) < 0.5;
 }
 
 // Diagnostic: report what a requested family actually resolves to.
 void log_family_probe(const std::string &family, int size)
 {
     std::array<char, 224> buffer{};
-    std::snprintf(buffer.data(), buffer.size(),
-                  "font probe '%s' -> face='%s' M=%.1f i=%.1f W=%.1f space=%.1f size=%d",
-                  family.c_str(),
-                  Fl::get_font(FL_HELVETICA) != nullptr ? Fl::get_font(FL_HELVETICA) : "(null)",
-                  face_width(FL_HELVETICA, size, "M"), face_width(FL_HELVETICA, size, "i"),
-                  face_width(FL_HELVETICA, size, "W"), face_width(FL_HELVETICA, size, " "), size);
+    std::snprintf(
+        buffer.data(), buffer.size(),
+        "font probe '%s' -> face='%s' M=%.1f i=%.1f W=%.1f space=%.1f size=%d", family.c_str(),
+        Fl::get_font(kTerminalNormalFace) != nullptr ? Fl::get_font(kTerminalNormalFace) : "(null)",
+        face_width(kTerminalNormalFace, size, "M"), face_width(kTerminalNormalFace, size, "i"),
+        face_width(kTerminalNormalFace, size, "W"), face_width(kTerminalNormalFace, size, " "),
+        size);
     log(LogLevel::Info, buffer.data());
 }
 
@@ -195,22 +207,23 @@ void TerminalWidget::apply_font_family() const
     // A style the family does not provide (e.g. italic in a regular-only font)
     // resolves to an unrelated fallback whose metrics break the cell grid.
     // Reuse the base face for that style so styled text stays aligned.
-    const double base = face_width(FL_HELVETICA, style_.font_size, "M");
-    const double bold = face_width(FL_HELVETICA_BOLD, style_.font_size, "M");
-    if (std::abs(face_width(FL_HELVETICA_ITALIC, style_.font_size, "M") - base) > 0.5) {
-        Fl::set_font(FL_HELVETICA_ITALIC,
+    const double base = face_width(kTerminalNormalFace, style_.font_size, "M");
+    const double bold = face_width(kTerminalBoldFace, style_.font_size, "M");
+    if (std::abs(face_width(kTerminalItalicFace, style_.font_size, "M") - base) > 0.5) {
+        Fl::set_font(kTerminalItalicFace,
                      intern_font_name(fltk_raw_font_name(family, false, false)).c_str());
     }
-    if (std::abs(face_width(FL_HELVETICA_BOLD_ITALIC, style_.font_size, "M") - bold) > 0.5) {
-        Fl::set_font(FL_HELVETICA_BOLD_ITALIC,
+    if (std::abs(face_width(kTerminalBoldItalicFace, style_.font_size, "M") - bold) > 0.5) {
+        Fl::set_font(kTerminalBoldItalicFace,
                      intern_font_name(fltk_raw_font_name(family, true, false)).c_str());
     }
 
     std::array<char, 192> diagnostic{};
     std::snprintf(diagnostic.data(), diagnostic.size(),
                   "terminal font: family='%s' face='%s' advance=%.1f size=%d", family.c_str(),
-                  Fl::get_font(FL_HELVETICA) != nullptr ? Fl::get_font(FL_HELVETICA) : "(null)",
-                  face_width(FL_HELVETICA, style_.font_size, "M"), style_.font_size);
+                  Fl::get_font(kTerminalNormalFace) != nullptr ? Fl::get_font(kTerminalNormalFace)
+                                                               : "(null)",
+                  face_width(kTerminalNormalFace, style_.font_size, "M"), style_.font_size);
     log(LogLevel::Info, diagnostic.data());
 }
 
@@ -222,7 +235,7 @@ int TerminalWidget::scrollbar_width() const
 void TerminalWidget::update_metrics()
 {
     const FontMetrics previous = metrics_;
-    fl_font(FL_HELVETICA, style_.font_size);
+    fl_font(kTerminalNormalFace, style_.font_size);
     metrics_.cell_width = fl_width("M");
     metrics_.cell_height = fl_height();
     metrics_.ascent = fl_height() - fl_descent();

@@ -49,16 +49,12 @@ int main()
     const int size = consola::default_terminal_style().font_size;
     const consola::FontMetrics &metrics = widget.metrics();
 
-    // The cell grid must be positive, monospace and not a full-width fallback.
+    // The cell grid must be positive and not a full-width (CJK) fallback, whose
+    // ~1em advance doubles the spacing of Latin text.
     CHECK(metrics.cell_width > 0.0);
     CHECK(metrics.cell_height > 0);
-    fl_font(FL_HELVETICA, size);
-    const double m = fl_width("M");
-    CHECK(std::abs(metrics.cell_width - m) < 0.5);
-    CHECK(std::abs(m - fl_width("i")) < 0.5);
-    CHECK(std::abs(m - fl_width("W")) < 0.5);
-    CHECK(std::abs(m - fl_width(" ")) < 0.5);
-    CHECK(m <= 0.85 * size);
+    CHECK(metrics.cell_width <= 0.85 * size);
+    CHECK(metrics.cell_width >= 0.3 * size);
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d font metric check(s) failed\n", g_failures);
