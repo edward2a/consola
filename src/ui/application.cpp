@@ -11,24 +11,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
-#include <FL/platform.H>
-#include <X11/Xlib.h>
 #include <fontconfig/fontconfig.h>
-
-// Declared directly to avoid the freetype include dependency of Xft.h.
-extern "C" FcPattern *XftFontMatch(Display *dpy, int screen, FcPattern *pattern, FcResult *result);
-extern "C" void *XftFontOpenPattern(Display *dpy, FcPattern *pattern);
-extern "C" void XftFontClose(Display *dpy, void *font);
-struct XGlyphInfo {
-    unsigned short width;
-    unsigned short height;
-    short x;
-    short y;
-    short xOff;
-    short yOff;
-};
-extern "C" void XftTextExtents32(Display *dpy, void *font, const unsigned int *string, int len,
-                                 XGlyphInfo *extents);
 
 #include <app/emulator.hpp>
 #include <app/log.hpp>
@@ -144,124 +127,6 @@ std::vector<std::filesystem::path> bundled_font_candidates()
     return candidates;
 }
 
-// Diagnostic: report the family fontconfig assigns to the bundled file and what
-// it matches for the requested family, to explain font-resolution failures.
-void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
-{
-    FcPattern *pattern = FcPatternCreate();
-    FcObjectSet *objects = FcObjectSetBuild(FC_FAMILY, FC_FILE, static_cast<void *>(nullptr));
-    FcFontSet *fonts = FcFontList(config, pattern, objects);
-    if (fonts != nullptr) {
-        for (int i = 0; i < fonts->nfont; ++i) {
-            FcChar8 *file = nullptr;
-            FcChar8 *family = nullptr;
-            FcPatternGetString(fonts->fonts[i], FC_FILE, 0, &file);
-            FcPatternGetString(fonts->fonts[i], FC_FAMILY, 0, &family);
-            if (file != nullptr && family != nullptr &&
-                std::string(reinterpret_cast<const char *>(file)).find(filename) !=
-                    std::string::npos) {
-                log(LogLevel::Info, "bundled file family: '" +
-                                        std::string(reinterpret_cast<const char *>(family)) + "'");
-            }
-        }
-        FcFontSetDestroy(fonts);
-    }
-    FcObjectSetDestroy(objects);
-    FcPatternDestroy(pattern);
-
-    FcPattern *request = FcNameParse(reinterpret_cast<const FcChar8 *>("Inconsolata Condensed"));
-    FcConfigSubstitute(config, request, FcMatchPattern);
-    FcDefaultSubstitute(request);
-    FcResult result = FcResultNoMatch;
-    FcPattern *match = FcFontMatch(config, request, &result);
-    if (match != nullptr) {
-        FcChar8 *file = nullptr;
-        FcChar8 *family = nullptr;
-        FcPatternGetString(match, FC_FILE, 0, &file);
-        FcPatternGetString(match, FC_FAMILY, 0, &family);
-        log(LogLevel::Info, "fontconfig match 'Inconsolata Condensed' -> '" +
-                                std::string(reinterpret_cast<const char *>(
-                                    family != nullptr ? family : (const FcChar8 *)"?")) +
-                                "' file='" +
-                                std::string(reinterpret_cast<const char *>(
-                                    file != nullptr ? file : (const FcChar8 *)"?")) +
-                                "'");
-        FcPatternDestroy(match);
-    }
-    FcPatternDestroy(request);
-
-    // Reproduce the pattern FLTK's Xft path builds (family + weight/slant/size/
-    // encoding) to see which attribute changes the match.
-    FcPattern *xft = FcPatternCreate();
-    FcPatternAddString(xft, FC_FAMILY, reinterpret_cast<const FcChar8 *>("Inconsolata Condensed"));
-    FcPatternAddInteger(xft, FC_WEIGHT, FC_WEIGHT_MEDIUM);
-    FcPatternAddInteger(xft, FC_SLANT, FC_SLANT_ROMAN);
-    FcPatternAddDouble(xft, FC_PIXEL_SIZE, 14.0);
-    FcConfigSubstitute(config, xft, FcMatchPattern);
-    FcDefaultSubstitute(xft);
-    FcResult xft_result = FcResultNoMatch;
-    FcPattern *xft_match = FcFontMatch(config, xft, &xft_result);
-    if (xft_match != nullptr) {
-        FcChar8 *file = nullptr;
-        FcChar8 *family = nullptr;
-        FcPatternGetString(xft_match, FC_FILE, 0, &file);
-        FcPatternGetString(xft_match, FC_FAMILY, 0, &family);
-        log(LogLevel::Info, "fontconfig match (xft pattern) -> '" +
-                                std::string(reinterpret_cast<const char *>(
-                                    family != nullptr ? family : (const FcChar8 *)"?")) +
-                                "' file='" +
-                                std::string(reinterpret_cast<const char *>(
-                                    file != nullptr ? file : (const FcChar8 *)"?")) +
-                                "'");
-        FcPatternDestroy(xft_match);
-    }
-    FcPatternDestroy(xft);
-
-    // Reproduce Xft's own matching (the exact XftFontMatch FLTK calls) to see
-    // whether Xft resolves differently from a plain fontconfig match.
-    fl_open_display();
-    if (fl_display != nullptr) {
-        log(LogLevel::Info, "fltk scale=" + std::to_string(Fl::screen_scale(0)));
-        for (const char *encoding : {"(none)", "iso10646-1", "iso8859-1"}) {
-            FcPattern *xp = FcPatternCreate();
-            FcPatternAddString(xp, FC_FAMILY,
-                               reinterpret_cast<const FcChar8 *>("Inconsolata Condensed"));
-            FcPatternAddInteger(xp, FC_WEIGHT, FC_WEIGHT_MEDIUM);
-            FcPatternAddInteger(xp, FC_SLANT, FC_SLANT_ROMAN);
-            FcPatternAddDouble(xp, FC_PIXEL_SIZE, 14.0);
-            if (std::strcmp(encoding, "(none)") != 0) {
-                FcPatternAddString(xp, "encoding", reinterpret_cast<const FcChar8 *>(encoding));
-            }
-            FcResult xr = FcResultNoMatch;
-            FcPattern *xm = XftFontMatch(fl_display, fl_screen, xp, &xr);
-            FcPatternDestroy(xp);
-            if (xm != nullptr) {
-                FcChar8 *file = nullptr;
-                FcPatternGetString(xm, FC_FILE, 0, &file);
-                const std::string file_text(
-                    reinterpret_cast<const char *>(file != nullptr ? file : (const FcChar8 *)"?"));
-                void *opened = XftFontOpenPattern(fl_display, xm);
-                int advance = -1;
-                if (opened != nullptr) {
-                    const unsigned int m = 'M';
-                    XGlyphInfo extents{};
-                    XftTextExtents32(fl_display, opened, &m, 1, &extents);
-                    advance = extents.xOff;
-                    XftFontClose(fl_display, opened);
-                } else {
-                    FcPatternDestroy(xm);
-                }
-                log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> '" +
-                                        file_text +
-                                        "' open=" + (opened != nullptr ? "ok" : "FAILED") +
-                                        " M_advance=" + std::to_string(advance));
-            } else {
-                log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> null");
-            }
-        }
-    }
-}
-
 void register_bundled_font()
 {
     if (FcInit() == FcFalse) {
@@ -280,7 +145,6 @@ void register_bundled_font()
             FcConfigBuildFonts(config);
             FcConfigSetCurrent(config);
             log(LogLevel::Info, "registered bundled font: " + candidate.string());
-            log_bundled_font_diagnostics(config, candidate.filename().string());
             return;
         }
     }
