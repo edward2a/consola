@@ -80,8 +80,6 @@ add_test(NAME font_name_test COMMAND consola_font_name_test)
 
 add_executable(consola_font_metrics_test font_metrics_test.cpp)
 target_link_libraries(consola_font_metrics_test PRIVATE terminal_ui)
-target_compile_definitions(consola_font_metrics_test PRIVATE
-    CONSOLA_FONT_FILE="${CMAKE_SOURCE_DIR}/resources/fonts/Inconsolata-Condensed.ttf")
 
 add_test(NAME font_metrics_test
     COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh

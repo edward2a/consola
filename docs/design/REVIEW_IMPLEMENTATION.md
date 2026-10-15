@@ -684,4 +684,15 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   diagnosis, and registration now uses the explicit `FcConfigGetCurrent()` and
   rebuilds fonts. A new headless `font_metrics_test` asserts the widget's cell
   metrics are positive, monospace and not full-width, exercising the real
-  registration path; suites pass 21/21.
+  registration path; suites pass 21/21. A later report traced the residual
+  "two spaces" to the user's font stack (FreeType 2.13.3 / Xft 2.3.6) reading
+  the bundled Inconsolata-Condensed `M` advance as 17px at size 14 (≈3× the
+  font's real 0.4em) — the file is byte-identical and renders at 6px elsewhere,
+  so no consola change can fix it. `DejaVuSansMono.ttf` is now **embedded** in
+  the binary (CMake `consola_embed_binary` generates a `std::array` header at
+  configure time) and registered at startup as an always-available fallback
+  (`register_application_fonts()` in `include/ui/fonts.hpp`; the bytes are
+  written to a size-named temp file and added to fontconfig). The preferred
+  font remains Inconsolata Condensed; the terminal's fallback chain reaches the
+  embedded DejaVu Sans Mono when the stack cannot render the preferred font.
+  The DejaVu license is installed under `licenses/dejavu`.

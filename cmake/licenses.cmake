@@ -34,3 +34,6 @@ install(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION ${CONSOLA_LICENSE_DEST}/co
 
 consola_install_license(inconsolata
     ${CMAKE_SOURCE_DIR}/resources/fonts/OFL.txt)
+
+consola_install_license(dejavu
+    ${CMAKE_SOURCE_DIR}/resources/fonts/DejaVu-LICENSE.txt)

@@ -6,11 +6,10 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
-#include <FL/fl_draw.H>
-#include <fontconfig/fontconfig.h>
 
 #include <app/emulator.hpp>
 #include <app/terminal_style.hpp>
+#include <ui/fonts.hpp>
 #include <ui/terminal_widget.hpp>
 
 namespace {
@@ -29,14 +28,10 @@ int g_failures = 0;
 
 int main()
 {
-    // Register the bundled font exactly as the application does, so this test
-    // exercises the real font-resolution path.
-    FcInit();
-#ifdef CONSOLA_FONT_FILE
-    FcConfig *config = FcConfigGetCurrent();
-    FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8 *>(CONSOLA_FONT_FILE));
-    FcConfigBuildFonts(config);
-#endif
+    // Register the bundled preferred font and the embedded fallback exactly as
+    // the application does, so this test exercises the real font-resolution path
+    // (including the embedded fallback when the preferred font is unusable).
+    consola::register_application_fonts();
 
     Fl_Window window(400, 60, "font_metrics_test");
     consola::TerminalEmulator emulator;

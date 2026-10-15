@@ -128,6 +128,32 @@ target_include_directories(terminal_session PUBLIC
 )
 target_link_libraries(terminal_session PUBLIC terminal_core terminal_platform)
 
+# Embed a binary file as a C++ byte array (generated at configure time).
+function(consola_embed_binary name input)
+    if(NOT EXISTS "${input}")
+        message(FATAL_ERROR "Embedded resource not found: ${input}")
+    endif()
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/${name}.hpp")
+    file(READ "${input}" hex HEX)
+    string(LENGTH "${hex}" hex_len)
+    math(EXPR byte_count "${hex_len} / 2")
+    string(REGEX REPLACE "(..)" "0x\\1," bytes "${hex}")
+    file(WRITE "${header}"
+        "#pragma once\n"
+        "#include <array>\n"
+        "#include <cstddef>\n"
+        "namespace consola {\n"
+        "inline constexpr std::array<unsigned char, ${byte_count}> ${name} = {${bytes}};\n"
+        "} // namespace consola\n")
+    set(${name}_HEADER "${header}" PARENT_SCOPE)
+endfunction()
+
+# Embedded fallback font: the terminal prefers the configured family (the
+# bundled Inconsolata Condensed) but always has a usable monospace family even
+# when the system lacks one or cannot render the preferred font.
+consola_embed_binary(consola_dejavu_sans_mono
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/DejaVuSansMono.ttf")
+
 add_library(terminal_ui STATIC
     src/ui/application.cpp
     src/ui/commands.cpp
@@ -137,6 +163,9 @@ add_library(terminal_ui STATIC
     src/ui/terminal_frame.cpp
     src/ui/terminal_view.cpp
     src/ui/terminal_widget.cpp
+)
+target_include_directories(terminal_ui PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 target_link_libraries(terminal_ui PUBLIC terminal_session)
 

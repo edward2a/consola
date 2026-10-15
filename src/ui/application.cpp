@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,8 @@
 #include <app/log.hpp>
 #include <app/session.hpp>
 #include <app/terminal_manager.hpp>
+#include <consola_dejavu_sans_mono.hpp>
+#include <ui/fonts.hpp>
 #include <ui/terminal_frame.hpp>
 #include <ui/terminal_view.hpp>
 #include <ui/terminal_widget.hpp>
@@ -127,28 +130,46 @@ std::vector<std::filesystem::path> bundled_font_candidates()
     return candidates;
 }
 
-void register_bundled_font()
+// Write the embedded fallback font to a temporary file (fontconfig needs a
+// path) and register it. The file name encodes the content size so repeated
+// runs reuse the file instead of rewriting it.
+void register_embedded_font(FcConfig *config)
 {
-    if (FcInit() == FcFalse) {
-        log(LogLevel::Warning, "fontconfig initialization failed");
+    std::error_code error;
+    std::filesystem::path directory = std::filesystem::temp_directory_path(error);
+    if (error) {
+        log(LogLevel::Warning, "no temporary directory for the embedded fallback font");
         return;
     }
-    FcConfig *config = FcConfigGetCurrent();
-    for (const std::filesystem::path &candidate : bundled_font_candidates()) {
-        std::error_code error;
-        if (!std::filesystem::exists(candidate, error)) {
-            continue;
-        }
-        if (FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8 *>(candidate.c_str())) !=
-            FcFalse) {
-            // Make the newly added face visible to Xft's font matching.
-            FcConfigBuildFonts(config);
-            FcConfigSetCurrent(config);
-            log(LogLevel::Info, "registered bundled font: " + candidate.string());
+    directory /= "consola";
+    std::filesystem::create_directories(directory, error);
+    if (error) {
+        log(LogLevel::Warning, "cannot create a directory for the embedded fallback font");
+        return;
+    }
+
+    const std::filesystem::path path =
+        directory / ("DejaVuSansMono-" + std::to_string(consola_dejavu_sans_mono.size()) + ".ttf");
+    std::error_code size_error;
+    const auto existing = std::filesystem::file_size(path, size_error);
+    if (size_error || existing != consola_dejavu_sans_mono.size()) {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(reinterpret_cast<const char *>(consola_dejavu_sans_mono.data()),
+                  static_cast<std::streamsize>(consola_dejavu_sans_mono.size()));
+        if (!out) {
+            log(LogLevel::Warning, "cannot write the embedded fallback font");
             return;
         }
     }
-    log(LogLevel::Warning, "bundled font not found or could not be registered");
+
+    if (FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8 *>(path.c_str())) !=
+        FcFalse) {
+        FcConfigBuildFonts(config);
+        FcConfigSetCurrent(config);
+        log(LogLevel::Info, "registered embedded fallback font: DejaVu Sans Mono");
+    } else {
+        log(LogLevel::Warning, "could not register the embedded fallback font");
+    }
 }
 
 int run_smoke_test(int argc, char **argv, Fl_Window &window)
@@ -233,9 +254,37 @@ int run_session(int argc, char **argv, Fl_Window &window)
 
 } // namespace
 
+void register_application_fonts()
+{
+    if (FcInit() == FcFalse) {
+        log(LogLevel::Warning, "fontconfig initialization failed");
+        return;
+    }
+    FcConfig *config = FcConfigGetCurrent();
+
+    // The embedded fallback is always available, so register it first.
+    register_embedded_font(config);
+
+    for (const std::filesystem::path &candidate : bundled_font_candidates()) {
+        std::error_code error;
+        if (!std::filesystem::exists(candidate, error)) {
+            continue;
+        }
+        if (FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8 *>(candidate.c_str())) !=
+            FcFalse) {
+            // Make the newly added face visible to Xft's font matching.
+            FcConfigBuildFonts(config);
+            FcConfigSetCurrent(config);
+            log(LogLevel::Info, "registered bundled font: " + candidate.string());
+            return;
+        }
+    }
+    log(LogLevel::Warning, "bundled font not found or could not be registered");
+}
+
 int run_application(int argc, char **argv, bool smoke_test)
 {
-    register_bundled_font();
+    register_application_fonts();
 
     Fl_Window window(640, 400, "consola");
     if (smoke_test) {
