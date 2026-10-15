@@ -19,6 +19,16 @@
 extern "C" FcPattern *XftFontMatch(Display *dpy, int screen, FcPattern *pattern, FcResult *result);
 extern "C" void *XftFontOpenPattern(Display *dpy, FcPattern *pattern);
 extern "C" void XftFontClose(Display *dpy, void *font);
+struct XGlyphInfo {
+    unsigned short width;
+    unsigned short height;
+    short x;
+    short y;
+    short xOff;
+    short yOff;
+};
+extern "C" void XftTextExtents32(Display *dpy, void *font, const unsigned int *string, int len,
+                                 XGlyphInfo *extents);
 
 #include <app/emulator.hpp>
 #include <app/log.hpp>
@@ -211,6 +221,7 @@ void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
     // whether Xft resolves differently from a plain fontconfig match.
     fl_open_display();
     if (fl_display != nullptr) {
+        log(LogLevel::Info, "fltk scale=" + std::to_string(Fl::screen_scale(0)));
         for (const char *encoding : {"(none)", "iso10646-1", "iso8859-1"}) {
             FcPattern *xp = FcPatternCreate();
             FcPatternAddString(xp, FC_FAMILY,
@@ -230,14 +241,20 @@ void log_bundled_font_diagnostics(FcConfig *config, const std::string &filename)
                 const std::string file_text(
                     reinterpret_cast<const char *>(file != nullptr ? file : (const FcChar8 *)"?"));
                 void *opened = XftFontOpenPattern(fl_display, xm);
-                log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> '" +
-                                        file_text +
-                                        "' open=" + (opened != nullptr ? "ok" : "FAILED"));
+                int advance = -1;
                 if (opened != nullptr) {
+                    const unsigned int m = 'M';
+                    XGlyphInfo extents{};
+                    XftTextExtents32(fl_display, opened, &m, 1, &extents);
+                    advance = extents.xOff;
                     XftFontClose(fl_display, opened);
                 } else {
                     FcPatternDestroy(xm);
                 }
+                log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> '" +
+                                        file_text +
+                                        "' open=" + (opened != nullptr ? "ok" : "FAILED") +
+                                        " M_advance=" + std::to_string(advance));
             } else {
                 log(LogLevel::Info, std::string("xft match [encoding=") + encoding + "] -> null");
             }
