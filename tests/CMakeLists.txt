@@ -86,6 +86,11 @@ add_test(NAME font_metrics_test
             $<TARGET_FILE:consola_font_metrics_test>)
 set_tests_properties(font_metrics_test PROPERTIES TIMEOUT 30)
 
+add_executable(consola_config_model_test config_model_test.cpp)
+target_link_libraries(consola_config_model_test PRIVATE terminal_core)
+
+add_test(NAME config_model_test COMMAND consola_config_model_test)
+
 add_executable(consola_pty_session_test pty_session_test.cpp)
 target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 

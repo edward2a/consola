@@ -88,6 +88,7 @@ add_library(terminal_core STATIC
     src/app/tab.cpp
     src/app/tab_manager.cpp
     src/app/terminal_instance.cpp
+    src/config/config.cpp
     src/layout/layout_geometry.cpp
     src/layout/layout_tree.cpp
     src/terminal/emulator.cpp

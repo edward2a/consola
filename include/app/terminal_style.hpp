@@ -18,6 +18,8 @@ struct Rgb {
     constexpr Rgb(std::uint8_t red, std::uint8_t green, std::uint8_t blue)
         : r(red), g(green), b(blue)
     {}
+
+    friend bool operator==(Rgb, Rgb) = default;
 };
 
 inline constexpr std::array<Rgb, 16> kDefaultAnsi = {{

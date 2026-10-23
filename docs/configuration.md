@@ -1,0 +1,149 @@
+# Configuration
+
+consola reads a single YAML file. The default location is
+`$XDG_CONFIG_HOME/consola/config.yml` (`~/.config/consola/config.yml` when
+`XDG_CONFIG_HOME` is unset); a path given on the command line overrides it. A
+missing file is not an error: the built-in defaults apply.
+
+The schema is versioned. Every file must start with:
+
+```yaml
+version: 1
+```
+
+A file whose `version` is missing or not understood is rejected as a whole; no
+partial configuration is applied.
+
+## Precedence
+
+Settings resolve in three layers, lowest first:
+
+1. **Built-in defaults** (defined in C++, `include/config/config.hpp`).
+2. **`general`**, plus the top-level `font` and `colours` sections.
+3. The selected **profile** (`profiles.<name>`).
+
+A key present in a profile replaces the value from the layers below; a key that
+is absent inherits. Profiles therefore store only the settings they override,
+so a partial palette override is lossless. Only per-pane settings can be
+overridden by a profile: `shell`, `arguments`, `working_directory`,
+`login_shell`, `term`, `colorterm`, `scrollback`, `font`, `word_chars`, `bell`,
+`cursor` and `colours`. Everything else in `general` is application-wide.
+
+`default_profile` (default `default`) names the profile new panes use; the
+`default` profile always exists, even when the file does not define it.
+
+Unknown keys are reported as warnings and ignored. Invalid values are errors.
+
+## Top-level keys
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `version` | integer | — | Required; must be `1`. |
+| `general` | map | see below | Application-wide settings. |
+| `font` | map | see below | Default terminal font. |
+| `colours` | map | see below | Default palette and foreground/background. |
+| `default_profile` | string | `default` | Profile new panes use. |
+| `profiles` | map of name → profile | `default` | Named per-pane overrides. |
+| `shortcuts` | map | see below | Global keyboard shortcuts. |
+
+## `general`
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `shell` | string | `/bin/sh` | Program launched in a new pane. |
+| `arguments` | list of string | `[]` | Extra argv passed to `shell`. |
+| `working_directory` | string | inherited | Start directory; empty means the process CWD. |
+| `login_shell` | bool | `false` | Launch the shell as a login shell. |
+| `term` | string | `xterm-256color` | Value of `TERM`. |
+| `colorterm` | string | `truecolor` | Value of `COLORTERM`. |
+| `scrollback` | integer ≥ 0 | `10000` | Scrollback lines; `0` disables scrollback. |
+| `scrollbar` | bool | `true` | Show the scrollback scrollbar. |
+| `wheel_lines` | integer > 0 | `3` | Lines scrolled per wheel notch. |
+| `alternate_scroll` | bool | `true` | Wheel sends arrow keys on the alternate screen. |
+| `backspace_sends_delete` | bool | `true` | Send DEL (0x7f) instead of BS (0x08). |
+| `bell` | string | `none` | One of `none`, `audible`, `visual`, `both`. |
+| `cursor` | map | see below | Cursor shape and blink. |
+| `word_chars` | string | `-A-Za-z0-9,./?%&#:_=+@~` | Characters that form a word for double-click selection. |
+| `kill_timeout_ms` | integer > 0 | `2000` | SIGHUP → SIGKILL delay. |
+| `drain_output_on_close` | bool | `false` | Keep draining output after an explicit close. |
+| `outgoing_limit_bytes` | integer ≥ 32768 | `1048576` | Outgoing queue + in-flight limit. |
+| `max_paste_bytes` | integer > 0 | `16777216` | Largest encoded paste, framing included. |
+
+`cursor` keys: `shape` (`block`, `underline`, `bar`; default `block`) and
+`blink` (bool, default `true`).
+
+## `font`
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `family` | string | `Inconsolata Condensed` |
+| `size` | integer 1–512 | `14` |
+
+## `colours`
+
+The palette uses the 16 ANSI colour names; each is a `#rrggbb` string.
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `foreground` | colour | `#d8d8d8` |
+| `background` | colour | `#181818` |
+| `cursor` | colour | `#ffffff` |
+| `palette` | map of name → colour | built-in |
+
+`palette` names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`,
+`white` (0–7) and `bright_black`, `bright_red`, `bright_green`,
+`bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`,
+`bright_white` (8–15).
+
+## `profiles.<name>`
+
+A profile may set any of the per-pane keys listed under [Precedence](#precedence),
+with the same shapes as `general`/`font`/`colours`:
+
+```yaml
+profiles:
+  sun:
+    shell: /bin/zsh
+    font:
+      size: 16
+    foreground: "#2b2b2b"
+    background: "#fdf6e3"
+    palette:
+      red: "#dc322f"
+      bright_red: "#cb4b16"
+    cursor:
+      shape: bar
+```
+
+`font` is a `family`/`size` map. `colours`-style keys (`foreground`,
+`background`, `cursor`, `palette`) sit directly under the profile.
+
+## `shortcuts`
+
+Shortcuts are canonical text such as `Ctrl+Shift+T`, `Alt+Left` or `Escape`.
+Modifiers are `Ctrl`, `Shift` and `Alt`. Key names use FLTK/`X` names
+(`PageUp`, `Left`, `Escape`, a single character, …).
+
+| Key | Default |
+| --- | --- |
+| `new_tab` | `Ctrl+Shift+T` |
+| `close_tab` | `Ctrl+Shift+X` |
+| `close_pane` | `Ctrl+Shift+W` |
+| `split_horizontal` | `Ctrl+Shift+O` |
+| `split_vertical` | `Ctrl+Shift+E` |
+| `next_tab` | `Ctrl+PageDown` |
+| `previous_tab` | `Ctrl+PageUp` |
+| `focus_left` | `Alt+Left` |
+| `focus_right` | `Alt+Right` |
+| `focus_up` | `Alt+Up` |
+| `focus_down` | `Alt+Down` |
+| `resize_left` | `Ctrl+Shift+Left` |
+| `resize_right` | `Ctrl+Shift+Right` |
+| `resize_up` | `Ctrl+Shift+Up` |
+| `resize_down` | `Ctrl+Shift+Down` |
+| `cancel_paste` | `Escape` |
+
+## Example
+
+See [`resources/consola.yml`](../resources/consola.yml) for a complete file that
+lists every key with its default value.

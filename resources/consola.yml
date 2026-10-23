@@ -1,0 +1,76 @@
+# consola configuration (schema version 1).
+# Every key is shown with its built-in default; a missing file or key keeps the
+# default. See docs/configuration.md for the full schema and precedence rules.
+
+version: 1
+
+general:
+  shell: /bin/sh
+  arguments: []
+  working_directory: ""
+  login_shell: false
+  term: xterm-256color
+  colorterm: truecolor
+  scrollback: 10000
+  scrollbar: true
+  wheel_lines: 3
+  alternate_scroll: true
+  backspace_sends_delete: true
+  bell: none
+  cursor:
+    shape: block
+    blink: true
+  word_chars: "-A-Za-z0-9,./?%&#:_=+@~"
+  kill_timeout_ms: 2000
+  drain_output_on_close: false
+  outgoing_limit_bytes: 1048576
+  max_paste_bytes: 16777216
+
+font:
+  family: Inconsolata Condensed
+  size: 14
+
+colours:
+  foreground: "#d8d8d8"
+  background: "#181818"
+  cursor: "#ffffff"
+  palette:
+    black: "#000000"
+    red: "#ab4642"
+    green: "#a1b56c"
+    yellow: "#f7ca88"
+    blue: "#7cafc2"
+    magenta: "#ba8baf"
+    cyan: "#86c1b9"
+    white: "#aaaaaa"
+    bright_black: "#555555"
+    bright_red: "#ab4642"
+    bright_green: "#a1b56c"
+    bright_yellow: "#f7ca88"
+    bright_blue: "#7cafc2"
+    bright_magenta: "#ba8baf"
+    bright_cyan: "#86c1b9"
+    bright_white: "#ffffff"
+
+default_profile: default
+
+profiles:
+  default: {}
+
+shortcuts:
+  new_tab: Ctrl+Shift+T
+  close_tab: Ctrl+Shift+X
+  close_pane: Ctrl+Shift+W
+  split_horizontal: Ctrl+Shift+O
+  split_vertical: Ctrl+Shift+E
+  next_tab: Ctrl+PageDown
+  previous_tab: Ctrl+PageUp
+  focus_left: Alt+Left
+  focus_right: Alt+Right
+  focus_up: Alt+Up
+  focus_down: Alt+Down
+  resize_left: Ctrl+Shift+Left
+  resize_right: Ctrl+Shift+Right
+  resize_up: Ctrl+Shift+Up
+  resize_down: Ctrl+Shift+Down
+  cancel_paste: Escape

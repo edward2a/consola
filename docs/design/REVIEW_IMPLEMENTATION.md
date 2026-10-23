@@ -42,7 +42,7 @@ does not authorize implementation; that still requires explicit user approval.
 | 16 | Input methods and keyboard layouts | P3 | Existing note: verify FLTK input methods and dead keys on X11, and Ctrl+letter on non-Latin layouts. | DIP §2.6 | Stage 2 | Reviewed |
 | 17 | `TERM=xterm-256color` vs what libtsm supports | P3 | The advertised terminal type promises more than libtsm does: no modifyOtherKeys or kitty keyboard protocol, no strikethrough attribute, DECSET 1007 not parsed. Check vim/nvim, tmux, less, htop and mc. | DIP §1.2; §2.6 › v1 limitation; Cross-Stage › Manual test matrix | After Stage 2 / Stage 6 | Pending |
 | 18 | Cursor display details | Minor | `ColourConfig` has a cursor colour that 2.4 never uses. How the cursor looks in unfocused panes is not specified. Blink timers should run only for the focused, visible pane to keep idle CPU low. | DIP §2.4 › Cursor; §5.1; §7.5 | Stage 5 / 7 | Pending |
-| 19 | Config schema is incomplete | P3 | Settings promised as configurable elsewhere are missing from 5.2: TERM/COLORTERM, login shell, word chars, cancel-paste shortcut, bell mode, cursor style. Precedence between general and profile settings (shell, font, scrollback) is undefined. | DIP §5.2; §1.2, §2.7, §2.8, §6.2, §6.4 | Stage 5 | Pending |
+| 19 | Config schema is incomplete | P3 | Settings promised as configurable elsewhere are missing from 5.2: TERM/COLORTERM, login shell, word chars, cancel-paste shortcut, bell mode, cursor style. Precedence between general and profile settings (shell, font, scrollback) is undefined. | DIP §5.2; §1.2, §2.7, §2.8, §6.2, §6.4 | Stage 5 | Settled |
 | 20 | Startup worker head-of-line blocking | Minor | There is one sequential startup worker. A launch stuck before exec (e.g. a hung NFS working directory) delays every queued launch until it is cancelled. Most visible when 6.5 restores many panes. | DIP §1.3 › Startup execution; §6.5 | Stage 6 / 7 | Pending |
 | 21 | How URL detection reads screen text | P3 | 6.3 doesn't say how text is read. `tsm_screen_draw()` is the only reader and resets libtsm's "redraw everything" flag on first call, so an extra pass can swallow it. This only matters after the age counter overflows, which is realistic on macOS/Windows where it is 32-bit. URLs that wrap across lines are not addressed. | DIP §6.3, §2.5 | Stage 6 | Pending |
 | 22 | Fixed tuning constants | P3 | The plan already marks these starting values for verification: 64 KiB / 1 ms I/O batches; 16 inbound slots, resume at 8; ~8 ms UI drain; 100 ms post-exit drain; 2 s kill timeout; 1 MiB outgoing limit with 16 KiB reserve; 16 MiB paste limit. | DIP §1.4 › I/O fairness, Post-exit output drain; §1.6; §1.7 | Stage 7 | Reviewed |
@@ -59,7 +59,7 @@ does not authorize implementation; that still requires explicit user approval.
 ## Totals
 
 - 8 × P2, 17 × P3, 6 × Minor.
-- 16 Pending, 7 Reviewed, 8 Settled.
+- 15 Pending, 7 Reviewed, 9 Settled.
 - Source-checked against pinned libtsm: #8, #9, #10, #21, #24, #25.
 - Documented-behaviour assumptions to confirm: #11, #14, #27, #28.
 
@@ -696,3 +696,25 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   font remains Inconsolata Condensed; the terminal's fallback chain reaches the
   embedded DejaVu Sans Mono when the stack cannot render the preferred font.
   The DejaVu license is installed under `licenses/dejavu`.
+- **S5-CS1 — configuration model and schema (§5.1, §5.2)**: `include/config/config.hpp`
+  defines the strongly typed model (`GeneralConfig`, `FontConfig`,
+  `ColourConfig`/`ColourOverrides`, `CursorConfig`, `ProfileConfig`,
+  `ShortcutConfig`, `ApplicationConfig`) with all defaults centralized
+  (`kDefault*`, DIP 5.5). Raw YAML never crosses this boundary. Watchlist #19 is
+  addressed: the schema now covers TERM/COLORTERM, login shell, word characters,
+  the cancel-paste shortcut, bell mode and cursor shape/blink, and precedence is
+  defined — defaults → `general`/`font`/`colours` → the selected profile, where
+  a profile stores only the per-pane keys it overrides (shell, arguments, working
+  directory, login shell, TERM, COLORTERM, scrollback, font, word characters,
+  bell, cursor, colours). `ProfileConfig` uses optionals so a partial palette
+  override is lossless; `apply_colour_overrides()` overlays present entries.
+  `src/config/config.cpp` adds `default_application_config()` and the limit
+  validators the loader will reuse (outgoing ≥ 32 KiB, paste > 0, font size
+  1–512, scrollback ≥ 0, wheel lines > 0). `docs/configuration.md` is the single
+  documented schema (version 1) and `resources/consola.yml` lists every key at
+  its default. `Rgb` gained a defaulted `operator==` so the model tests can
+  assert the config defaults match `TerminalStyle` and do not drift. New
+  `config_model_test` covers defaults, validation boundaries, the style/config
+  consistency and colour-override merging; suites pass 22/22. The remaining
+  Stage 5 work — loader, writer, layout persistence and wiring — is tracked in
+  the change sets below.
