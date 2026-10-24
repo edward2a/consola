@@ -15,7 +15,9 @@ namespace consola {
 // frame. UI-thread only.
 class TerminalFrame : public Fl_Group {
 public:
-    TerminalFrame(int x, int y, int w, int h, TerminalManager &manager);
+    TerminalFrame(int x, int y, int w, int h, TerminalManager &manager,
+                  TerminalStyle style = default_terminal_style(),
+                  ShortcutMap shortcuts = ShortcutMap{});
     ~TerminalFrame() override = default;
 
     TerminalFrame(const TerminalFrame &) = delete;

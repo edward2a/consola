@@ -213,6 +213,21 @@ void append_font(std::string &out, const FontConfig &font, int indent)
     append_line(out, indent + 1, "size: " + std::to_string(font.size));
 }
 
+void append_font_overrides(std::string &out, const FontOverrides &font, int indent)
+{
+    if (!font.family.has_value() && !font.size.has_value()) {
+        append_line(out, indent, "font: {}");
+        return;
+    }
+    append_line(out, indent, "font:");
+    if (font.family.has_value()) {
+        append_line(out, indent + 1, "family: " + quote(font.family.value()));
+    }
+    if (font.size.has_value()) {
+        append_line(out, indent + 1, "size: " + std::to_string(font.size.value()));
+    }
+}
+
 void append_colours(std::string &out, const ColourConfig &colours, int indent)
 {
     append_line(out, indent, "colours:");
@@ -268,12 +283,13 @@ void append_colour_overrides(std::string &out, const ColourOverrides &colours, i
 
 bool is_empty_profile(const ProfileConfig &profile)
 {
+    const bool font_empty = !profile.font.family.has_value() && !profile.font.size.has_value();
     return !profile.shell.has_value() && !profile.arguments.has_value() &&
            !profile.working_directory.has_value() && !profile.login_shell.has_value() &&
            !profile.term.has_value() && !profile.colorterm.has_value() &&
-           !profile.scrollback.has_value() && !profile.font.has_value() &&
-           !profile.word_chars.has_value() && !profile.bell.has_value() &&
-           !profile.cursor.has_value() && !has_colour_overrides(profile.colours);
+           !profile.scrollback.has_value() && font_empty && !profile.word_chars.has_value() &&
+           !profile.bell.has_value() && !profile.cursor.has_value() &&
+           !has_colour_overrides(profile.colours);
 }
 
 void append_profile(std::string &out, const std::string &name, const ProfileConfig &profile)
@@ -306,8 +322,8 @@ void append_profile(std::string &out, const std::string &name, const ProfileConf
     if (profile.scrollback.has_value()) {
         append_line(out, 2, "scrollback: " + std::to_string(profile.scrollback.value()));
     }
-    if (profile.font.has_value()) {
-        append_font(out, profile.font.value(), 2);
+    if (profile.font.family.has_value() || profile.font.size.has_value()) {
+        append_font_overrides(out, profile.font, 2);
     }
     if (profile.word_chars.has_value()) {
         append_line(out, 2, "word_chars: " + quote(profile.word_chars.value()));

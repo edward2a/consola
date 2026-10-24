@@ -103,6 +103,16 @@ target_link_libraries(consola_config_writer_test PRIVATE terminal_core)
 
 add_test(NAME config_writer_test COMMAND consola_config_writer_test)
 
+add_executable(consola_config_apply_test config_apply_test.cpp)
+target_link_libraries(consola_config_apply_test PRIVATE terminal_core)
+
+add_test(NAME config_apply_test COMMAND consola_config_apply_test)
+
+add_executable(consola_shortcuts_test shortcuts_test.cpp)
+target_link_libraries(consola_shortcuts_test PRIVATE terminal_ui)
+
+add_test(NAME shortcuts_test COMMAND consola_shortcuts_test)
+
 add_executable(consola_pty_session_test pty_session_test.cpp)
 target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 
@@ -128,16 +138,17 @@ set_tests_properties(io_loop_test PROPERTIES TIMEOUT 60)
 add_test(NAME smoke_test
     COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
             $<TARGET_FILE:terminal_app> --smoke-test)
-set_tests_properties(smoke_test PROPERTIES TIMEOUT 30)
+set(smoke_env "XDG_CONFIG_HOME=${CMAKE_BINARY_DIR}/test-config-home")
+set_tests_properties(smoke_test PROPERTIES TIMEOUT 30 ENVIRONMENT "${smoke_env}")
 
 add_test(NAME session_smoke_test
     COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
             $<TARGET_FILE:terminal_app>)
-set(session_smoke_env "SHELL=/bin/sh;CONSOLA_EXIT_AFTER_MS=500")
+set(session_smoke_env "SHELL=/bin/sh;CONSOLA_EXIT_AFTER_MS=500;${smoke_env}")
 
 if(CONSOLA_SANITIZERS)
     set(lsan_options "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tests/lsan.supp")
-    set_tests_properties(smoke_test PROPERTIES ENVIRONMENT "${lsan_options}")
+    set_tests_properties(smoke_test PROPERTIES ENVIRONMENT "${smoke_env};${lsan_options}")
     set_tests_properties(terminal_view_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(terminal_frame_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(font_metrics_test PROPERTIES ENVIRONMENT "${lsan_options}")

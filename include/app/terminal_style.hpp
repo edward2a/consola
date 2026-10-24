@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace consola {
 
@@ -41,21 +42,48 @@ inline constexpr std::array<Rgb, 16> kDefaultAnsi = {{
     {0xff, 0xff, 0xff},
 }};
 
-// Plain styling data with C++ defaults centralized from day one (DIP 2.3).
-// Stage 5 only changes where this is filled from, not the widget code.
+// Presentation/interaction defaults shared by the widget and the configuration
+// model (DIP 5.5). They live here because config.hpp includes this header, not
+// the other way round.
+inline constexpr std::string_view kDefaultFontFamily = "Inconsolata Condensed";
+inline constexpr int kDefaultFontSize = 14;
+inline constexpr std::string_view kDefaultWordChars = "-A-Za-z0-9,./?%&#:_=+@~";
+inline constexpr std::size_t kDefaultMaxPasteBytes = std::size_t{16} << 20; // 16 MiB
+inline constexpr int kDefaultScrollback = 10000;
+inline constexpr int kDefaultWheelLines = 3;
+
+// Cursor presentation (DIP 2.4, watchlist #18).
+enum class CursorShape : std::uint8_t {
+    block,
+    underline,
+    bar,
+};
+
+// Plain styling and interaction data with C++ defaults centralized from day one
+// (DIP 2.3, 5.5). Stage 5 only changes where this is filled from, not the
+// widget code.
 struct TerminalStyle {
     std::array<Rgb, 16> ansi = kDefaultAnsi; // 0-7 normal, 8-15 bright
     Rgb foreground{0xd8, 0xd8, 0xd8};
     Rgb background{0x18, 0x18, 0x18};
-    // Reserved for cursor styling (watchlist #18); the renderer currently
-    // derives cursor colours from the cell (DIP 2.4).
+    // Cursor colour; the renderer currently derives cursor colours from the
+    // cell (watchlist #18).
     Rgb cursor{0xff, 0xff, 0xff};
-    std::string font_family{"Inconsolata Condensed"};
-    int font_size = 14;
+    std::string font_family{kDefaultFontFamily};
+    int font_size = kDefaultFontSize;
     // Characters that form a word for double-click selection (DIP 2.7).
-    std::string word_chars{"-A-Za-z0-9,./?%&#:_=+@~"};
+    std::string word_chars{kDefaultWordChars};
     // Maximum encoded paste size including framing (DIP 1.7/2.8).
-    std::size_t max_paste_bytes = std::size_t{16} * 1024 * 1024;
+    std::size_t max_paste_bytes = kDefaultMaxPasteBytes;
+
+    // Interaction settings (DIP 2.6, 2.9).
+    int scrollback = kDefaultScrollback;
+    bool scrollbar = true;
+    int wheel_lines = kDefaultWheelLines;
+    bool alternate_scroll = true;
+    bool backspace_sends_delete = true;
+    CursorShape cursor_shape = CursorShape::block;
+    bool cursor_blink = true;
 };
 
 inline const TerminalStyle &default_terminal_style()

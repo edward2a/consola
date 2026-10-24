@@ -768,9 +768,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `\\`, `\"`, `\n`, `\r`, `\t`, `\xNN` escaping) so values containing YAML
   punctuation (`#`, `:`, quotes, the default `word_chars`) are safe; profile
   keys are quoted too. `save_config()` creates parent directories and reports a
-  human-readable error via `std::optional`. The model structs gained defaulted
-  `operator==` (config + layout data) so round-trip equality is checked
-  directly. New `config_writer_test` covers default and rich round trips
+  human-readable error via `std::optional`. The configuration model structs
+  gained defaulted `operator==` so round-trip equality is checked directly. New
+  `config_writer_test` covers default and rich round trips
   (including profiles, partial palette overrides and `arguments`), byte-stable
   re-serialization, special characters/escaping, and save-then-load through a
   temp file with nested directory creation; suites pass 24/24. **Luna-Six
@@ -783,3 +783,33 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   colour-only profile, empty arguments/strings, a non-default `default_profile`
   and a fully populated profile; (c) the speculative layout `operator==`s were
   removed from `layout_config.hpp` and deferred to the 5.6 change set.
+- **S5-CS4 — apply defaults and shortcuts (§5.5)**: configuration now reaches the
+  running app. `--config PATH` / `--config=PATH` override the default location
+  (`$XDG_CONFIG_HOME/consola/config.yml`, HOME fallback); a missing file keeps
+  defaults, warnings are logged, and a malformed/invalid file logs an error and
+  runs with defaults (verified end to end). `include/config/apply.hpp` resolves
+  the selected profile over `general`/`font`/`colours` into a `TerminalStyle`
+  and `SessionOptions`; profile `font` is now a partial `FontOverrides` so
+  `font: {size: …}` inherits the family (fixed a resolution bug caught by the
+  new test). `TerminalStyle` gained the interaction settings (`scrollback`,
+  `scrollbar`, `wheel_lines`, `alternate_scroll`, `backspace_sends_delete`,
+  cursor shape/blink); the shared style defaults and `CursorShape` moved to
+  `app/terminal_style.hpp` so config depends on the widget types, not the
+  reverse. `TerminalOptions` carries the resolved style into
+  `TerminalInstance`, which applies the palette, scrollback, backspace policy,
+  default cursor style and the configured outgoing limit
+  (`SessionOptions::outgoing_limit_bytes`); the widget honours the scrollbar,
+  wheel-lines and alternate-scroll settings (view metrics reserve no scrollbar
+  when disabled); `kill_timeout` comes from `general`. Shortcuts are parsed by
+  `ui/shortcuts.hpp` (`ShortcutMap`): `command_for_key()` now delegates to the
+  built-in map, the view uses the configured map, and an invalid shortcut logs a
+  warning and falls back to the default so the command stays reachable. Tests:
+  new `config_apply_test` (defaults, profile precedence, partial font, colour
+  and interaction settings) and `shortcuts_test` (defaults, overrides, named/
+  function keys, invalid fallback); smoke/session tests set `XDG_CONFIG_HOME` to
+  a non-existent build path so a developer's real config cannot affect them.
+  Debug and ASan/UBSan suites pass 26/26; format/tidy clean. Note: the default
+  shell is now `general.shell` (`/bin/sh`) instead of `$SHELL` (deliberate
+  config-driven default); the configured cursor *colour* is still carried but
+  unused by the renderer (watchlist #18, Stage 7), while cursor shape/blink are
+  applied.

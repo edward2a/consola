@@ -109,9 +109,9 @@ void test_rich_round_trip()
     CHECK(second.config.general.arguments[2] == "echo hi");
     CHECK(second.config.colours.ansi[1].r == 0x11);
     const consola::ProfileConfig &work = second.config.profiles.at("work");
-    CHECK(work.font.has_value());
-    if (work.font.has_value()) {
-        CHECK(work.font.value().size == 18);
+    CHECK(work.font.size.has_value());
+    if (work.font.size.has_value()) {
+        CHECK(work.font.size.value() == 18);
     }
     const std::optional<consola::Rgb> &green = work.colours.ansi[2];
     CHECK(green.has_value());
@@ -215,7 +215,7 @@ void test_edge_values()
     everything.term = "vt100";
     everything.colorterm = std::string{};
     everything.scrollback = 0;
-    everything.font = consola::FontConfig{.family = "Mono", .size = 9};
+    everything.font = consola::FontOverrides{.family = "Mono", .size = 9};
     everything.word_chars = "x";
     everything.bell = consola::BellMode::audible;
     everything.cursor =

@@ -16,6 +16,7 @@
 #include <app/terminal_style.hpp>
 #include <layout/layout_geometry.hpp>
 #include <ui/commands.hpp>
+#include <ui/shortcuts.hpp>
 #include <ui/terminal_widget.hpp>
 
 namespace consola {
@@ -28,7 +29,8 @@ namespace consola {
 class TerminalView : public Fl_Group {
 public:
     TerminalView(int x, int y, int w, int h, TerminalManager &manager,
-                 TerminalStyle style = default_terminal_style());
+                 TerminalStyle style = default_terminal_style(),
+                 ShortcutMap shortcuts = ShortcutMap{});
     ~TerminalView() override;
 
     TerminalView(const TerminalView &) = delete;
@@ -114,6 +116,7 @@ private:
 
     TerminalManager &manager_;
     TerminalStyle style_;
+    ShortcutMap shortcuts_;
     SessionOptions split_options_;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalWidget>> widgets_;
     // Heap-allocated so callback contexts have stable addresses.

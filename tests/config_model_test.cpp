@@ -41,7 +41,8 @@ void test_application_defaults()
     CHECK(!profile.term.has_value());
     CHECK(!profile.colorterm.has_value());
     CHECK(!profile.scrollback.has_value());
-    CHECK(!profile.font.has_value());
+    CHECK(!profile.font.family.has_value());
+    CHECK(!profile.font.size.has_value());
     CHECK(!profile.word_chars.has_value());
     CHECK(!profile.bell.has_value());
     CHECK(!profile.cursor.has_value());

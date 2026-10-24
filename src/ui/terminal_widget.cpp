@@ -213,6 +213,9 @@ void TerminalWidget::apply_font_family() const
 
 int TerminalWidget::scrollbar_width() const
 {
+    if (!style_.scrollbar) {
+        return 0;
+    }
     return std::max(4, static_cast<int>(metrics_.cell_width / 4));
 }
 
@@ -552,7 +555,7 @@ void TerminalWidget::draw_cursor()
 void TerminalWidget::draw_scrollbar()
 {
     const int lines = emulator_.scrollback_line_count();
-    if (lines <= 0) {
+    if (!style_.scrollbar || lines <= 0) {
         return;
     }
     const int bar_width = scrollbar_width();
@@ -798,13 +801,14 @@ int TerminalWidget::handle_wheel()
     }
     // On the alternate screen with reporting off, the wheel sends Up/Down keys
     // (DIP 2.9); otherwise it scrolls scrollback (Shift+wheel always scrolls).
-    if (!shift && emulator_.alternate_screen()) {
+    if (!shift && style_.alternate_scroll && emulator_.alternate_screen()) {
         KeyEvent key;
         key.keysym = Fl::event_dy() < 0 ? 0xff52U : 0xff54U; // XKB_KEY_Up / Down
         emulator_.handle_keyboard(key);
         return 1;
     }
-    emulator_.scroll_lines(Fl::event_dy() < 0 ? 3 : -3);
+    const int lines = std::max(1, style_.wheel_lines);
+    emulator_.scroll_lines(Fl::event_dy() < 0 ? lines : -lines);
     full_redraw_requested_ = true;
     redraw();
     return 1;

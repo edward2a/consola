@@ -56,7 +56,7 @@ std::optional<TerminalId> TerminalManager::create_root_terminal(TabId tab_id,
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
-    auto instance = std::make_unique<TerminalInstance>(id, options.session);
+    auto instance = std::make_unique<TerminalInstance>(id, options.session, options.style);
     instance->set_state(TerminalState::starting);
     if (!submit(*instance)) {
         return std::nullopt;
@@ -88,7 +88,7 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
         return std::nullopt;
     }
     const TerminalId id = allocate_id();
-    auto instance = std::make_unique<TerminalInstance>(id, options.session);
+    auto instance = std::make_unique<TerminalInstance>(id, options.session, options.style);
     instance->set_state(TerminalState::starting);
     if (!submit(*instance)) {
         return std::nullopt;

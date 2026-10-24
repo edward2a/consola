@@ -21,8 +21,9 @@ constexpr int kDividerGrab = 3;
 } // namespace
 
 TerminalView::TerminalView(int x, int y, int w, int h, TerminalManager &manager,
-                           TerminalStyle style)
-    : Fl_Group(x, y, w, h), manager_(manager), style_(std::move(style))
+                           TerminalStyle style, ShortcutMap shortcuts)
+    : Fl_Group(x, y, w, h), manager_(manager), style_(std::move(style)),
+      shortcuts_(std::move(shortcuts))
 {
     box(FL_NO_BOX);
     end();
@@ -45,7 +46,8 @@ TerminalView::~TerminalView()
 std::optional<TerminalId> TerminalView::start(const SessionOptions &options)
 {
     split_options_ = options;
-    const std::optional<TerminalId> id = manager_.create_root_terminal(TerminalOptions{options});
+    const std::optional<TerminalId> id =
+        manager_.create_root_terminal(TerminalOptions{.session = options, .style = style_});
     if (!id) {
         return std::nullopt;
     }
@@ -98,8 +100,8 @@ std::optional<TerminalId> TerminalView::split_focused(Orientation orientation)
     if (!focused || !can_split(*focused, orientation)) {
         return std::nullopt;
     }
-    const std::optional<TerminalId> id =
-        manager_.split_terminal(*focused, orientation, TerminalOptions{split_options_});
+    const std::optional<TerminalId> id = manager_.split_terminal(
+        *focused, orientation, TerminalOptions{.session = split_options_, .style = style_});
     if (!id) {
         return std::nullopt;
     }
@@ -186,8 +188,8 @@ bool TerminalView::execute(const CommandRequest &request)
 std::optional<TerminalId> TerminalView::new_tab()
 {
     const TabId tab = manager_.create_tab();
-    const std::optional<TerminalId> id =
-        manager_.create_root_terminal(tab, TerminalOptions{split_options_});
+    const std::optional<TerminalId> id = manager_.create_root_terminal(
+        tab, TerminalOptions{.session = split_options_, .style = style_});
     if (!id) {
         // Roll back the empty tab so a failed launch does not leave a blank tab.
         manager_.close_tab(tab);
@@ -577,7 +579,7 @@ LayoutMetrics TerminalView::metrics() const
     const FontMetrics &font = widgets_.begin()->second->metrics();
     result.cell_width = std::max(1, static_cast<int>(std::lround(font.cell_width)));
     result.cell_height = std::max(1, font.cell_height);
-    result.scrollbar_width = std::max(4, result.cell_width / 4);
+    result.scrollbar_width = style_.scrollbar ? std::max(4, result.cell_width / 4) : 0;
     result.pane_border = 0;
     result.divider_thickness = 2;
     return result;
@@ -633,7 +635,7 @@ void TerminalView::focus_callback(void *context)
 bool TerminalView::key_callback(void *context, int key, int state)
 {
     auto *self = static_cast<Context *>(context);
-    const std::optional<CommandRequest> request = command_for_key(key, state);
+    const std::optional<CommandRequest> request = self->view->shortcuts_.match(key, state);
     if (!request) {
         return false;
     }

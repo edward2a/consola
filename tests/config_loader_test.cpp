@@ -146,8 +146,9 @@ shortcuts:
     const consola::ProfileConfig &work = result.config.profiles.at("work");
     CHECK(work.shell.has_value());
     CHECK(work.shell.value() == "/bin/bash");
-    CHECK(work.font.has_value());
-    CHECK(work.font->size == 20);
+    CHECK(work.font.size.has_value());
+    CHECK(work.font.size.value() == 20);
+    CHECK(!work.font.family.has_value());
     CHECK(work.scrollback.has_value());
     CHECK(work.scrollback.value() == 100);
     CHECK(work.colours.background.has_value());

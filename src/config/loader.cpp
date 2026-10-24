@@ -373,6 +373,38 @@ bool parse_font(ryml::ConstNodeRef node, FontConfig &font, Diagnostics &diag,
     return true;
 }
 
+bool parse_font_overrides(ryml::ConstNodeRef node, FontOverrides &font, Diagnostics &diag,
+                          const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "family") {
+            std::string value;
+            if (!read_string(child, value)) {
+                return diag.fail(prefix + ".family: expected a string");
+            }
+            font.family = std::move(value);
+        } else if (key == "size") {
+            int value = 0;
+            if (!read_int(child, value)) {
+                return diag.fail(prefix + ".size: expected an integer");
+            }
+            if (!valid_font_size(value)) {
+                return diag.fail(
+                    joined({prefix, ".size: must be between ", std::to_string(kMinFontSize),
+                            " and ", std::to_string(kMaxFontSize)}));
+            }
+            font.size = value;
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    return true;
+}
+
 bool parse_colours(ryml::ConstNodeRef node, ColourConfig &colours, Diagnostics &diag,
                    const std::string &prefix)
 {
@@ -655,11 +687,9 @@ bool parse_profile(ryml::ConstNodeRef node, ProfileConfig &profile, Diagnostics 
             }
             profile.scrollback = value;
         } else if (key == "font") {
-            FontConfig value;
-            if (!parse_font(child, value, diag, prefix + ".font")) {
+            if (!parse_font_overrides(child, profile.font, diag, prefix + ".font")) {
                 return false;
             }
-            profile.font = value;
         } else if (key == "word_chars") {
             std::string value;
             if (!read_string(child, value)) {

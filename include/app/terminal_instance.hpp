@@ -135,7 +135,7 @@ private:
     bool closing_ = false;
     TerminalEmulator emulator_;
     SessionInboundQueue inbound_;
-    SessionOutboundQueue outbound_{std::size_t{1} << 20};
+    SessionOutboundQueue outbound_{options_.outgoing_limit_bytes};
     std::unique_ptr<TerminalSession> session_;
     int master_fd_ = -1;
     int exit_fd_ = -1;

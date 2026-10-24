@@ -20,11 +20,8 @@ namespace consola {
 // incompatibly; the loader rejects versions it does not understand.
 inline constexpr int kConfigVersion = 1;
 
-// Centralized defaults (DIP 5.5). Runtime and UI code read these instead of
-// repeating literals in the widget layer.
-inline constexpr int kDefaultScrollback = 10000;
-inline constexpr int kDefaultWheelLines = 3;
-inline constexpr int kDefaultFontSize = 14;
+// Configuration-only defaults (DIP 5.5). Style/interaction defaults shared with
+// the widget live in app/terminal_style.hpp.
 inline constexpr int kMinFontSize = 1;
 inline constexpr int kMaxFontSize = 512;
 inline constexpr std::size_t kDefaultOutgoingLimitBytes = std::size_t{1} << 20; // 1 MiB
@@ -34,12 +31,9 @@ inline constexpr std::size_t kMinOutgoingLimitBytes = std::size_t{32} << 10; // 
 // Upper bounds keep a mistyped value (e.g. SIZE_MAX) from driving an oversized
 // allocation or overflowing framing arithmetic; there is no unlimited setting.
 inline constexpr std::size_t kMaxOutgoingLimitBytes = std::size_t{64} << 20; // 64 MiB
-inline constexpr std::size_t kDefaultMaxPasteBytes = std::size_t{16} << 20;  // 16 MiB
 inline constexpr std::size_t kMaxMaxPasteBytes = std::size_t{256} << 20;     // 256 MiB
 inline constexpr auto kDefaultKillTimeout = std::chrono::milliseconds{2000};
 inline constexpr auto kMaxKillTimeout = std::chrono::milliseconds{600'000}; // 10 min
-inline constexpr std::string_view kDefaultFontFamily = "Inconsolata Condensed";
-inline constexpr std::string_view kDefaultWordChars = "-A-Za-z0-9,./?%&#:_=+@~";
 inline constexpr std::string_view kDefaultTerm = "xterm-256color";
 inline constexpr std::string_view kDefaultColorTerm = "truecolor";
 inline constexpr std::string_view kDefaultProfileName = "default";
@@ -50,13 +44,6 @@ enum class BellMode : std::uint8_t {
     audible,
     visual,
     both,
-};
-
-// Cursor presentation for a pane (DIP 2.4, watchlist #18).
-enum class CursorShape : std::uint8_t {
-    block,
-    underline,
-    bar,
 };
 
 struct CursorConfig {
@@ -71,6 +58,14 @@ struct FontConfig {
     int size = kDefaultFontSize;
 
     friend bool operator==(const FontConfig &, const FontConfig &) = default;
+};
+
+// Per-profile font overrides; an absent field inherits from the top-level font.
+struct FontOverrides {
+    std::optional<std::string> family;
+    std::optional<int> size;
+
+    friend bool operator==(const FontOverrides &, const FontOverrides &) = default;
 };
 
 // Fully resolved colours: 16 ANSI entries (0-7 normal, 8-15 bright) plus
@@ -131,7 +126,7 @@ struct ProfileConfig {
     std::optional<std::string> term;
     std::optional<std::string> colorterm;
     std::optional<int> scrollback;
-    std::optional<FontConfig> font;
+    FontOverrides font;
     std::optional<std::string> word_chars;
     std::optional<BellMode> bell;
     std::optional<CursorConfig> cursor;

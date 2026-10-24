@@ -17,14 +17,18 @@
 #include <app/tab.hpp>
 #include <app/tab_manager.hpp>
 #include <app/terminal_instance.hpp>
+#include <app/terminal_style.hpp>
 #include <platform/io_loop.hpp>
 #include <platform/startup.hpp>
 
 namespace consola {
 
-// Options for creating a terminal through the factory (DIP 4.3).
+// Options for creating a terminal through the factory (DIP 4.3). The style is
+// resolved from configuration at the wiring boundary and applied to both the
+// emulator (palette, scrollback, cursor) and the widget.
 struct TerminalOptions {
     SessionOptions session;
+    TerminalStyle style = default_terminal_style();
 };
 
 // Owns the application-wide startup worker and I/O loop and is the single

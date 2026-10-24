@@ -129,6 +129,19 @@ CellAttributes to_attributes(const tsm_screen_attr &attr)
     return out;
 }
 
+tsm_screen_cursor_style from_cursor_config(CursorShape shape, bool blink)
+{
+    switch (shape) {
+    case CursorShape::underline:
+        return blink ? TSM_SCREEN_CURSOR_UNDERLINE_BLINK : TSM_SCREEN_CURSOR_UNDERLINE_STEADY;
+    case CursorShape::bar:
+        return blink ? TSM_SCREEN_CURSOR_VBAR_BLINK : TSM_SCREEN_CURSOR_VBAR_STEADY;
+    case CursorShape::block:
+    default:
+        return blink ? TSM_SCREEN_CURSOR_BLOCK_BLINK : TSM_SCREEN_CURSOR_BLOCK_STEADY;
+    }
+}
+
 CursorStyle to_cursor_style(tsm_screen_cursor_style style)
 {
     switch (style) {
@@ -200,8 +213,13 @@ TerminalEmulator::TerminalEmulator(const TerminalStyle &style)
     }
     // Apply the palette before any output is fed (DIP 2.3).
     apply_palette(impl_->vte, style);
-    // Backspace sends DEL (0x7f), like xterm/VTE (DIP 2.6).
-    tsm_vte_set_backspace_sends_delete(impl_->vte, true);
+    // Backspace sends DEL (0x7f) or BS (0x08) per configuration (DIP 2.6).
+    tsm_vte_set_backspace_sends_delete(impl_->vte, style.backspace_sends_delete);
+    // Scrollback and the default cursor style come from the configuration
+    // (DIP 2.9, watchlist #18).
+    set_max_scrollback(style.scrollback);
+    tsm_screen_set_cursor_style(impl_->screen,
+                                from_cursor_config(style.cursor_shape, style.cursor_blink));
     // Window title (OSC 0/2) and a no-op bell (DIP 2.12, 2.8a).
     tsm_vte_set_osc_cb(impl_->vte, &osc_callback, impl_.get());
     tsm_vte_set_bell_cb(impl_->vte, &bell_callback, impl_.get());

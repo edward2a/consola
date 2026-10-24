@@ -88,6 +88,7 @@ add_library(terminal_core STATIC
     src/app/tab.cpp
     src/app/tab_manager.cpp
     src/app/terminal_instance.cpp
+    src/config/apply.cpp
     src/config/config.cpp
     src/config/loader.cpp
     src/config/writer.cpp
@@ -162,6 +163,7 @@ add_library(terminal_ui STATIC
     src/ui/commands.cpp
     src/ui/font_name.cpp
     src/ui/key_translator.cpp
+    src/ui/shortcuts.cpp
     src/ui/tab_bar.cpp
     src/ui/terminal_frame.cpp
     src/ui/terminal_view.cpp

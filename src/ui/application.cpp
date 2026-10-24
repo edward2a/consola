@@ -18,8 +18,12 @@
 #include <app/log.hpp>
 #include <app/session.hpp>
 #include <app/terminal_manager.hpp>
+#include <app/terminal_style.hpp>
+#include <config/apply.hpp>
+#include <config/loader.hpp>
 #include <consola_dejavu_sans_mono.hpp>
 #include <ui/fonts.hpp>
+#include <ui/shortcuts.hpp>
 #include <ui/terminal_frame.hpp>
 #include <ui/terminal_view.hpp>
 #include <ui/terminal_widget.hpp>
@@ -172,12 +176,12 @@ void register_embedded_font(FcConfig *config)
     }
 }
 
-int run_smoke_test(int argc, char **argv, Fl_Window &window)
+int run_smoke_test(int argc, char **argv, Fl_Window &window, const ApplicationConfig &config)
 {
-    TerminalEmulator emulator;
-    emulator.set_max_scrollback(10000);
+    const TerminalStyle style = resolve_terminal_style(config);
+    TerminalEmulator emulator(style);
 
-    TerminalWidget terminal(0, 0, 640, 400, emulator);
+    TerminalWidget terminal(0, 0, 640, 400, emulator, style);
     window.resizable(terminal);
     window.end();
     window.show(argc, argv);
@@ -204,12 +208,16 @@ int run_smoke_test(int argc, char **argv, Fl_Window &window)
     return EXIT_SUCCESS;
 }
 
-int run_session(int argc, char **argv, Fl_Window &window)
+int run_session(int argc, char **argv, Fl_Window &window, const ApplicationConfig &config)
 {
-    TerminalManager manager;
+    const TerminalStyle style = resolve_terminal_style(config);
+    const SessionOptions session = resolve_session_options(config);
+    const ShortcutMap shortcuts(config.shortcuts);
+
+    TerminalManager manager(nullptr, nullptr, config.general.kill_timeout);
     manager.start();
 
-    TerminalFrame frame(0, 0, window.w(), window.h(), manager);
+    TerminalFrame frame(0, 0, window.w(), window.h(), manager, style, shortcuts);
     window.resizable(frame);
     window.end();
     window.show(argc, argv);
@@ -219,10 +227,7 @@ int run_session(int argc, char **argv, Fl_Window &window)
         return EXIT_FAILURE;
     }
 
-    SessionOptions options;
-    const char *shell = std::getenv("SHELL");
-    options.executable = (shell != nullptr && shell[0] != '\0') ? shell : "/bin/sh";
-    if (!frame.view().start(options)) {
+    if (!frame.view().start(session)) {
         log(LogLevel::Error, "failed to create the initial terminal");
         manager.shutdown();
         return EXIT_FAILURE;
@@ -282,15 +287,25 @@ void register_application_fonts()
     log(LogLevel::Warning, "bundled font not found or could not be registered");
 }
 
-int run_application(int argc, char **argv, bool smoke_test)
+int run_application(int argc, char **argv, bool smoke_test,
+                    const std::optional<std::filesystem::path> &config_path)
 {
     register_application_fonts();
 
+    const std::filesystem::path path = config_path.value_or(default_config_path());
+    const ConfigLoadResult loaded = load_config(path);
+    for (const std::string &warning : loaded.warnings) {
+        log(LogLevel::Warning, "configuration: " + warning);
+    }
+    if (loaded.error.has_value()) {
+        log(LogLevel::Error, "configuration: " + loaded.error.value() + " (using defaults)");
+    }
+
     Fl_Window window(640, 400, "consola");
     if (smoke_test) {
-        return run_smoke_test(argc, argv, window);
+        return run_smoke_test(argc, argv, window, loaded.config);
     }
-    return run_session(argc, argv, window);
+    return run_session(argc, argv, window, loaded.config);
 }
 
 } // namespace consola

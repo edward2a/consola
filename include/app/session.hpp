@@ -32,6 +32,9 @@ struct SessionOptions {
     std::string colorterm = "truecolor";
     bool login_shell = false;
     bool drain_output_on_close = false;
+    // Outgoing queue + in-flight/deferred encoded bytes (DIP 1.7). The I/O loop
+    // keeps a control reserve inside this limit.
+    std::size_t outgoing_limit_bytes = std::size_t{1} << 20;
 };
 
 class TerminalSession {
