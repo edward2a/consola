@@ -41,7 +41,7 @@ void test_defaults()
     CHECK(style.cursor_blink == config.general.cursor.blink);
 
     const consola::SessionOptions session = consola::resolve_session_options(config);
-    CHECK(session.executable == config.general.shell);
+    CHECK(!session.executable.empty());
     CHECK(session.arguments == config.general.arguments);
     CHECK(session.working_directory == config.general.working_directory);
     CHECK(session.login_shell == config.general.login_shell);
@@ -53,6 +53,7 @@ void test_defaults()
 
 void test_profile_overrides()
 {
+    unsetenv("SHELL");
     const char *yaml = R"(version: 1
 general:
   shell: /bin/sh
@@ -73,6 +74,7 @@ profiles:
   work:
     shell: /bin/zsh
     scrollback: 50
+    bell: visual
     font:
       size: 18
     cursor:
@@ -82,6 +84,9 @@ profiles:
       background: "#000000"
       palette:
         red: "#ff0000"
+  blink_only:
+    cursor:
+      blink: false
 )";
 
     const consola::ConfigLoadResult loaded = consola::parse_config(yaml);
@@ -100,6 +105,13 @@ profiles:
     CHECK(style.background.r == 0x00); // overridden
     CHECK(style.ansi[1].r == 0xff);    // palette override
     CHECK(style.ansi[0] == consola::kDefaultAnsi[0]);
+    CHECK(style.bell == consola::BellMode::visual);
+
+    // A profile that overrides only blink inherits the general shape.
+    const consola::TerminalStyle blink_only =
+        consola::resolve_terminal_style(loaded.config, "blink_only");
+    CHECK(blink_only.cursor_shape == consola::CursorShape::block);
+    CHECK(!blink_only.cursor_blink);
 
     const consola::SessionOptions session = consola::resolve_session_options(loaded.config);
     CHECK(session.executable == "/bin/zsh");
@@ -137,6 +149,20 @@ general:
     CHECK(style.max_paste_bytes == 1024);
 }
 
+void test_environment_shell()
+{
+    const consola::ApplicationConfig config = consola::default_application_config();
+    CHECK(config.general.shell.empty());
+
+    setenv("SHELL", "/bin/consola-test-shell", 1);
+    const consola::SessionOptions from_env = consola::resolve_session_options(config);
+    CHECK(from_env.executable == "/bin/consola-test-shell");
+
+    unsetenv("SHELL");
+    const consola::SessionOptions fallback = consola::resolve_session_options(config);
+    CHECK(fallback.executable == "/bin/sh");
+}
+
 } // namespace
 
 int main()
@@ -144,6 +170,7 @@ int main()
     test_defaults();
     test_profile_overrides();
     test_style_interaction_settings();
+    test_environment_shell();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);

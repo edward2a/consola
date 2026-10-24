@@ -56,7 +56,7 @@ digits only.
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `shell` | string | `/bin/sh` | Program launched in a new pane. |
+| `shell` | string | `$SHELL` (or `/bin/sh`) | Program launched in a new pane; empty uses `$SHELL`. |
 | `arguments` | list of string | `[]` | Extra argv passed to `shell`. |
 | `working_directory` | string | inherited | Start directory; empty means the process CWD. |
 | `login_shell` | bool | `false` | Launch the shell as a login shell. |
@@ -67,7 +67,7 @@ digits only.
 | `wheel_lines` | integer > 0 | `3` | Lines scrolled per wheel notch. |
 | `alternate_scroll` | bool | `true` | Wheel sends arrow keys on the alternate screen. |
 | `backspace_sends_delete` | bool | `true` | Send DEL (0x7f) instead of BS (0x08). |
-| `bell` | string | `none` | One of `none`, `audible`, `visual`, `both`. |
+| `bell` | string | `none` | One of `none`, `audible`, `visual`, `both` (applied in Stage 6; currently a no-op). |
 | `cursor` | map | see below | Cursor shape and blink. |
 | `word_chars` | string | `-A-Za-z0-9,./?%&#:_=+@~` | Characters that form a word for double-click selection. |
 | `kill_timeout_ms` | integer, 1–600000 | `2000` | SIGHUP → SIGKILL delay. |
@@ -150,6 +150,9 @@ Modifiers are `Ctrl`, `Shift` and `Alt`. Key names use FLTK/`X` names
 | `resize_up` | `Ctrl+Shift+Up` |
 | `resize_down` | `Ctrl+Shift+Down` |
 | `cancel_paste` | `Escape` |
+
+`cancel_paste` is parsed and reserved for the streaming-paste transport, which is
+deferred until after the application is complete; it has no effect yet.
 
 ## Example
 

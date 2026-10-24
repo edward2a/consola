@@ -177,6 +177,23 @@ void append_cursor(std::string &out, const CursorConfig &cursor, int indent)
     append_line(out, indent + 1, std::string{"blink: "} + std::string{bool_text(cursor.blink)});
 }
 
+void append_cursor_overrides(std::string &out, const CursorOverrides &cursor, int indent)
+{
+    if (!cursor.shape.has_value() && !cursor.blink.has_value()) {
+        append_line(out, indent, "cursor: {}");
+        return;
+    }
+    append_line(out, indent, "cursor:");
+    if (cursor.shape.has_value()) {
+        append_line(out, indent + 1,
+                    std::string{"shape: "} + std::string{cursor_shape_text(cursor.shape.value())});
+    }
+    if (cursor.blink.has_value()) {
+        append_line(out, indent + 1,
+                    std::string{"blink: "} + std::string{bool_text(cursor.blink.value())});
+    }
+}
+
 void append_general(std::string &out, const GeneralConfig &general)
 {
     append_line(out, 0, "general:");
@@ -288,8 +305,8 @@ bool is_empty_profile(const ProfileConfig &profile)
            !profile.working_directory.has_value() && !profile.login_shell.has_value() &&
            !profile.term.has_value() && !profile.colorterm.has_value() &&
            !profile.scrollback.has_value() && font_empty && !profile.word_chars.has_value() &&
-           !profile.bell.has_value() && !profile.cursor.has_value() &&
-           !has_colour_overrides(profile.colours);
+           !profile.bell.has_value() && !profile.cursor.shape.has_value() &&
+           !profile.cursor.blink.has_value() && !has_colour_overrides(profile.colours);
 }
 
 void append_profile(std::string &out, const std::string &name, const ProfileConfig &profile)
@@ -331,8 +348,8 @@ void append_profile(std::string &out, const std::string &name, const ProfileConf
     if (profile.bell.has_value()) {
         append_line(out, 2, std::string{"bell: "} + std::string{bell_text(profile.bell.value())});
     }
-    if (profile.cursor.has_value()) {
-        append_cursor(out, profile.cursor.value(), 2);
+    if (profile.cursor.shape.has_value() || profile.cursor.blink.has_value()) {
+        append_cursor_overrides(out, profile.cursor, 2);
     }
     if (has_colour_overrides(profile.colours)) {
         append_colour_overrides(out, profile.colours, 2);

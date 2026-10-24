@@ -183,6 +183,28 @@ ShortcutMap::ShortcutMap(const ShortcutConfig &config)
          FocusDirection::up);
     bind("resize_down", config.resize_down, defaults.resize_down, Command::ResizePane,
          FocusDirection::down);
+
+    // Validate and carry the cancel-paste binding; the action belongs to the
+    // deferred streaming-paste transport.
+    std::optional<ParsedShortcut> cancel = parse_shortcut(config.cancel_paste);
+    if (!cancel.has_value()) {
+        log(LogLevel::Warning,
+            "invalid shortcut 'cancel_paste': '" + config.cancel_paste + "' (using default)");
+        cancel = parse_shortcut(defaults.cancel_paste);
+    }
+    if (cancel.has_value()) {
+        cancel_paste_key_ = cancel->key;
+        cancel_paste_modifiers_ = cancel->modifiers;
+    }
+}
+
+bool ShortcutMap::is_cancel_paste(int key, int state) const
+{
+    if (!cancel_paste_key_.has_value()) {
+        return false;
+    }
+    const int modifiers = state & (FL_CTRL | FL_SHIFT | FL_ALT);
+    return modifiers == cancel_paste_modifiers_ && keys_equal(cancel_paste_key_.value(), key);
 }
 
 std::optional<CommandRequest> ShortcutMap::match(int key, int state) const

@@ -23,6 +23,11 @@ public:
 
     [[nodiscard]] std::optional<CommandRequest> match(int key, int state) const;
 
+    // The configured cancel-paste binding, reserved for the deferred streaming-
+    // paste transport (DIP 1.7). Parsed/validated here so a mistyped value is
+    // reported now; the action is wired with streaming paste.
+    [[nodiscard]] bool is_cancel_paste(int key, int state) const;
+
 private:
     struct Binding {
         int key = 0;
@@ -34,6 +39,8 @@ private:
               Command command, FocusDirection direction);
 
     std::vector<Binding> bindings_;
+    std::optional<int> cancel_paste_key_;
+    int cancel_paste_modifiers_ = 0;
 };
 
 } // namespace consola

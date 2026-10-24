@@ -45,7 +45,8 @@ void test_application_defaults()
     CHECK(!profile.font.size.has_value());
     CHECK(!profile.word_chars.has_value());
     CHECK(!profile.bell.has_value());
-    CHECK(!profile.cursor.has_value());
+    CHECK(!profile.cursor.shape.has_value());
+    CHECK(!profile.cursor.blink.has_value());
     CHECK(!profile.colours.foreground.has_value());
     CHECK(!profile.colours.background.has_value());
     CHECK(!profile.colours.cursor.has_value());
@@ -58,7 +59,7 @@ void test_general_defaults()
 {
     const consola::GeneralConfig general = consola::default_application_config().general;
 
-    CHECK(general.shell == "/bin/sh");
+    CHECK(general.shell.empty());
     CHECK(general.arguments.empty());
     CHECK(general.working_directory.empty());
     CHECK(!general.login_shell);

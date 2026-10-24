@@ -341,6 +341,42 @@ bool parse_cursor(ryml::ConstNodeRef node, CursorConfig &cursor, Diagnostics &di
     return true;
 }
 
+bool parse_cursor_overrides(ryml::ConstNodeRef node, CursorOverrides &cursor, Diagnostics &diag,
+                            const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "shape") {
+            std::string text;
+            if (!read_string(child, text)) {
+                return diag.fail(prefix + ".shape: expected a string");
+            }
+            const std::string value = lower_copy(text);
+            if (value == "block") {
+                cursor.shape = CursorShape::block;
+            } else if (value == "underline") {
+                cursor.shape = CursorShape::underline;
+            } else if (value == "bar") {
+                cursor.shape = CursorShape::bar;
+            } else {
+                return diag.fail(prefix + ".shape: expected block, underline or bar");
+            }
+        } else if (key == "blink") {
+            bool value = false;
+            if (!read_bool(child, value)) {
+                return diag.fail(prefix + ".blink: expected true or false");
+            }
+            cursor.blink = value;
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    return true;
+}
+
 bool parse_font(ryml::ConstNodeRef node, FontConfig &font, Diagnostics &diag,
                 const std::string &prefix)
 {
@@ -703,11 +739,9 @@ bool parse_profile(ryml::ConstNodeRef node, ProfileConfig &profile, Diagnostics 
             }
             profile.bell = value;
         } else if (key == "cursor") {
-            CursorConfig value;
-            if (!parse_cursor(child, value, diag, prefix + ".cursor")) {
+            if (!parse_cursor_overrides(child, profile.cursor, diag, prefix + ".cursor")) {
                 return false;
             }
-            profile.cursor = value;
         } else if (key == "colours") {
             if (!parse_colour_overrides(child, profile.colours, diag, prefix + ".colours")) {
                 return false;

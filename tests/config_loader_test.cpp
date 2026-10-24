@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -21,12 +23,14 @@ int g_failures = 0;
 
 bool contains(const std::vector<std::string> &list, const std::string &needle)
 {
-    for (const std::string &entry : list) {
-        if (entry.find(needle) != std::string::npos) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(list, [&needle](const std::string &entry) {
+        return entry.find(needle) != std::string::npos;
+    });
+}
+
+bool error_contains(const consola::ConfigLoadResult &result, const std::string &needle)
+{
+    return result.error.has_value() && result.error.value().find(needle) != std::string::npos;
 }
 
 void test_empty_document()
@@ -49,7 +53,7 @@ void test_missing_file()
         consola::load_config("/nonexistent/consola/does-not-exist.yml");
     CHECK(result.ok());
     CHECK(result.warnings.empty());
-    CHECK(result.config.general.shell == "/bin/sh");
+    CHECK(result.config.general.shell.empty());
 }
 
 void test_valid_config()
@@ -103,8 +107,8 @@ shortcuts:
 
     const consola::ConfigLoadResult result = consola::parse_config(yaml);
     CHECK(result.ok());
-    if (!result.ok()) {
-        std::fprintf(stderr, "unexpected error: %s\n", result.error->c_str());
+    if (result.error.has_value()) {
+        std::fprintf(stderr, "unexpected error: %s\n", result.error.value().c_str());
         return;
     }
     CHECK(result.warnings.empty());
@@ -145,16 +149,28 @@ shortcuts:
     CHECK(result.config.profiles.contains("work"));
     const consola::ProfileConfig &work = result.config.profiles.at("work");
     CHECK(work.shell.has_value());
-    CHECK(work.shell.value() == "/bin/bash");
+    if (work.shell.has_value()) {
+        CHECK(work.shell.value() == "/bin/bash");
+    }
     CHECK(work.font.size.has_value());
-    CHECK(work.font.size.value() == 20);
+    if (work.font.size.has_value()) {
+        CHECK(work.font.size.value() == 20);
+    }
     CHECK(!work.font.family.has_value());
     CHECK(work.scrollback.has_value());
-    CHECK(work.scrollback.value() == 100);
-    CHECK(work.colours.background.has_value());
-    CHECK(work.colours.background->r == 0x10);
-    CHECK(work.colours.ansi[2].has_value());
-    CHECK(work.colours.ansi[2]->g == 0xff);
+    if (work.scrollback.has_value()) {
+        CHECK(work.scrollback.value() == 100);
+    }
+    const std::optional<consola::Rgb> &background = work.colours.background;
+    CHECK(background.has_value());
+    if (background.has_value()) {
+        CHECK(background.value().r == 0x10);
+    }
+    const std::optional<consola::Rgb> &green = work.colours.ansi[2];
+    CHECK(green.has_value());
+    if (green.has_value()) {
+        CHECK(green.value().g == 0xff);
+    }
     CHECK(!work.colours.ansi[1].has_value());
 
     CHECK(result.config.shortcuts.new_tab == "Ctrl+Shift+N");
@@ -177,7 +193,7 @@ void test_conversion_error()
     const consola::ConfigLoadResult result =
         consola::parse_config("version: 1\ngeneral:\n  scrollback: not-a-number\n");
     CHECK(!result.ok());
-    CHECK(result.error->find("general.scrollback") != std::string::npos);
+    CHECK(error_contains(result, "general.scrollback"));
     CHECK(result.config.general.scrollback == consola::kDefaultScrollback);
 }
 
@@ -251,11 +267,11 @@ void test_version_handling()
 {
     const consola::ConfigLoadResult missing = consola::parse_config("general:\n  scrollback: 1\n");
     CHECK(!missing.ok());
-    CHECK(missing.error->find("version") != std::string::npos);
+    CHECK(error_contains(missing, "version"));
 
     const consola::ConfigLoadResult future = consola::parse_config("version: 2\n");
     CHECK(!future.ok());
-    CHECK(future.error->find("version") != std::string::npos);
+    CHECK(error_contains(future, "version"));
 }
 
 void test_default_profile()
@@ -264,7 +280,7 @@ void test_default_profile()
     const consola::ConfigLoadResult missing =
         consola::parse_config("version: 1\ndefault_profile: absent\n");
     CHECK(!missing.ok());
-    CHECK(missing.error->find("default_profile") != std::string::npos);
+    CHECK(error_contains(missing, "default_profile"));
 
     // The built-in default profile is created when the file omits it.
     const consola::ConfigLoadResult created =
@@ -282,7 +298,7 @@ void test_root_must_be_map()
     // An explicit empty map is still a document and must carry a version.
     const consola::ConfigLoadResult empty_map = consola::parse_config("{}");
     CHECK(!empty_map.ok());
-    CHECK(empty_map.error->find("version") != std::string::npos);
+    CHECK(error_contains(empty_map, "version"));
 }
 
 void test_string_lifetime()
@@ -297,7 +313,11 @@ void test_string_lifetime()
     CHECK(result.ok());
     CHECK(result.config.general.term == "my-term");
     CHECK(result.config.profiles.contains("p1"));
-    CHECK(result.config.profiles.at("p1").shell.value() == "/bin/zsh");
+    const consola::ProfileConfig &p1 = result.config.profiles.at("p1");
+    CHECK(p1.shell.has_value());
+    if (p1.shell.has_value()) {
+        CHECK(p1.shell.value() == "/bin/zsh");
+    }
 }
 
 void test_default_config_path()
@@ -311,8 +331,8 @@ void test_shipped_example()
 {
     const consola::ConfigLoadResult result = consola::load_config(CONSOLA_EXAMPLE_CONFIG);
     CHECK(result.ok());
-    if (!result.ok()) {
-        std::fprintf(stderr, "example error: %s\n", result.error->c_str());
+    if (result.error.has_value()) {
+        std::fprintf(stderr, "example error: %s\n", result.error.value().c_str());
         return;
     }
     CHECK(result.warnings.empty());
@@ -325,20 +345,25 @@ void test_shipped_example()
 
 int main()
 {
-    test_empty_document();
-    test_missing_file();
-    test_valid_config();
-    test_malformed_yaml();
-    test_conversion_error();
-    test_unknown_keys();
-    test_scalar_types_and_overflow();
-    test_invalid_values();
-    test_version_handling();
-    test_default_profile();
-    test_root_must_be_map();
-    test_string_lifetime();
-    test_default_config_path();
-    test_shipped_example();
+    try {
+        test_empty_document();
+        test_missing_file();
+        test_valid_config();
+        test_malformed_yaml();
+        test_conversion_error();
+        test_unknown_keys();
+        test_scalar_types_and_overflow();
+        test_invalid_values();
+        test_version_handling();
+        test_default_profile();
+        test_root_must_be_map();
+        test_string_lifetime();
+        test_default_config_path();
+        test_shipped_example();
+    } catch (const std::exception &exception) {
+        std::fprintf(stderr, "unexpected exception: %s\n", exception.what());
+        return EXIT_FAILURE;
+    }
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", g_failures);

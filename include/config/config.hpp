@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-#include <app/terminal_style.hpp>
+#include <app/visual.hpp>
 
 namespace consola {
 
@@ -38,19 +38,19 @@ inline constexpr std::string_view kDefaultTerm = "xterm-256color";
 inline constexpr std::string_view kDefaultColorTerm = "truecolor";
 inline constexpr std::string_view kDefaultProfileName = "default";
 
-// Bell behaviour (DIP 6.2); "none" matches the v1 no-op.
-enum class BellMode : std::uint8_t {
-    none,
-    audible,
-    visual,
-    both,
-};
-
 struct CursorConfig {
     CursorShape shape = CursorShape::block;
     bool blink = true;
 
     friend bool operator==(const CursorConfig &, const CursorConfig &) = default;
+};
+
+// Per-profile cursor overrides; an absent field inherits from `general.cursor`.
+struct CursorOverrides {
+    std::optional<CursorShape> shape;
+    std::optional<bool> blink;
+
+    friend bool operator==(const CursorOverrides &, const CursorOverrides &) = default;
 };
 
 struct FontConfig {
@@ -94,7 +94,9 @@ struct ColourOverrides {
 // scrollback, word characters, bell, cursor, colours) can be overridden per
 // profile; the rest are global.
 struct GeneralConfig {
-    std::string shell = "/bin/sh";
+    // Empty means "the user's login shell" ($SHELL, or /bin/sh when unset);
+    // resolved at the wiring boundary so the model stays environment-free.
+    std::string shell;
     std::vector<std::string> arguments;
     std::string working_directory;
     bool login_shell = false;
@@ -129,7 +131,7 @@ struct ProfileConfig {
     FontOverrides font;
     std::optional<std::string> word_chars;
     std::optional<BellMode> bell;
-    std::optional<CursorConfig> cursor;
+    CursorOverrides cursor;
     ColourOverrides colours;
 
     friend bool operator==(const ProfileConfig &, const ProfileConfig &) = default;

@@ -219,7 +219,7 @@ void test_edge_values()
     everything.word_chars = "x";
     everything.bell = consola::BellMode::audible;
     everything.cursor =
-        consola::CursorConfig{.shape = consola::CursorShape::underline, .blink = false};
+        consola::CursorOverrides{.shape = consola::CursorShape::underline, .blink = false};
     everything.colours.background = consola::Rgb{0, 0, 1};
     full.profiles.emplace("everything", everything);
     CHECK(round_trips(full));

@@ -808,8 +808,20 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   and interaction settings) and `shortcuts_test` (defaults, overrides, named/
   function keys, invalid fallback); smoke/session tests set `XDG_CONFIG_HOME` to
   a non-existent build path so a developer's real config cannot affect them.
-  Debug and ASan/UBSan suites pass 26/26; format/tidy clean. Note: the default
-  shell is now `general.shell` (`/bin/sh`) instead of `$SHELL` (deliberate
-  config-driven default); the configured cursor *colour* is still carried but
-  unused by the renderer (watchlist #18, Stage 7), while cursor shape/blink are
-  applied.
+  Debug and ASan/UBSan suites pass 26/26; format/tidy clean. Note:
+  `general.shell` defaults to empty, meaning the user's `$SHELL` (or `/bin/sh`
+  when unset), resolved at the wiring boundary; the configured cursor *colour*
+  is still carried but unused by the renderer (watchlist #18, Stage 7), while
+  cursor shape/blink are applied. **Luna-Six review: FAIL**, resolved here:
+  (a) `cancel_paste` is now parsed/validated and carried via
+  `ShortcutMap::is_cancel_paste()`; the action remains with the explicitly
+  deferred streaming-paste transport; (b) the bell setting is resolved into
+  `TerminalStyle::bell` (the audible/visual action is Stage 6, DIP 6.2);
+  (c) profile cursor settings are a partial `CursorOverrides`, so a
+  `blink`-only override inherits the general shape (test added); (d) `$SHELL`
+  is honored when `general.shell` is empty, with a `/bin/sh` fallback (test
+  added), restoring the prior startup behavior; (e) shared value types and
+  defaults moved to `include/app/visual.hpp`, so `config.hpp` no longer depends
+  on the presentation header; (f) `config_cli_test` runs the app with `--config`
+  and a non-existent shell, proving the file reaches the session (the launch
+  fails, so the app exits non-zero). Debug and ASan/UBSan suites pass 27/27.

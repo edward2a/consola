@@ -65,6 +65,9 @@ void test_defaults()
     CHECK(!map.match('t', FL_CTRL).has_value());
     CHECK(!map.match(FL_Left, FL_CTRL).has_value());
     CHECK(!map.match('t', ctrl_shift | FL_ALT).has_value());
+
+    CHECK(map.is_cancel_paste(FL_Escape, 0));
+    CHECK(!map.is_cancel_paste(FL_Escape, FL_CTRL));
 }
 
 void test_overrides()
@@ -74,6 +77,7 @@ void test_overrides()
     config.focus_left = "Alt+H";
     config.close_tab = "F4";
     config.split_vertical = "Ctrl+Alt+E";
+    config.cancel_paste = "Ctrl+G";
     const ShortcutMap map(config);
 
     check_match(map, 'n', FL_CTRL | FL_SHIFT, Command::NewTab, FocusDirection::left);
@@ -86,6 +90,8 @@ void test_overrides()
 
     // Unchanged defaults still apply.
     check_match(map, 'w', FL_CTRL | FL_SHIFT, Command::ClosePane, FocusDirection::left);
+    CHECK(map.is_cancel_paste('g', FL_CTRL));
+    CHECK(!map.is_cancel_paste(FL_Escape, 0));
 }
 
 void test_invalid_falls_back()

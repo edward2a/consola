@@ -2,6 +2,8 @@
 
 #include <config/apply.hpp>
 
+#include <cstdlib>
+#include <string>
 #include <utility>
 
 namespace consola {
@@ -14,6 +16,16 @@ const ProfileConfig *find_profile(const ApplicationConfig &config, const std::st
     return entry == config.profiles.end() ? nullptr : &entry->second;
 }
 
+// `general.shell` defaults to empty, meaning "the user's login shell". Reading
+// the environment here (the wiring boundary) keeps the config model pure.
+std::string environment_shell()
+{
+    if (const char *shell = std::getenv("SHELL"); shell != nullptr && shell[0] != '\0') {
+        return shell;
+    }
+    return "/bin/sh";
+}
+
 } // namespace
 
 TerminalStyle resolve_terminal_style(const ApplicationConfig &config, const std::string &profile)
@@ -23,6 +35,7 @@ TerminalStyle resolve_terminal_style(const ApplicationConfig &config, const std:
     std::string word_chars = config.general.word_chars;
     int scrollback = config.general.scrollback;
     CursorConfig cursor = config.general.cursor;
+    BellMode bell = config.general.bell;
 
     if (const ProfileConfig *overrides = find_profile(config, profile)) {
         apply_colour_overrides(colours, overrides->colours);
@@ -38,8 +51,14 @@ TerminalStyle resolve_terminal_style(const ApplicationConfig &config, const std:
         if (overrides->scrollback.has_value()) {
             scrollback = overrides->scrollback.value();
         }
-        if (overrides->cursor.has_value()) {
-            cursor = overrides->cursor.value();
+        if (overrides->cursor.shape.has_value()) {
+            cursor.shape = overrides->cursor.shape.value();
+        }
+        if (overrides->cursor.blink.has_value()) {
+            cursor.blink = overrides->cursor.blink.value();
+        }
+        if (overrides->bell.has_value()) {
+            bell = overrides->bell.value();
         }
     }
 
@@ -59,6 +78,7 @@ TerminalStyle resolve_terminal_style(const ApplicationConfig &config, const std:
     style.backspace_sends_delete = config.general.backspace_sends_delete;
     style.cursor_shape = cursor.shape;
     style.cursor_blink = cursor.blink;
+    style.bell = bell;
     return style;
 }
 
@@ -93,6 +113,9 @@ SessionOptions resolve_session_options(const ApplicationConfig &config, const st
         if (overrides->colorterm.has_value()) {
             options.colorterm = overrides->colorterm.value();
         }
+    }
+    if (options.executable.empty()) {
+        options.executable = environment_shell();
     }
     return options;
 }
