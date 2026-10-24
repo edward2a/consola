@@ -822,6 +822,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   is honored when `general.shell` is empty, with a `/bin/sh` fallback (test
   added), restoring the prior startup behavior; (e) shared value types and
   defaults moved to `include/app/visual.hpp`, so `config.hpp` no longer depends
-  on the presentation header; (f) `config_cli_test` runs the app with `--config`
-  and a non-existent shell, proving the file reaches the session (the launch
-  fails, so the app exits non-zero). Debug and ASan/UBSan suites pass 27/27.
+  on the presentation header; (f) `config_cli_test` runs the app through
+  `helper-scripts/config-cli-test.sh` with `--config` and a non-existent shell,
+  pinning `SHELL=/bin/sh` and asserting both a non-zero exit and the specific
+  exec-failure message, so a wrapper/Xvfb failure cannot masquerade as success.
+  Debug and ASan/UBSan suites pass 27/27.

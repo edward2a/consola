@@ -159,21 +159,21 @@ set_tests_properties(session_smoke_test PROPERTIES
     TIMEOUT 30
     ENVIRONMENT "${session_smoke_env}")
 
-# End-to-end: a --config file must reach the session. A non-existent shell is a
-# valid, quick way to observe that the configured value was used (the launch
-# fails, so the app exits non-zero; with the default shell it would exit 0).
+# End-to-end: a --config file must reach the session. The helper script runs the
+# app with a config whose shell does not exist, pins SHELL=/bin/sh (so the
+# default would exit 0), and asserts both a non-zero exit and the specific
+# exec-failure message; a wrapper/Xvfb failure cannot masquerade as success.
 set(cli_config_dir "${CMAKE_BINARY_DIR}/test-config")
 file(MAKE_DIRECTORY "${cli_config_dir}")
 file(WRITE "${cli_config_dir}/bad-shell.yml"
     "version: 1\ngeneral:\n  shell: /nonexistent/consola-test-shell\n")
 add_test(NAME config_cli_test
-    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
-            $<TARGET_FILE:terminal_app> --config "${cli_config_dir}/bad-shell.yml")
-set(config_cli_env "XDG_CONFIG_HOME=${CMAKE_BINARY_DIR}/test-config-home;CONSOLA_EXIT_AFTER_MS=500")
+    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/config-cli-test.sh
+            $<TARGET_FILE:terminal_app> "${cli_config_dir}/bad-shell.yml")
+set(config_cli_env "XDG_CONFIG_HOME=${CMAKE_BINARY_DIR}/test-config-home")
 if(CONSOLA_SANITIZERS)
     set(config_cli_env "${config_cli_env};${lsan_options}")
 endif()
 set_tests_properties(config_cli_test PROPERTIES
     TIMEOUT 30
-    WILL_FAIL TRUE
     ENVIRONMENT "${config_cli_env}")
