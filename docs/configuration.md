@@ -29,8 +29,10 @@ overridden by a profile: `shell`, `arguments`, `working_directory`,
 `login_shell`, `term`, `colorterm`, `scrollback`, `font`, `word_chars`, `bell`,
 `cursor` and `colours`. Everything else in `general` is application-wide.
 
-`default_profile` (default `default`) names the profile new panes use; the
-`default` profile always exists, even when the file does not define it.
+`default_profile` (default `default`) names the profile new panes use. It must
+name a profile that exists in `profiles`; the built-in `default` profile always
+exists, even when the file does not define it. A `default_profile` naming a
+missing profile is an error.
 
 Unknown keys are reported as warnings and ignored. Invalid values are errors.
 
@@ -64,10 +66,10 @@ Unknown keys are reported as warnings and ignored. Invalid values are errors.
 | `bell` | string | `none` | One of `none`, `audible`, `visual`, `both`. |
 | `cursor` | map | see below | Cursor shape and blink. |
 | `word_chars` | string | `-A-Za-z0-9,./?%&#:_=+@~` | Characters that form a word for double-click selection. |
-| `kill_timeout_ms` | integer > 0 | `2000` | SIGHUP → SIGKILL delay. |
+| `kill_timeout_ms` | integer, 1–600000 | `2000` | SIGHUP → SIGKILL delay. |
 | `drain_output_on_close` | bool | `false` | Keep draining output after an explicit close. |
-| `outgoing_limit_bytes` | integer ≥ 32768 | `1048576` | Outgoing queue + in-flight limit. |
-| `max_paste_bytes` | integer > 0 | `16777216` | Largest encoded paste, framing included. |
+| `outgoing_limit_bytes` | integer, 32768–67108864 | `1048576` | Outgoing queue + in-flight limit. |
+| `max_paste_bytes` | integer, 1–268435456 | `16777216` | Largest encoded paste, framing included. |
 
 `cursor` keys: `shape` (`block`, `underline`, `bar`; default `block`) and
 `blink` (bool, default `true`).
@@ -97,8 +99,10 @@ The palette uses the 16 ANSI colour names; each is a `#rrggbb` string.
 
 ## `profiles.<name>`
 
-A profile may set any of the per-pane keys listed under [Precedence](#precedence),
-with the same shapes as `general`/`font`/`colours`:
+A profile may set any of the per-pane keys listed under [Precedence](#precedence).
+`font`, `cursor` and `colours` are maps with the same shape as their top-level
+(`font`, `colours`) or `general.cursor` counterparts; the remaining keys are
+scalars or lists with the same shape as in `general`:
 
 ```yaml
 profiles:
@@ -106,17 +110,17 @@ profiles:
     shell: /bin/zsh
     font:
       size: 16
-    foreground: "#2b2b2b"
-    background: "#fdf6e3"
-    palette:
-      red: "#dc322f"
-      bright_red: "#cb4b16"
     cursor:
       shape: bar
+      blink: false
+    colours:
+      foreground: "#2b2b2b"
+      background: "#fdf6e3"
+      cursor: "#dc322f"
+      palette:
+        red: "#dc322f"
+        bright_red: "#cb4b16"
 ```
-
-`font` is a `family`/`size` map. `colours`-style keys (`foreground`,
-`background`, `cursor`, `palette`) sit directly under the profile.
 
 ## `shortcuts`
 

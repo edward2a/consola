@@ -6,12 +6,12 @@ namespace consola {
 
 bool valid_outgoing_limit(std::size_t bytes) noexcept
 {
-    return bytes >= kMinOutgoingLimitBytes;
+    return bytes >= kMinOutgoingLimitBytes && bytes <= kMaxOutgoingLimitBytes;
 }
 
 bool valid_max_paste_bytes(std::size_t bytes) noexcept
 {
-    return bytes > 0;
+    return bytes > 0 && bytes <= kMaxMaxPasteBytes;
 }
 
 bool valid_scrollback(int lines) noexcept
@@ -27,6 +27,11 @@ bool valid_font_size(int points) noexcept
 bool valid_wheel_lines(int lines) noexcept
 {
     return lines > 0;
+}
+
+bool valid_kill_timeout(std::chrono::milliseconds timeout) noexcept
+{
+    return timeout > std::chrono::milliseconds::zero() && timeout <= kMaxKillTimeout;
 }
 
 void apply_colour_overrides(ColourConfig &base, const ColourOverrides &overrides)

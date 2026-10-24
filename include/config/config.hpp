@@ -31,8 +31,13 @@ inline constexpr std::size_t kDefaultOutgoingLimitBytes = std::size_t{1} << 20; 
 // The outgoing limit must stay comfortably above its internal control reserve
 // (16 KiB, DIP 1.7) so normal payloads are not starved by framing.
 inline constexpr std::size_t kMinOutgoingLimitBytes = std::size_t{32} << 10; // 32 KiB
+// Upper bounds keep a mistyped value (e.g. SIZE_MAX) from driving an oversized
+// allocation or overflowing framing arithmetic; there is no unlimited setting.
+inline constexpr std::size_t kMaxOutgoingLimitBytes = std::size_t{64} << 20; // 64 MiB
 inline constexpr std::size_t kDefaultMaxPasteBytes = std::size_t{16} << 20;  // 16 MiB
+inline constexpr std::size_t kMaxMaxPasteBytes = std::size_t{256} << 20;     // 256 MiB
 inline constexpr auto kDefaultKillTimeout = std::chrono::milliseconds{2000};
+inline constexpr auto kMaxKillTimeout = std::chrono::milliseconds{600'000}; // 10 min
 inline constexpr std::string_view kDefaultFontFamily = "Inconsolata Condensed";
 inline constexpr std::string_view kDefaultWordChars = "-A-Za-z0-9,./?%&#:_=+@~";
 inline constexpr std::string_view kDefaultTerm = "xterm-256color";
@@ -145,15 +150,17 @@ struct ShortcutConfig {
 };
 
 // The whole parsed configuration. Raw YAML never reaches the application;
-// every consumer sees these types (DIP 5.1).
+// every consumer sees these types (DIP 5.1). Saved layouts live in
+// LayoutConfig (see config/layout_config.hpp); they are not part of this map.
 struct ApplicationConfig {
     int version = kConfigVersion;
     GeneralConfig general;
     FontConfig font;
     ColourConfig colours;
     std::string default_profile{kDefaultProfileName};
-    // Always contains default_profile; a profile with no fields set inherits
-    // every default.
+    // Invariant (validated by the loader): always contains default_profile, and
+    // default_profile names an existing entry. A profile with no fields set
+    // inherits every default.
     std::map<std::string, ProfileConfig> profiles;
     ShortcutConfig shortcuts;
 };
@@ -169,6 +176,7 @@ struct ApplicationConfig {
 [[nodiscard]] bool valid_scrollback(int lines) noexcept;
 [[nodiscard]] bool valid_font_size(int points) noexcept;
 [[nodiscard]] bool valid_wheel_lines(int lines) noexcept;
+[[nodiscard]] bool valid_kill_timeout(std::chrono::milliseconds timeout) noexcept;
 
 // Overlay the present colour overrides onto a base palette (DIP 5.1
 // resolution); absent entries leave the base untouched.

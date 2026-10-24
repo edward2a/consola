@@ -717,4 +717,15 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `config_model_test` covers defaults, validation boundaries, the style/config
   consistency and colour-override merging; suites pass 22/22. The remaining
   Stage 5 work — loader, writer, layout persistence and wiring — is tracked in
-  the change sets below.
+  the change sets below. **Luna-Six review: PASS WITH FINDINGS**, resolved here:
+  (a) a profile's cursor *shape* (`cursor`) and cursor *colour* collided in the
+  flat profile syntax — colours now nest under `colours:` in profiles, matching
+  the top-level shape, and the doc/example were updated; (b) `LayoutConfig` was
+  missing from the 5.1 model — added as data-only types in
+  `include/config/layout_config.hpp` (layout-local pane ids, split nodes with
+  child indices and ratios, per-tab focus), with persistence/validation still
+  deferred to 5.6; (c) limit validators accepted `SIZE_MAX` — added upper bounds
+  (`kMaxOutgoingLimitBytes` 64 MiB, `kMaxMaxPasteBytes` 256 MiB); (d) the
+  `default_profile` invariant is now explicit (it must name an existing profile,
+  documented and enforced by the loader); (e) `valid_kill_timeout()` was added
+  (positive, ≤ 10 min) so the loader does not duplicate the check.

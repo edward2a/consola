@@ -9,6 +9,7 @@
 
 #include <app/terminal_style.hpp>
 #include <config/config.hpp>
+#include <config/layout_config.hpp>
 
 namespace {
 
@@ -100,11 +101,15 @@ void test_validation()
 {
     CHECK(consola::valid_outgoing_limit(consola::kMinOutgoingLimitBytes));
     CHECK(consola::valid_outgoing_limit(consola::kMinOutgoingLimitBytes + 1));
+    CHECK(consola::valid_outgoing_limit(consola::kMaxOutgoingLimitBytes));
     CHECK(!consola::valid_outgoing_limit(consola::kMinOutgoingLimitBytes - 1));
+    CHECK(!consola::valid_outgoing_limit(consola::kMaxOutgoingLimitBytes + 1));
     CHECK(!consola::valid_outgoing_limit(0));
 
     CHECK(consola::valid_max_paste_bytes(1));
+    CHECK(consola::valid_max_paste_bytes(consola::kMaxMaxPasteBytes));
     CHECK(!consola::valid_max_paste_bytes(0));
+    CHECK(!consola::valid_max_paste_bytes(consola::kMaxMaxPasteBytes + 1));
 
     CHECK(consola::valid_scrollback(0));
     CHECK(consola::valid_scrollback(10000));
@@ -118,6 +123,30 @@ void test_validation()
     CHECK(consola::valid_wheel_lines(1));
     CHECK(!consola::valid_wheel_lines(0));
     CHECK(!consola::valid_wheel_lines(-3));
+
+    CHECK(consola::valid_kill_timeout(std::chrono::milliseconds{2000}));
+    CHECK(consola::valid_kill_timeout(consola::kMaxKillTimeout));
+    CHECK(!consola::valid_kill_timeout(consola::kMaxKillTimeout + std::chrono::milliseconds{1}));
+    CHECK(!consola::valid_kill_timeout(std::chrono::milliseconds{0}));
+    CHECK(!consola::valid_kill_timeout(std::chrono::milliseconds{-1}));
+}
+
+void test_layout_defaults()
+{
+    const consola::LayoutConfig layout;
+    CHECK(layout.tabs.empty());
+    CHECK(layout.active_tab == 0);
+
+    const consola::LayoutPaneConfig pane;
+    CHECK(pane.id.empty());
+    CHECK(pane.profile == "default");
+    CHECK(pane.working_directory.empty());
+
+    const consola::LayoutNodeConfig node;
+    CHECK(node.orientation == consola::Orientation::horizontal);
+    CHECK(node.ratio == 0.5F);
+    CHECK(node.children.empty());
+    CHECK(!node.pane.has_value());
 }
 
 void test_colour_overrides()
@@ -148,6 +177,7 @@ int main()
     test_general_defaults();
     test_model_matches_terminal_style();
     test_validation();
+    test_layout_defaults();
     test_colour_overrides();
 
     if (g_failures != 0) {
