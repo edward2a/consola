@@ -729,3 +729,24 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `default_profile` invariant is now explicit (it must name an existing profile,
   documented and enforced by the loader); (e) `valid_kill_timeout()` was added
   (positive, ≤ 10 min) so the loader does not duplicate the check.
+- **S5-CS2 — configuration loader (§5.3)**: `include/config/loader.hpp` exposes
+  `load_config(path)` / `parse_config(yaml)` / `default_config_path()`, all
+  returning a `ConfigLoadResult{config, warnings, error}`. Behavior matches the
+  DIP: a missing file (and an empty or comment-only document) keeps the
+  defaults; malformed YAML and any value error set `error` and return the
+  defaults, so no partial data is applied. rapidyaml is used exception-enabled
+  (0.2); the parse is wrapped in `catch (ryml::ExceptionBasic)` so a conversion
+  or syntax error becomes a `ConfigLoadResult::error` instead of an abort — the
+  same recoverable behavior the system-dependency mode needs. Every string is
+  copied out of the YAML arena into `std::string` (a test parses from a buffer
+  that is destroyed before the values are read). Unknown keys are collected as
+  warnings; `version` is required and must equal `kConfigVersion`; the
+  `default_profile` must name a profile that exists (the built-in `default`
+  profile is always materialized). Colours accept `#rrggbb` (optional `#`) with
+  the 16 ANSI names + `bright_*`; all limit/scalar validators from S5-CS1 are
+  reused with key-qualified messages. `ryml` stays private to `terminal_core`.
+  New `config_loader_test` covers empty/missing/valid/full configuration,
+  malformed YAML, a conversion error, unknown keys, invalid values, version
+  handling, the default-profile invariant, root-must-be-a-map, string lifetime,
+  the default path, and a load of the shipped `resources/consola.yml`; suites
+  pass 23/23.

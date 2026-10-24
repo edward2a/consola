@@ -91,6 +91,13 @@ target_link_libraries(consola_config_model_test PRIVATE terminal_core)
 
 add_test(NAME config_model_test COMMAND consola_config_model_test)
 
+add_executable(consola_config_loader_test config_loader_test.cpp)
+target_link_libraries(consola_config_loader_test PRIVATE terminal_core)
+target_compile_definitions(consola_config_loader_test PRIVATE
+    CONSOLA_EXAMPLE_CONFIG="${CMAKE_SOURCE_DIR}/resources/consola.yml")
+
+add_test(NAME config_loader_test COMMAND consola_config_loader_test)
+
 add_executable(consola_pty_session_test pty_session_test.cpp)
 target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 

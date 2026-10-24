@@ -1,0 +1,303 @@
+// SPDX-License-Identifier: MIT
+
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+#include <config/loader.hpp>
+
+namespace {
+
+int g_failures = 0;
+
+#define CHECK(...)                                                                                 \
+    do {                                                                                           \
+        if (!(__VA_ARGS__)) {                                                                      \
+            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #__VA_ARGS__);            \
+            ++g_failures;                                                                          \
+        }                                                                                          \
+    } while (false)
+
+bool contains(const std::vector<std::string> &list, const std::string &needle)
+{
+    for (const std::string &entry : list) {
+        if (entry.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void test_empty_document()
+{
+    const consola::ConfigLoadResult empty = consola::parse_config("");
+    CHECK(empty.ok());
+    CHECK(empty.warnings.empty());
+    CHECK(empty.config.version == consola::kConfigVersion);
+    CHECK(empty.config.general.scrollback == consola::kDefaultScrollback);
+    CHECK(empty.config.profiles.contains("default"));
+
+    const consola::ConfigLoadResult blank = consola::parse_config("   \n# just a comment\n");
+    CHECK(blank.ok());
+    CHECK(blank.config.general.scrollback == consola::kDefaultScrollback);
+}
+
+void test_missing_file()
+{
+    const consola::ConfigLoadResult result =
+        consola::load_config("/nonexistent/consola/does-not-exist.yml");
+    CHECK(result.ok());
+    CHECK(result.warnings.empty());
+    CHECK(result.config.general.shell == "/bin/sh");
+}
+
+void test_valid_config()
+{
+    const char *yaml = R"(version: 1
+general:
+  shell: /bin/zsh
+  arguments: ["-l", "-c"]
+  login_shell: true
+  term: screen-256color
+  colorterm: ""
+  scrollback: 5000
+  scrollbar: false
+  wheel_lines: 5
+  alternate_scroll: false
+  backspace_sends_delete: false
+  bell: visual
+  cursor:
+    shape: bar
+    blink: false
+  word_chars: "abc"
+  kill_timeout_ms: 3000
+  drain_output_on_close: true
+  outgoing_limit_bytes: 2097152
+  max_paste_bytes: 4194304
+font:
+  family: DejaVu Sans Mono
+  size: 16
+colours:
+  foreground: "#112233"
+  background: "#445566"
+  cursor: "#778899"
+  palette:
+    red: "#aa0000"
+    bright_blue: "#0000ff"
+default_profile: default
+profiles:
+  work:
+    shell: /bin/bash
+    font:
+      size: 20
+    scrollback: 100
+    colours:
+      background: "#101010"
+      palette:
+        green: "#00ff00"
+shortcuts:
+  new_tab: "Ctrl+Shift+N"
+  cancel_paste: "Ctrl+C"
+)";
+
+    const consola::ConfigLoadResult result = consola::parse_config(yaml);
+    CHECK(result.ok());
+    if (!result.ok()) {
+        std::fprintf(stderr, "unexpected error: %s\n", result.error->c_str());
+        return;
+    }
+    CHECK(result.warnings.empty());
+
+    const consola::GeneralConfig &general = result.config.general;
+    CHECK(general.shell == "/bin/zsh");
+    CHECK(general.arguments.size() == 2);
+    CHECK(general.arguments[0] == "-l");
+    CHECK(general.arguments[1] == "-c");
+    CHECK(general.login_shell);
+    CHECK(general.term == "screen-256color");
+    CHECK(general.colorterm.empty());
+    CHECK(general.scrollback == 5000);
+    CHECK(!general.scrollbar);
+    CHECK(general.wheel_lines == 5);
+    CHECK(!general.alternate_scroll);
+    CHECK(!general.backspace_sends_delete);
+    CHECK(general.bell == consola::BellMode::visual);
+    CHECK(general.cursor.shape == consola::CursorShape::bar);
+    CHECK(!general.cursor.blink);
+    CHECK(general.word_chars == "abc");
+    CHECK(general.kill_timeout.count() == 3000);
+    CHECK(general.drain_output_on_close);
+    CHECK(general.outgoing_limit_bytes == 2097152);
+    CHECK(general.max_paste_bytes == 4194304);
+
+    CHECK(result.config.font.family == "DejaVu Sans Mono");
+    CHECK(result.config.font.size == 16);
+
+    CHECK(result.config.colours.foreground.r == 0x11);
+    CHECK(result.config.colours.foreground.g == 0x22);
+    CHECK(result.config.colours.foreground.b == 0x33);
+    CHECK(result.config.colours.background.r == 0x44);
+    CHECK(result.config.colours.cursor.r == 0x77);
+    CHECK(result.config.colours.ansi[1].r == 0xaa);
+    CHECK(result.config.colours.ansi[12].b == 0xff);
+
+    CHECK(result.config.profiles.contains("work"));
+    const consola::ProfileConfig &work = result.config.profiles.at("work");
+    CHECK(work.shell.has_value());
+    CHECK(work.shell.value() == "/bin/bash");
+    CHECK(work.font.has_value());
+    CHECK(work.font->size == 20);
+    CHECK(work.scrollback.has_value());
+    CHECK(work.scrollback.value() == 100);
+    CHECK(work.colours.background.has_value());
+    CHECK(work.colours.background->r == 0x10);
+    CHECK(work.colours.ansi[2].has_value());
+    CHECK(work.colours.ansi[2]->g == 0xff);
+    CHECK(!work.colours.ansi[1].has_value());
+
+    CHECK(result.config.shortcuts.new_tab == "Ctrl+Shift+N");
+    CHECK(result.config.shortcuts.cancel_paste == "Ctrl+C");
+    CHECK(result.config.shortcuts.close_tab == "Ctrl+Shift+X");
+}
+
+void test_malformed_yaml()
+{
+    const consola::ConfigLoadResult result = consola::parse_config("version: 1\nkey: [1, 2\n");
+    CHECK(!result.ok());
+    CHECK(result.error.has_value());
+    // No partial data: the defaults are returned.
+    CHECK(result.config.general.scrollback == consola::kDefaultScrollback);
+    CHECK(result.config.font.size == consola::kDefaultFontSize);
+}
+
+void test_conversion_error()
+{
+    const consola::ConfigLoadResult result =
+        consola::parse_config("version: 1\ngeneral:\n  scrollback: not-a-number\n");
+    CHECK(!result.ok());
+    CHECK(result.error->find("general.scrollback") != std::string::npos);
+    CHECK(result.config.general.scrollback == consola::kDefaultScrollback);
+}
+
+void test_unknown_keys()
+{
+    const consola::ConfigLoadResult result =
+        consola::parse_config("version: 1\nmystery: 2\ngeneral:\n  frobnicate: 3\n"
+                              "profiles:\n  p:\n    gadget: 1\n");
+    CHECK(result.ok());
+    CHECK(contains(result.warnings, "mystery"));
+    CHECK(contains(result.warnings, "frobnicate"));
+    CHECK(contains(result.warnings, "gadget"));
+}
+
+void test_invalid_values()
+{
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  scrollback: -1\n").ok());
+    CHECK(!consola::parse_config("version: 1\nfont:\n  size: 0\n").ok());
+    CHECK(!consola::parse_config("version: 1\nfont:\n  size: 99999\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  wheel_lines: 0\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  bell: loud\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  cursor:\n    shape: dot\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  outgoing_limit_bytes: 1\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  max_paste_bytes: 0\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  kill_timeout_ms: 0\n").ok());
+    CHECK(!consola::parse_config("version: 1\ncolours:\n  foreground: red\n").ok());
+}
+
+void test_version_handling()
+{
+    const consola::ConfigLoadResult missing = consola::parse_config("general:\n  scrollback: 1\n");
+    CHECK(!missing.ok());
+    CHECK(missing.error->find("version") != std::string::npos);
+
+    const consola::ConfigLoadResult future = consola::parse_config("version: 2\n");
+    CHECK(!future.ok());
+    CHECK(future.error->find("version") != std::string::npos);
+}
+
+void test_default_profile()
+{
+    // Named but not defined: rejected.
+    const consola::ConfigLoadResult missing =
+        consola::parse_config("version: 1\ndefault_profile: absent\n");
+    CHECK(!missing.ok());
+    CHECK(missing.error->find("default_profile") != std::string::npos);
+
+    // The built-in default profile is created when the file omits it.
+    const consola::ConfigLoadResult created =
+        consola::parse_config("version: 1\ndefault_profile: default\n");
+    CHECK(created.ok());
+    CHECK(created.config.profiles.contains("default"));
+}
+
+void test_root_must_be_map()
+{
+    const consola::ConfigLoadResult result = consola::parse_config("version: 1\n");
+    CHECK(result.ok());
+
+    const consola::ConfigLoadResult scalar = consola::parse_config("just a scalar");
+    CHECK(!scalar.ok());
+}
+
+void test_string_lifetime()
+{
+    // parse_config copies every string out of the YAML source/tree, so the
+    // returned configuration stays valid after the source is destroyed.
+    const consola::ConfigLoadResult result = [] {
+        std::string yaml = "version: 1\ngeneral:\n  term: my-term\n";
+        yaml += "profiles:\n  p1:\n    shell: /bin/zsh\n";
+        return consola::parse_config(yaml);
+    }();
+    CHECK(result.ok());
+    CHECK(result.config.general.term == "my-term");
+    CHECK(result.config.profiles.contains("p1"));
+    CHECK(result.config.profiles.at("p1").shell.value() == "/bin/zsh");
+}
+
+void test_default_config_path()
+{
+    const std::filesystem::path path = consola::default_config_path();
+    CHECK(path.filename() == "config.yml");
+    CHECK(path.parent_path().filename() == "consola");
+}
+
+void test_shipped_example()
+{
+    const consola::ConfigLoadResult result = consola::load_config(CONSOLA_EXAMPLE_CONFIG);
+    CHECK(result.ok());
+    if (!result.ok()) {
+        std::fprintf(stderr, "example error: %s\n", result.error->c_str());
+        return;
+    }
+    CHECK(result.warnings.empty());
+    CHECK(result.config.font.family == "Inconsolata Condensed");
+    CHECK(result.config.profiles.contains("default"));
+    CHECK(result.config.general.scrollback == consola::kDefaultScrollback);
+}
+
+} // namespace
+
+int main()
+{
+    test_empty_document();
+    test_missing_file();
+    test_valid_config();
+    test_malformed_yaml();
+    test_conversion_error();
+    test_unknown_keys();
+    test_invalid_values();
+    test_version_handling();
+    test_default_profile();
+    test_root_must_be_map();
+    test_string_lifetime();
+    test_default_config_path();
+    test_shipped_example();
+
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    std::printf("config_loader_test: ok\n");
+    return EXIT_SUCCESS;
+}
