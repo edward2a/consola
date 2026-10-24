@@ -113,6 +113,26 @@ void test_validation()
 )")
                .ok());
 
+    // Non-finite ratios are rejected.
+    CHECK(!parse_layout_doc(R"(    tabs:
+      - root: 0
+        focused: p1
+        nodes:
+          - split: {orientation: horizontal, ratio: nan, children: [1, 2]}
+          - pane: {id: p1}
+          - pane: {id: p2}
+)")
+               .ok());
+    CHECK(!parse_layout_doc(R"(    tabs:
+      - root: 0
+        focused: p1
+        nodes:
+          - split: {orientation: horizontal, ratio: inf, children: [1, 2]}
+          - pane: {id: p1}
+          - pane: {id: p2}
+)")
+               .ok());
+
     // Child indices must be in range.
     CHECK(!parse_layout_doc(R"(    tabs:
       - root: 0
@@ -130,6 +150,14 @@ void test_validation()
         focused: p1
         nodes:
           - split: {orientation: horizontal, ratio: 0.5, children: [0, 1]}
+          - pane: {id: p1}
+)")
+               .ok());
+    CHECK(!parse_layout_doc(R"(    tabs:
+      - root: 0
+        focused: p1
+        nodes:
+          - split: {orientation: horizontal, ratio: 0.5, children: [1, 1]}
           - pane: {id: p1}
 )")
                .ok());
@@ -196,6 +224,10 @@ void test_validation()
 
 void test_capture()
 {
+    // Nothing capturable: a fresh manager's only tab is empty.
+    const consola::TabManager empty;
+    CHECK(!consola::capture_layout(empty, "default").has_value());
+
     consola::TabManager tabs;
     consola::Tab *tab = tabs.find(tabs.active_id());
     CHECK(tab != nullptr);
@@ -208,28 +240,33 @@ void test_capture()
             .has_value());
     tab->layout().focus(consola::TerminalId{2});
 
-    const LayoutConfig layout = consola::capture_layout(tabs, "default");
+    const std::optional<LayoutConfig> captured = consola::capture_layout(tabs, "default");
+    CHECK(captured.has_value());
+    if (!captured.has_value()) {
+        return;
+    }
+    const LayoutConfig &layout = captured.value();
     CHECK(layout.active_tab == 0);
     CHECK(layout.tabs.size() == 1);
     if (layout.tabs.size() != 1) {
         return;
     }
-    const LayoutTabConfig &captured = layout.tabs.front();
-    CHECK(captured.root == 0);
-    CHECK(captured.nodes.size() == 3);
-    if (captured.nodes.size() != 3) {
+    const LayoutTabConfig &captured_tab = layout.tabs.front();
+    CHECK(captured_tab.root == 0);
+    CHECK(captured_tab.nodes.size() == 3);
+    if (captured_tab.nodes.size() != 3) {
         return;
     }
-    CHECK(captured.nodes[0].children.size() == 2);
-    CHECK(captured.nodes[0].ratio == 0.4F);
-    CHECK(captured.nodes[0].orientation == Orientation::horizontal);
-    CHECK(captured.focused == "p2");
-    const std::optional<LayoutPaneConfig> &first_pane = captured.nodes[1].pane;
+    CHECK(captured_tab.nodes[0].children.size() == 2);
+    CHECK(captured_tab.nodes[0].ratio == 0.4F);
+    CHECK(captured_tab.nodes[0].orientation == Orientation::horizontal);
+    CHECK(captured_tab.focused == "p2");
+    const std::optional<LayoutPaneConfig> &first_pane = captured_tab.nodes[1].pane;
     CHECK(first_pane.has_value());
     if (first_pane.has_value()) {
         CHECK(first_pane.value().id == "p1");
     }
-    const std::optional<LayoutPaneConfig> &second_pane = captured.nodes[2].pane;
+    const std::optional<LayoutPaneConfig> &second_pane = captured_tab.nodes[2].pane;
     CHECK(second_pane.has_value());
     if (second_pane.has_value()) {
         CHECK(second_pane.value().id == "p2");

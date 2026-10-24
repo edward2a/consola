@@ -89,7 +89,6 @@ add_library(terminal_core STATIC
     src/app/tab_manager.cpp
     src/app/terminal_instance.cpp
     src/config/apply.cpp
-    src/config/capture.cpp
     src/config/config.cpp
     src/config/loader.cpp
     src/config/writer.cpp
@@ -104,6 +103,7 @@ target_link_libraries(terminal_core PUBLIC consola_warnings consola_sanitizers c
 
 add_library(terminal_platform STATIC
     src/platform/linux/io_loop.cpp
+    src/platform/linux/process.cpp
     src/platform/linux/pty_session.cpp
     src/platform/linux/startup_worker.cpp
 )
@@ -127,6 +127,7 @@ endif()
 
 add_library(terminal_session STATIC
     src/app/terminal_manager.cpp
+    src/config/capture.cpp
 )
 target_include_directories(terminal_session PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

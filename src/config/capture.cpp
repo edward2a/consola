@@ -3,7 +3,6 @@
 #include <config/capture.hpp>
 
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -12,6 +11,7 @@
 #include <app/tab_manager.hpp>
 #include <app/terminal_instance.hpp>
 #include <layout/layout_tree.hpp>
+#include <platform/process.hpp>
 
 namespace consola {
 namespace {
@@ -21,18 +21,7 @@ std::string working_directory_of(const TerminalInstance *instance)
     if (instance == nullptr) {
         return {};
     }
-#ifdef __linux__
-    const std::int64_t pid = instance->process_id();
-    if (pid <= 0) {
-        return {};
-    }
-    std::error_code error;
-    const std::filesystem::path target = std::filesystem::read_symlink(
-        std::filesystem::path("/proc") / std::to_string(pid) / "cwd", error);
-    return error ? std::string{} : target.string();
-#else
-    return {};
-#endif
+    return process_working_directory(instance->process_id()).value_or(std::string{});
 }
 
 // Append the subtree in depth-first order and return its node index. Pane ids
@@ -77,7 +66,7 @@ std::size_t capture_node(const Tab &tab, const LayoutTree &layout, NodeId node_i
 
 } // namespace
 
-LayoutConfig capture_layout(const TabManager &tabs, const std::string &profile)
+std::optional<LayoutConfig> capture_layout(const TabManager &tabs, const std::string &profile)
 {
     LayoutConfig config;
     const TabId active = tabs.active_id();
@@ -98,6 +87,9 @@ LayoutConfig capture_layout(const TabManager &tabs, const std::string &profile)
         if (id == active) {
             config.active_tab = config.tabs.size() - 1;
         }
+    }
+    if (config.tabs.empty()) {
+        return std::nullopt;
     }
     return config;
 }

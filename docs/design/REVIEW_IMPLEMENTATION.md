@@ -848,4 +848,14 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   New `config_layout_test` covers the round-trip, the full validation matrix
   (ratios, ranges, cycles, duplicate ids, focus, missing profile, active_tab,
   orphans, split+pane) and capture (structure, focus, and capture round-trip).
-  Debug and ASan/UBSan suites pass 28/28; format/tidy clean.
+  Debug and ASan/UBSan suites pass 28/28; format/tidy clean. **Luna-Six review:
+  PASS WITH FINDINGS**, resolved here: (a) NaN/Inf ratios were accepted because
+  the bounds comparisons are false for NaN — both checks now require
+  `std::isfinite` (tests for `nan`/`inf`); (b) capturing an all-empty tab set
+  produced an unloadable layout — `capture_layout()` now returns
+  `std::optional<LayoutConfig>` and nullopt when nothing is capturable (test
+  added); (c) the `/proc/<pid>/cwd` read bypassed the platform boundary —
+  `process_working_directory()` now lives in `platform/process.hpp` +
+  `src/platform/linux/process.cpp`, and capture moved to `terminal_session`
+  (which may depend on the platform layer); (d) added the distinct shared-child
+  validation test (`children: [1, 1]`).

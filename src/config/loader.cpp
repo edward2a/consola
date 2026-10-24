@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -906,7 +907,7 @@ bool parse_layout_split(ryml::ConstNodeRef node, LayoutNodeConfig &split, Diagno
             if (!read_float(child, value)) {
                 return diag.fail(prefix + ".ratio: expected a number");
             }
-            if (value <= 0.0F || value >= 1.0F) {
+            if (!std::isfinite(value) || value <= 0.0F || value >= 1.0F) {
                 return diag.fail(prefix + ".ratio: must be strictly between 0 and 1");
             }
             split.ratio = value;
@@ -1006,7 +1007,7 @@ bool validate_layout_tab(const LayoutTabConfig &tab, Diagnostics &diag, const st
             if (node.children.size() != 2) {
                 return diag.fail(prefix + ": a split must have exactly two children");
             }
-            if (node.ratio <= 0.0F || node.ratio >= 1.0F) {
+            if (!std::isfinite(node.ratio) || node.ratio <= 0.0F || node.ratio >= 1.0F) {
                 return diag.fail(prefix + ": split ratio must be strictly between 0 and 1");
             }
             stack.push_back(node.children[0]);
