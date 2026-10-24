@@ -89,6 +89,7 @@ add_library(terminal_core STATIC
     src/app/tab_manager.cpp
     src/app/terminal_instance.cpp
     src/config/apply.cpp
+    src/config/capture.cpp
     src/config/config.cpp
     src/config/loader.cpp
     src/config/writer.cpp

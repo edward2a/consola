@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -385,6 +386,75 @@ void append_shortcuts(std::string &out, const ShortcutConfig &shortcuts)
     append_line(out, 1, "cancel_paste: " + quote(shortcuts.cancel_paste));
 }
 
+std::string float_text(float value)
+{
+    std::array<char, 32> buffer{};
+    const std::to_chars_result result =
+        std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+    if (result.ec != std::errc{}) {
+        return "0.5";
+    }
+    return {buffer.data(), result.ptr};
+}
+
+std::string_view orientation_text(Orientation orientation)
+{
+    return orientation == Orientation::vertical ? "vertical" : "horizontal";
+}
+
+void append_layout_node(std::string &out, const LayoutNodeConfig &node, int indent)
+{
+    if (node.pane.has_value()) {
+        const LayoutPaneConfig &pane = node.pane.value();
+        append_line(out, indent, "- pane:");
+        append_line(out, indent + 2, "id: " + quote(pane.id));
+        append_line(out, indent + 2, "profile: " + quote(pane.profile));
+        append_line(out, indent + 2, "working_directory: " + quote(pane.working_directory));
+        return;
+    }
+    append_line(out, indent, "- split:");
+    append_line(out, indent + 2,
+                std::string{"orientation: "} + std::string{orientation_text(node.orientation)});
+    append_line(out, indent + 2, "ratio: " + float_text(node.ratio));
+    std::string children = "children: [";
+    for (std::size_t index = 0; index < node.children.size(); ++index) {
+        if (index != 0) {
+            children += ", ";
+        }
+        children += std::to_string(node.children[index]);
+    }
+    children += "]";
+    append_line(out, indent + 2, children);
+}
+
+void append_layout_tab(std::string &out, const LayoutTabConfig &tab, int indent)
+{
+    append_line(out, indent, "- root: " + std::to_string(tab.root));
+    append_line(out, indent + 1, "focused: " + quote(tab.focused));
+    append_line(out, indent + 1, "nodes:");
+    for (const LayoutNodeConfig &node : tab.nodes) {
+        append_layout_node(out, node, indent + 2);
+    }
+}
+
+void append_layout(std::string &out, const LayoutConfig &layout, int indent)
+{
+    append_line(out, indent, "active_tab: " + std::to_string(layout.active_tab));
+    append_line(out, indent, "tabs:");
+    for (const LayoutTabConfig &tab : layout.tabs) {
+        append_layout_tab(out, tab, indent + 1);
+    }
+}
+
+void append_layouts(std::string &out, const std::map<std::string, LayoutConfig> &layouts)
+{
+    append_line(out, 0, "layouts:");
+    for (const auto &[name, layout] : layouts) {
+        append_line(out, 1, quote(name) + ":");
+        append_layout(out, layout, 2);
+    }
+}
+
 } // namespace
 
 std::string serialize_config(const ApplicationConfig &config)
@@ -409,6 +479,11 @@ std::string serialize_config(const ApplicationConfig &config)
 
     out.push_back('\n');
     append_shortcuts(out, config.shortcuts);
+
+    if (!config.layouts.empty()) {
+        out.push_back('\n');
+        append_layouts(out, config.layouts);
+    }
 
     return out;
 }

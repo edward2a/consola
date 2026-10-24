@@ -48,6 +48,7 @@ Unknown keys are reported as warnings and ignored. Invalid values are errors.
 | `default_profile` | string | `default` | Profile new panes use. |
 | `profiles` | map of name → profile | `default` | Named per-pane overrides. |
 | `shortcuts` | map | see below | Global keyboard shortcuts. |
+| `layouts` | map of name → layout | `{}` | Named saved layouts (data only). |
 
 ## `general`
 
@@ -153,6 +154,39 @@ Modifiers are `Ctrl`, `Shift` and `Alt`. Key names use FLTK/`X` names
 
 `cancel_paste` is parsed and reserved for the streaming-paste transport, which is
 deferred until after the application is complete; it has no effect yet.
+
+## `layouts`
+
+Named saved layouts (DIP 5.6). A layout is data only: loading it does not create
+tabs or processes (runtime reconstruction is Stage 6.5).
+
+```yaml
+layouts:
+  work:
+    active_tab: 0
+    tabs:
+      - root: 0
+        focused: "p1"
+        nodes:
+          - split:
+              orientation: horizontal # horizontal | vertical
+              ratio: 0.5              # strictly between 0 and 1
+              children: [1, 2]        # exactly two node indices
+          - pane:
+              id: "p1"                # unique within the tab
+              profile: default        # must exist in profiles
+              working_directory: /home/user
+          - pane:
+              id: "p2"
+              profile: default
+```
+
+`nodes[root]` is the tree root. Every node is either a `split` (two child
+indices and a ratio in `(0, 1)`) or a `pane` (a layout-local `id`, a `profile`
+and an optional `working_directory`). The graph must be a tree: indices in
+range, no cycles or shared children, no unreachable nodes, unique pane ids, and
+`focused` must name a pane. `active_tab` indexes `tabs`. An invalid layout is
+rejected without creating anything.
 
 ## Example
 

@@ -827,3 +827,25 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   pinning `SHELL=/bin/sh` and asserting both a non-zero exit and the specific
   exec-failure message, so a wrapper/Xvfb failure cannot masquerade as success.
   Debug and ASan/UBSan suites pass 27/27.
+- **S5-CS5 — layout data persistence (§5.6)**: `LayoutConfig` is now part of
+  `ApplicationConfig::layouts` (named layouts). To keep the model decoupled,
+  `Orientation` moved to `layout/orientation.hpp` and `kDefaultProfileName` to
+  `config/defaults.hpp`, so `layout_config.hpp` no longer needs the runtime tree
+  or `config.hpp`. The loader parses and validates each named layout before
+  accepting it: binary split nodes with two in-range child indices and a ratio
+  strictly in `(0, 1)`, a tree (no cycles, shared children or unreachable
+  nodes), unique non-empty pane ids, a non-empty `focused` naming a pane, a
+  valid `active_tab`, and pane profiles that exist in `profiles` (checked after
+  all sections are parsed). A node is exactly one of `split` or `pane`; unknown
+  keys warn. The writer emits layouts deterministically (shortest round-trip
+  float via `std::to_chars`) and `serialize_config`/`parse_config` round-trip
+  them exactly. `capture_layout(TabManager, profile)` (config/capture.cpp) turns
+  the live tabs into data by DFS: layout-local pane ids (`p1`, `p2`, …), split
+  orientation/ratio, the pane profile, the focused pane and `active_tab`; the
+  working directory comes from `/proc/<pid>/cwd` when available; empty tabs are
+  skipped. It never creates or modifies tabs, widgets or processes. No
+  user-facing save/restore action is added (runtime reconstruction is 6.5).
+  New `config_layout_test` covers the round-trip, the full validation matrix
+  (ratios, ranges, cycles, duplicate ids, focus, missing profile, active_tab,
+  orphans, split+pane) and capture (structure, focus, and capture round-trip).
+  Debug and ASan/UBSan suites pass 28/28; format/tidy clean.

@@ -108,6 +108,11 @@ target_link_libraries(consola_config_apply_test PRIVATE terminal_core)
 
 add_test(NAME config_apply_test COMMAND consola_config_apply_test)
 
+add_executable(consola_config_layout_test config_layout_test.cpp)
+target_link_libraries(consola_config_layout_test PRIVATE terminal_core)
+
+add_test(NAME config_layout_test COMMAND consola_config_layout_test)
+
 add_executable(consola_shortcuts_test shortcuts_test.cpp)
 target_link_libraries(consola_shortcuts_test PRIVATE terminal_ui)
 

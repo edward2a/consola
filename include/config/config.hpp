@@ -13,6 +13,8 @@
 #include <vector>
 
 #include <app/visual.hpp>
+#include <config/defaults.hpp>
+#include <config/layout_config.hpp>
 
 namespace consola {
 
@@ -36,7 +38,6 @@ inline constexpr auto kDefaultKillTimeout = std::chrono::milliseconds{2000};
 inline constexpr auto kMaxKillTimeout = std::chrono::milliseconds{600'000}; // 10 min
 inline constexpr std::string_view kDefaultTerm = "xterm-256color";
 inline constexpr std::string_view kDefaultColorTerm = "truecolor";
-inline constexpr std::string_view kDefaultProfileName = "default";
 
 struct CursorConfig {
     CursorShape shape = CursorShape::block;
@@ -161,8 +162,8 @@ struct ShortcutConfig {
 };
 
 // The whole parsed configuration. Raw YAML never reaches the application;
-// every consumer sees these types (DIP 5.1). Saved layouts live in
-// LayoutConfig (see config/layout_config.hpp); they are not part of this map.
+// every consumer sees these types (DIP 5.1). Saved layouts are data only and
+// are never reconstructed into live tabs here (DIP 5.6).
 struct ApplicationConfig {
     int version = kConfigVersion;
     GeneralConfig general;
@@ -174,6 +175,8 @@ struct ApplicationConfig {
     // inherits every default.
     std::map<std::string, ProfileConfig> profiles;
     ShortcutConfig shortcuts;
+    // Named saved layouts; pane profiles must reference `profiles`.
+    std::map<std::string, LayoutConfig> layouts;
 
     friend bool operator==(const ApplicationConfig &, const ApplicationConfig &) = default;
 };

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <app/session.hpp>
+#include <layout/orientation.hpp>
 
 namespace consola {
 
@@ -19,16 +20,6 @@ struct NodeId {
     std::uint64_t value = 0;
 
     friend bool operator==(NodeId, NodeId) = default;
-};
-
-// Direction of a split as presented to the user. This follows Terminator's
-// long-standing convention, matching Command::SplitHorizontal/SplitVertical
-// (DIP 3.6):
-//   horizontal: a horizontal divider; children are stacked top to bottom.
-//   vertical:   a vertical divider; children are placed left to right.
-enum class Orientation : std::uint8_t {
-    horizontal,
-    vertical,
 };
 
 struct SplitNode {

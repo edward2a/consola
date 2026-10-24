@@ -163,6 +163,18 @@ bool read_size(ryml::ConstNodeRef node, std::size_t &out)
     return true;
 }
 
+bool read_float(ryml::ConstNodeRef node, float &out)
+{
+    if (!node.has_val() || node.val().len == 0) {
+        return false;
+    }
+    const ryml::csubstr value = node.val();
+    const char *first = value.str;
+    const char *last = first + value.len;
+    const std::from_chars_result result = std::from_chars(first, last, out);
+    return result.ec == std::errc{} && result.ptr == last;
+}
+
 int hex_digit(char character)
 {
     if (character >= '0' && character <= '9') {
@@ -826,6 +838,312 @@ bool parse_shortcuts(ryml::ConstNodeRef node, ShortcutConfig &shortcuts, Diagnos
     return true;
 }
 
+bool parse_layout_pane(ryml::ConstNodeRef node, LayoutPaneConfig &pane, Diagnostics &diag,
+                       const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "id") {
+            std::string value;
+            if (!read_string(child, value)) {
+                return diag.fail(prefix + ".id: expected a string");
+            }
+            if (value.empty()) {
+                return diag.fail(prefix + ".id: must not be empty");
+            }
+            pane.id = std::move(value);
+        } else if (key == "profile") {
+            std::string value;
+            if (!read_string(child, value)) {
+                return diag.fail(prefix + ".profile: expected a string");
+            }
+            if (value.empty()) {
+                return diag.fail(prefix + ".profile: must not be empty");
+            }
+            pane.profile = std::move(value);
+        } else if (key == "working_directory") {
+            std::string value;
+            if (!read_string(child, value)) {
+                return diag.fail(prefix + ".working_directory: expected a string");
+            }
+            pane.working_directory = std::move(value);
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    if (pane.id.empty()) {
+        return diag.fail(prefix + ": pane id must not be empty");
+    }
+    return true;
+}
+
+bool parse_layout_split(ryml::ConstNodeRef node, LayoutNodeConfig &split, Diagnostics &diag,
+                        const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "orientation") {
+            std::string text;
+            if (!read_string(child, text)) {
+                return diag.fail(prefix + ".orientation: expected a string");
+            }
+            const std::string value = lower_copy(text);
+            if (value == "horizontal") {
+                split.orientation = Orientation::horizontal;
+            } else if (value == "vertical") {
+                split.orientation = Orientation::vertical;
+            } else {
+                return diag.fail(prefix + ".orientation: expected horizontal or vertical");
+            }
+        } else if (key == "ratio") {
+            float value = 0.0F;
+            if (!read_float(child, value)) {
+                return diag.fail(prefix + ".ratio: expected a number");
+            }
+            if (value <= 0.0F || value >= 1.0F) {
+                return diag.fail(prefix + ".ratio: must be strictly between 0 and 1");
+            }
+            split.ratio = value;
+        } else if (key == "children") {
+            if (!child.is_seq()) {
+                return diag.fail(prefix + ".children: expected a list of node indices");
+            }
+            split.children.clear();
+            for (ryml::ConstNodeRef item : child.children()) {
+                std::size_t index = 0;
+                if (!read_size(item, index)) {
+                    return diag.fail(prefix + ".children: expected a list of node indices");
+                }
+                split.children.push_back(index);
+            }
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    if (split.children.size() != 2) {
+        return diag.fail(prefix + ": a split must have exactly two children");
+    }
+    return true;
+}
+
+bool parse_layout_node(ryml::ConstNodeRef node, LayoutNodeConfig &result, Diagnostics &diag,
+                       const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    bool has_split = false;
+    bool has_pane = false;
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "split") {
+            if (has_pane || has_split) {
+                return diag.fail(prefix + ": a node is exactly one of 'split' or 'pane'");
+            }
+            has_split = true;
+            if (!parse_layout_split(child, result, diag, prefix + ".split")) {
+                return false;
+            }
+        } else if (key == "pane") {
+            if (has_split || has_pane) {
+                return diag.fail(prefix + ": a node is exactly one of 'split' or 'pane'");
+            }
+            has_pane = true;
+            LayoutPaneConfig pane;
+            if (!parse_layout_pane(child, pane, diag, prefix + ".pane")) {
+                return false;
+            }
+            result.pane = std::move(pane);
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    if (has_split == has_pane) {
+        return diag.fail(prefix + ": expected exactly one of 'split' or 'pane'");
+    }
+    return true;
+}
+
+bool validate_layout_tab(const LayoutTabConfig &tab, Diagnostics &diag, const std::string &prefix)
+{
+    if (tab.nodes.empty()) {
+        return diag.fail(prefix + ": a tab must have at least one node");
+    }
+    if (tab.root >= tab.nodes.size()) {
+        return diag.fail(prefix + ".root: index out of range");
+    }
+    if (tab.focused.empty()) {
+        return diag.fail(prefix + ".focused: must not be empty");
+    }
+
+    std::vector<bool> visited(tab.nodes.size(), false);
+    std::vector<std::size_t> stack;
+    stack.push_back(tab.root);
+    std::vector<std::string> pane_ids;
+    while (!stack.empty()) {
+        const std::size_t index = stack.back();
+        stack.pop_back();
+        if (index >= tab.nodes.size()) {
+            return diag.fail(prefix + ": node index out of range");
+        }
+        if (visited[index]) {
+            return diag.fail(prefix + ": node graph contains a cycle or shared child");
+        }
+        visited[index] = true;
+        const LayoutNodeConfig &node = tab.nodes[index];
+        if (node.pane.has_value()) {
+            if (!node.children.empty()) {
+                return diag.fail(prefix + ": a pane node must not have children");
+            }
+            pane_ids.push_back(node.pane->id);
+        } else {
+            if (node.children.size() != 2) {
+                return diag.fail(prefix + ": a split must have exactly two children");
+            }
+            if (node.ratio <= 0.0F || node.ratio >= 1.0F) {
+                return diag.fail(prefix + ": split ratio must be strictly between 0 and 1");
+            }
+            stack.push_back(node.children[0]);
+            stack.push_back(node.children[1]);
+        }
+    }
+    for (std::size_t index = 0; index < visited.size(); ++index) {
+        if (!visited[index]) {
+            return diag.fail(prefix + ": unreachable node at index " + std::to_string(index));
+        }
+    }
+    std::ranges::sort(pane_ids);
+    if (std::ranges::adjacent_find(pane_ids) != pane_ids.end()) {
+        return diag.fail(prefix + ": duplicate pane id");
+    }
+    if (std::ranges::find(pane_ids, tab.focused) == pane_ids.end()) {
+        return diag.fail(prefix + ".focused: '" + tab.focused + "' is not a pane in this tab");
+    }
+    return true;
+}
+
+bool parse_layout_tab(ryml::ConstNodeRef node, LayoutTabConfig &tab, Diagnostics &diag,
+                      const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "root") {
+            if (!read_size(child, tab.root)) {
+                return diag.fail(prefix + ".root: expected an integer");
+            }
+        } else if (key == "focused") {
+            if (!read_string(child, tab.focused)) {
+                return diag.fail(prefix + ".focused: expected a string");
+            }
+        } else if (key == "nodes") {
+            if (!child.is_seq()) {
+                return diag.fail(prefix + ".nodes: expected a list");
+            }
+            tab.nodes.clear();
+            std::size_t index = 0;
+            for (ryml::ConstNodeRef item : child.children()) {
+                LayoutNodeConfig layout_node;
+                if (!parse_layout_node(item, layout_node, diag,
+                                       prefix + ".nodes[" + std::to_string(index) + "]")) {
+                    return false;
+                }
+                tab.nodes.push_back(std::move(layout_node));
+                ++index;
+            }
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    return validate_layout_tab(tab, diag, prefix);
+}
+
+bool parse_layout(ryml::ConstNodeRef node, LayoutConfig &layout, Diagnostics &diag,
+                  const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string key = to_std(child.key());
+        if (key == "active_tab") {
+            if (!read_size(child, layout.active_tab)) {
+                return diag.fail(prefix + ".active_tab: expected an integer");
+            }
+        } else if (key == "tabs") {
+            if (!child.is_seq()) {
+                return diag.fail(prefix + ".tabs: expected a list");
+            }
+            layout.tabs.clear();
+            std::size_t index = 0;
+            for (ryml::ConstNodeRef item : child.children()) {
+                LayoutTabConfig tab;
+                if (!parse_layout_tab(item, tab, diag,
+                                      prefix + ".tabs[" + std::to_string(index) + "]")) {
+                    return false;
+                }
+                layout.tabs.push_back(std::move(tab));
+                ++index;
+            }
+        } else {
+            diag.warnings.push_back(joined({prefix, ": unknown key '", key, "'"}));
+        }
+    }
+    if (layout.tabs.empty()) {
+        return diag.fail(prefix + ": a layout must have at least one tab");
+    }
+    if (layout.active_tab >= layout.tabs.size()) {
+        return diag.fail(prefix + ".active_tab: index out of range");
+    }
+    return true;
+}
+
+bool parse_layouts(ryml::ConstNodeRef node, ApplicationConfig &config, Diagnostics &diag)
+{
+    if (!node.is_map()) {
+        return diag.fail("layouts: expected a map");
+    }
+    for (ryml::ConstNodeRef child : node.children()) {
+        const std::string name = to_std(child.key());
+        if (name.empty()) {
+            return diag.fail("layouts: layout name must not be empty");
+        }
+        LayoutConfig layout;
+        if (!parse_layout(child, layout, diag, "layouts." + name)) {
+            return false;
+        }
+        config.layouts[name] = std::move(layout);
+    }
+    return true;
+}
+
+bool validate_layout_profiles(const ApplicationConfig &config, Diagnostics &diag)
+{
+    for (const auto &[name, layout] : config.layouts) {
+        for (const LayoutTabConfig &tab : layout.tabs) {
+            for (const LayoutNodeConfig &node : tab.nodes) {
+                if (!node.pane.has_value()) {
+                    continue;
+                }
+                const std::string &profile = node.pane.value().profile;
+                if (!config.profiles.contains(profile)) {
+                    return diag.fail(
+                        joined({"layouts.", name, ": profile '", profile, "' is not defined"}));
+                }
+            }
+        }
+    }
+    return true;
+}
+
 bool parse_root(ryml::ConstNodeRef root, ApplicationConfig &config, Diagnostics &diag)
 {
     for (ryml::ConstNodeRef child : root.children()) {
@@ -860,6 +1178,10 @@ bool parse_root(ryml::ConstNodeRef root, ApplicationConfig &config, Diagnostics 
             }
         } else if (key == "shortcuts") {
             if (!parse_shortcuts(child, config.shortcuts, diag)) {
+                return false;
+            }
+        } else if (key == "layouts") {
+            if (!parse_layouts(child, config, diag)) {
                 return false;
             }
         } else {
@@ -929,6 +1251,10 @@ ConfigLoadResult parse_config(std::string_view yaml)
     }
     if (!config.profiles.contains(config.default_profile)) {
         result.error = joined({"default_profile: '", config.default_profile, "' is not defined"});
+        return result;
+    }
+    if (!validate_layout_profiles(config, diag)) {
+        result.error = diag.error.value_or("invalid layout");
         return result;
     }
 
