@@ -749,4 +749,13 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   malformed YAML, a conversion error, unknown keys, invalid values, version
   handling, the default-profile invariant, root-must-be-a-map, string lifetime,
   the default path, and a load of the shipped `resources/consola.yml`; suites
-  pass 23/23.
+  pass 23/23. **Luna-Six review: PASS WITH FINDINGS**, resolved here: (a) an
+  explicit `{}` or `[]` document bypassed validation — now only a truly empty or
+  comment-only document keeps defaults, a sequence root is rejected, and an
+  empty map proceeds to the required-`version` check; (b) `c4::from_chars`
+  (atoi/atou) wraps on overflow — integer/size parsing now uses
+  `std::from_chars`, which rejects out-of-range values (tests cover oversized
+  positive values); (c) booleans are restricted to the documented `true`/`false`
+  (no `yes/on/1`); string fields still accept any YAML scalar as its text, which
+  is YAML semantics; (d) unknown-key coverage was extended across `font`,
+  `colours`, `palette`, `cursor`, `shortcuts` and nested profile maps.

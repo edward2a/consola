@@ -182,13 +182,54 @@ void test_conversion_error()
 
 void test_unknown_keys()
 {
-    const consola::ConfigLoadResult result =
-        consola::parse_config("version: 1\nmystery: 2\ngeneral:\n  frobnicate: 3\n"
-                              "profiles:\n  p:\n    gadget: 1\n");
+    const consola::ConfigLoadResult result = consola::parse_config(R"(version: 1
+mystery: 2
+general:
+  frobnicate: 3
+  cursor:
+    mystery_cursor: 1
+font:
+  mystery_font: 4
+colours:
+  mystery_colour_key: 5
+  palette:
+    chartreuse: "#00ff00"
+shortcuts:
+  mystery_shortcut: "Ctrl+Q"
+profiles:
+  p:
+    gadget: 6
+    colours:
+      palette:
+        chartreuse2: "#00ff00"
+)");
     CHECK(result.ok());
     CHECK(contains(result.warnings, "mystery"));
     CHECK(contains(result.warnings, "frobnicate"));
+    CHECK(contains(result.warnings, "mystery_cursor"));
+    CHECK(contains(result.warnings, "mystery_font"));
+    CHECK(contains(result.warnings, "mystery_colour_key"));
+    CHECK(contains(result.warnings, "chartreuse"));
+    CHECK(contains(result.warnings, "chartreuse2"));
+    CHECK(contains(result.warnings, "mystery_shortcut"));
     CHECK(contains(result.warnings, "gadget"));
+}
+
+void test_scalar_types_and_overflow()
+{
+    // Booleans are restricted to true/false, and integers reject non-numeric
+    // or out-of-range values (std::from_chars detects overflow).
+    CHECK(consola::parse_config("version: 1\ngeneral:\n  login_shell: false\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  login_shell: yes\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  scrollback: 1.5\n").ok());
+    CHECK(!consola::parse_config("version: 1\ngeneral:\n  max_paste_bytes: 18446744073709551617\n")
+               .ok());
+    CHECK(
+        !consola::parse_config("version: 1\ngeneral:\n  scrollback: 99999999999999999999\n").ok());
+    CHECK(!consola::parse_config(
+               "version: 1\ngeneral:\n  outgoing_limit_bytes: 99999999999999999999\n")
+               .ok());
+    CHECK(!consola::parse_config("version: 1\nfont:\n  size: -5\n").ok());
 }
 
 void test_invalid_values()
@@ -233,11 +274,14 @@ void test_default_profile()
 
 void test_root_must_be_map()
 {
-    const consola::ConfigLoadResult result = consola::parse_config("version: 1\n");
-    CHECK(result.ok());
+    CHECK(consola::parse_config("version: 1\n").ok());
+    CHECK(!consola::parse_config("just a scalar").ok());
+    CHECK(!consola::parse_config("[]").ok());
 
-    const consola::ConfigLoadResult scalar = consola::parse_config("just a scalar");
-    CHECK(!scalar.ok());
+    // An explicit empty map is still a document and must carry a version.
+    const consola::ConfigLoadResult empty_map = consola::parse_config("{}");
+    CHECK(!empty_map.ok());
+    CHECK(empty_map.error->find("version") != std::string::npos);
 }
 
 void test_string_lifetime()
@@ -286,6 +330,7 @@ int main()
     test_malformed_yaml();
     test_conversion_error();
     test_unknown_keys();
+    test_scalar_types_and_overflow();
     test_invalid_values();
     test_version_handling();
     test_default_profile();

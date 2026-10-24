@@ -12,7 +12,8 @@ version: 1
 ```
 
 A file whose `version` is missing or not understood is rejected as a whole; no
-partial configuration is applied.
+partial configuration is applied. An entirely empty file — or one containing
+only whitespace and comments — is treated as the built-in defaults.
 
 ## Precedence
 
@@ -49,6 +50,9 @@ Unknown keys are reported as warnings and ignored. Invalid values are errors.
 | `shortcuts` | map | see below | Global keyboard shortcuts. |
 
 ## `general`
+
+Boolean values are `true` or `false`. Integer and size fields accept decimal
+digits only.
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |

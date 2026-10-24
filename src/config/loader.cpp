@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -13,10 +14,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
-#include <c4/charconv.hpp>
 #include <ryml.hpp>
 
 namespace consola {
@@ -93,46 +94,72 @@ bool read_bool(ryml::ConstNodeRef node, bool &out)
         return false;
     }
     const std::string value = lower_copy(to_std(node.val()));
-    if (value == "true" || value == "yes" || value == "on" || value == "1") {
+    if (value == "true") {
         out = true;
         return true;
     }
-    if (value == "false" || value == "no" || value == "off" || value == "0") {
+    if (value == "false") {
         out = false;
         return true;
     }
     return false;
 }
 
+// std::from_chars, unlike c4::from_chars (which wraps via atoi/atou), rejects
+// out-of-range values, so an oversized limit cannot wrap into an accepted one.
+bool parse_integer(std::string_view text, std::int64_t &out)
+{
+    if (text.empty()) {
+        return false;
+    }
+    const char *first = text.data();
+    const char *last = first + text.size();
+    const std::from_chars_result result = std::from_chars(first, last, out);
+    return result.ec == std::errc{} && result.ptr == last;
+}
+
+bool parse_unsigned(std::string_view text, std::uint64_t &out)
+{
+    if (text.empty()) {
+        return false;
+    }
+    const char *first = text.data();
+    const char *last = first + text.size();
+    const std::from_chars_result result = std::from_chars(first, last, out);
+    return result.ec == std::errc{} && result.ptr == last;
+}
+
 bool read_int(ryml::ConstNodeRef node, int &out)
 {
-    if (!node.has_val()) {
+    if (!node.has_val() || node.val().len == 0) {
         return false;
     }
-    std::int64_t value = 0;
-    if (!c4::from_chars(node.val(), &value)) {
+    const ryml::csubstr value = node.val();
+    std::int64_t parsed = 0;
+    if (!parse_integer(std::string_view(value.str, value.len), parsed)) {
         return false;
     }
-    if (value < INT32_MIN || value > INT32_MAX) {
+    if (parsed < INT32_MIN || parsed > INT32_MAX) {
         return false;
     }
-    out = static_cast<int>(value);
+    out = static_cast<int>(parsed);
     return true;
 }
 
 bool read_size(ryml::ConstNodeRef node, std::size_t &out)
 {
-    if (!node.has_val()) {
+    if (!node.has_val() || node.val().len == 0) {
         return false;
     }
-    std::uint64_t value = 0;
-    if (!c4::from_chars(node.val(), &value)) {
+    const ryml::csubstr value = node.val();
+    std::uint64_t parsed = 0;
+    if (!parse_unsigned(std::string_view(value.str, value.len), parsed)) {
         return false;
     }
-    if (value > SIZE_MAX) {
+    if (parsed > SIZE_MAX) {
         return false;
     }
-    out = static_cast<std::size_t>(value);
+    out = static_cast<std::size_t>(parsed);
     return true;
 }
 
@@ -801,14 +828,12 @@ ConfigLoadResult parse_config(std::string_view yaml)
 
     ryml::ConstNodeRef root = tree.crootref();
     if (!root.is_map()) {
-        // An empty or comment-only document parses to a null node; keep defaults.
-        if (!root.has_val() || root.val().empty()) {
+        // A truly empty or comment-only document parses to a valueless node and
+        // keeps the defaults; any other non-map root is rejected.
+        if (!root.has_val() && !root.is_seq()) {
             return result;
         }
         result.error = "configuration root must be a map";
-        return result;
-    }
-    if (root.empty()) {
         return result;
     }
 
