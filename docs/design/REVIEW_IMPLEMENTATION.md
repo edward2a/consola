@@ -858,4 +858,14 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `process_working_directory()` now lives in `platform/process.hpp` +
   `src/platform/linux/process.cpp`, and capture moved to `terminal_session`
   (which may depend on the platform layer); (d) added the distinct shared-child
-  validation test (`children: [1, 1]`).
+  validation test (`children: [1, 1]`). **Re-review: PASS** (all four resolved,
+  no new findings).
+- **Stage 5 exit review**: Stage 5 (Configuration) is complete — a typed,
+  versioned model and documented schema; a loader that recovers from malformed
+  input without partial application; an explicit-only writer with lossless
+  round-trips; settings and shortcuts wired into the running application
+  (`--config`, `$SHELL` fallback, profiles, font/colours, interaction settings,
+  limits, kill timeout); and named layout capture, serialization and validation
+  as data only. Runtime layout reconstruction and per-pane profile selection
+  remain Stage 6.4/6.5. Debug and ASan/UBSan suites pass 28/28; format/tidy
+  clean.
