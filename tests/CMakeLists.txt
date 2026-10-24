@@ -98,6 +98,11 @@ target_compile_definitions(consola_config_loader_test PRIVATE
 
 add_test(NAME config_loader_test COMMAND consola_config_loader_test)
 
+add_executable(consola_config_writer_test config_writer_test.cpp)
+target_link_libraries(consola_config_writer_test PRIVATE terminal_core)
+
+add_test(NAME config_writer_test COMMAND consola_config_writer_test)
+
 add_executable(consola_pty_session_test pty_session_test.cpp)
 target_link_libraries(consola_pty_session_test PRIVATE terminal_platform)
 

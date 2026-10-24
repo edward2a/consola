@@ -759,3 +759,18 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   (no `yes/on/1`); string fields still accept any YAML scalar as its text, which
   is YAML semantics; (d) unknown-key coverage was extended across `font`,
   `colours`, `palette`, `cursor`, `shortcuts` and nested profile maps.
+- **S5-CS3 — configuration writer (§5.4)**: `include/config/writer.hpp` adds
+  `serialize_config()` and `save_config(path, config)`; the writer is explicit
+  only (the app never calls it on startup, so a user file is not rewritten
+  implicitly). The output is deterministic, schema-versioned and emits the whole
+  `general`/`font`/`colours`/`shortcuts` block plus only the overrides a profile
+  sets, so a re-parse is lossless. Every string scalar is double-quoted (with
+  `\\`, `\"`, `\n`, `\r`, `\t`, `\xNN` escaping) so values containing YAML
+  punctuation (`#`, `:`, quotes, the default `word_chars`) are safe; profile
+  keys are quoted too. `save_config()` creates parent directories and reports a
+  human-readable error via `std::optional`. The model structs gained defaulted
+  `operator==` (config + layout data) so round-trip equality is checked
+  directly. New `config_writer_test` covers default and rich round trips
+  (including profiles, partial palette overrides and `arguments`), byte-stable
+  re-serialization, special characters/escaping, and save-then-load through a
+  temp file with nested directory creation; suites pass 24/24.

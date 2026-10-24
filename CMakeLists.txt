@@ -90,6 +90,7 @@ add_library(terminal_core STATIC
     src/app/terminal_instance.cpp
     src/config/config.cpp
     src/config/loader.cpp
+    src/config/writer.cpp
     src/layout/layout_geometry.cpp
     src/layout/layout_tree.cpp
     src/terminal/emulator.cpp

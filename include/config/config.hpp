@@ -62,11 +62,15 @@ enum class CursorShape : std::uint8_t {
 struct CursorConfig {
     CursorShape shape = CursorShape::block;
     bool blink = true;
+
+    friend bool operator==(const CursorConfig &, const CursorConfig &) = default;
 };
 
 struct FontConfig {
     std::string family{kDefaultFontFamily};
     int size = kDefaultFontSize;
+
+    friend bool operator==(const FontConfig &, const FontConfig &) = default;
 };
 
 // Fully resolved colours: 16 ANSI entries (0-7 normal, 8-15 bright) plus
@@ -76,6 +80,8 @@ struct ColourConfig {
     Rgb foreground{0xd8, 0xd8, 0xd8};
     Rgb background{0x18, 0x18, 0x18};
     Rgb cursor{0xff, 0xff, 0xff};
+
+    friend bool operator==(const ColourConfig &, const ColourConfig &) = default;
 };
 
 // A profile carries only the settings it overrides; an absent field inherits
@@ -85,6 +91,8 @@ struct ColourOverrides {
     std::optional<Rgb> foreground;
     std::optional<Rgb> background;
     std::optional<Rgb> cursor;
+
+    friend bool operator==(const ColourOverrides &, const ColourOverrides &) = default;
 };
 
 // Application-wide defaults and behaviour. Some fields (shell, TERM, font,
@@ -109,6 +117,8 @@ struct GeneralConfig {
     bool drain_output_on_close = false;
     std::size_t outgoing_limit_bytes = kDefaultOutgoingLimitBytes;
     std::size_t max_paste_bytes = kDefaultMaxPasteBytes;
+
+    friend bool operator==(const GeneralConfig &, const GeneralConfig &) = default;
 };
 
 // A named profile holds the per-pane settings it overrides (watchlist #19,
@@ -126,6 +136,8 @@ struct ProfileConfig {
     std::optional<BellMode> bell;
     std::optional<CursorConfig> cursor;
     ColourOverrides colours;
+
+    friend bool operator==(const ProfileConfig &, const ProfileConfig &) = default;
 };
 
 // Global keyboard shortcuts, stored as their canonical text form; parsing into
@@ -147,6 +159,8 @@ struct ShortcutConfig {
     std::string resize_up = "Ctrl+Shift+Up";
     std::string resize_down = "Ctrl+Shift+Down";
     std::string cancel_paste = "Escape";
+
+    friend bool operator==(const ShortcutConfig &, const ShortcutConfig &) = default;
 };
 
 // The whole parsed configuration. Raw YAML never reaches the application;
@@ -163,6 +177,8 @@ struct ApplicationConfig {
     // inherits every default.
     std::map<std::string, ProfileConfig> profiles;
     ShortcutConfig shortcuts;
+
+    friend bool operator==(const ApplicationConfig &, const ApplicationConfig &) = default;
 };
 
 // The built-in defaults, including the "default" profile (DIP 5.5).
