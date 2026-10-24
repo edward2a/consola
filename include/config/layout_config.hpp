@@ -24,8 +24,6 @@ struct LayoutPaneConfig {
     std::string id;
     std::string profile{kDefaultProfileName};
     std::string working_directory;
-
-    friend bool operator==(const LayoutPaneConfig &, const LayoutPaneConfig &) = default;
 };
 
 // One node of a saved tab. A leaf sets `pane`; a split sets `children` (indices
@@ -36,8 +34,6 @@ struct LayoutNodeConfig {
     float ratio = 0.5F;
     std::vector<std::size_t> children;
     std::optional<LayoutPaneConfig> pane;
-
-    friend bool operator==(const LayoutNodeConfig &, const LayoutNodeConfig &) = default;
 };
 
 // One saved tab: its node list (nodes[root] is the root, with the remaining
@@ -46,16 +42,12 @@ struct LayoutTabConfig {
     std::vector<LayoutNodeConfig> nodes;
     std::size_t root = 0;
     std::string focused;
-
-    friend bool operator==(const LayoutTabConfig &, const LayoutTabConfig &) = default;
 };
 
 // A saved layout: the tab order and the active tab index.
 struct LayoutConfig {
     std::vector<LayoutTabConfig> tabs;
     std::size_t active_tab = 0;
-
-    friend bool operator==(const LayoutConfig &, const LayoutConfig &) = default;
 };
 
 } // namespace consola

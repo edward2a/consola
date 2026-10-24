@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <map>
@@ -60,6 +61,52 @@ std::string quote(std::string_view text)
     }
     out.push_back('"');
     return out;
+}
+
+// YAML requires UTF-8, so the writer's contract is valid UTF-8 input. High-bit
+// bytes are passed through unchanged; save_config rejects a result that is not
+// valid UTF-8 rather than emitting an unparseable file.
+bool is_valid_utf8(std::string_view text)
+{
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto lead = static_cast<unsigned char>(text[index]);
+        if (lead < 0x80) {
+            ++index;
+            continue;
+        }
+        std::size_t extra = 0;
+        std::uint32_t codepoint = 0;
+        if ((lead & 0xE0U) == 0xC0U) {
+            extra = 1;
+            codepoint = lead & 0x1FU;
+        } else if ((lead & 0xF0U) == 0xE0U) {
+            extra = 2;
+            codepoint = lead & 0x0FU;
+        } else if ((lead & 0xF8U) == 0xF0U) {
+            extra = 3;
+            codepoint = lead & 0x07U;
+        } else {
+            return false;
+        }
+        if (index + extra >= text.size()) {
+            return false;
+        }
+        for (std::size_t offset = 1; offset <= extra; ++offset) {
+            const auto continuation = static_cast<unsigned char>(text[index + offset]);
+            if ((continuation & 0xC0U) != 0x80U) {
+                return false;
+            }
+            codepoint = (codepoint << 6U) | (continuation & 0x3FU);
+        }
+        if ((extra == 1 && codepoint < 0x80U) || (extra == 2 && codepoint < 0x800U) ||
+            (extra == 3 && codepoint < 0x10000U) || codepoint > 0x10FFFFU ||
+            (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) {
+            return false;
+        }
+        index += extra + 1;
+    }
+    return true;
 }
 
 std::string_view bool_text(bool value)
@@ -344,11 +391,16 @@ std::optional<std::string> save_config(const std::filesystem::path &path,
         }
     }
 
+    const std::string text = serialize_config(config);
+    if (!is_valid_utf8(text)) {
+        return "configuration contains invalid UTF-8";
+    }
+
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
     if (!stream) {
         return "cannot open for writing: " + path.string();
     }
-    stream << serialize_config(config);
+    stream << text;
     stream.flush();
     if (!stream) {
         return "cannot write: " + path.string();

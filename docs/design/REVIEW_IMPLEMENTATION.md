@@ -773,4 +773,13 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   directly. New `config_writer_test` covers default and rich round trips
   (including profiles, partial palette overrides and `arguments`), byte-stable
   re-serialization, special characters/escaping, and save-then-load through a
-  temp file with nested directory creation; suites pass 24/24.
+  temp file with nested directory creation; suites pass 24/24. **Luna-Six
+  review: PASS WITH FINDINGS**, resolved here: (a) high-bit bytes were emitted
+  without a UTF-8 guarantee — the writer now defines a valid-UTF-8 contract and
+  `save_config()` rejects a result that is not valid UTF-8 (a small validator
+  checks overlong forms, surrogates and > U+10FFFF) instead of writing an
+  unparseable file; (b) the tests now cover all 16 palette slots, every bell and
+  cursor shape/blink combination, CR/C0 escapes, non-ASCII UTF-8, a
+  colour-only profile, empty arguments/strings, a non-default `default_profile`
+  and a fully populated profile; (c) the speculative layout `operator==`s were
+  removed from `layout_config.hpp` and deferred to the 5.6 change set.

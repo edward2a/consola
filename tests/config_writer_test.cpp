@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <config/loader.hpp>
 #include <config/writer.hpp>
@@ -141,6 +143,104 @@ void test_special_characters()
     CHECK(reparsed.config.general.word_chars == config.general.word_chars);
 }
 
+bool round_trips(const consola::ApplicationConfig &config)
+{
+    const std::string text = consola::serialize_config(config);
+    const consola::ConfigLoadResult reparsed = consola::parse_config(text);
+    return reparsed.ok() && reparsed.config == config;
+}
+
+void test_edge_values()
+{
+    // All 16 palette slots, each distinct.
+    consola::ApplicationConfig palette = consola::default_application_config();
+    for (std::size_t index = 0; index < palette.colours.ansi.size(); ++index) {
+        palette.colours.ansi[index] =
+            consola::Rgb{static_cast<std::uint8_t>(index), static_cast<std::uint8_t>(index * 2U),
+                         static_cast<std::uint8_t>(255U - index)};
+    }
+    CHECK(round_trips(palette));
+
+    // Every bell mode and cursor shape/blink combination.
+    for (const consola::BellMode bell : {consola::BellMode::none, consola::BellMode::audible,
+                                         consola::BellMode::visual, consola::BellMode::both}) {
+        for (const consola::CursorShape shape :
+             {consola::CursorShape::block, consola::CursorShape::underline,
+              consola::CursorShape::bar}) {
+            for (const bool blink : {false, true}) {
+                consola::ApplicationConfig config = consola::default_application_config();
+                config.general.bell = bell;
+                config.general.cursor = consola::CursorConfig{.shape = shape, .blink = blink};
+                CHECK(round_trips(config));
+            }
+        }
+    }
+
+    // Control characters, CR and non-ASCII UTF-8.
+    consola::ApplicationConfig control = consola::default_application_config();
+    control.general.shell = std::string("a\rb\x01c\x1f"
+                                        "d");
+    control.font.family = "Caf\xc3\xa9 \xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e";
+    CHECK(round_trips(control));
+
+    // A profile containing only colour overrides (not "empty").
+    consola::ApplicationConfig colour_only = consola::default_application_config();
+    consola::ProfileConfig colour_profile;
+    colour_profile.colours.foreground = consola::Rgb{0x01, 0x02, 0x03};
+    colour_profile.colours.ansi[15] = consola::Rgb{0xfe, 0xfd, 0xfc};
+    colour_only.profiles.emplace("colour_only", colour_profile);
+    CHECK(round_trips(colour_only));
+
+    // An explicit empty arguments override and empty strings survive.
+    consola::ApplicationConfig empties = consola::default_application_config();
+    consola::ProfileConfig empty_args;
+    empty_args.arguments = std::vector<std::string>{};
+    empty_args.shell = std::string{};
+    empties.profiles.emplace("empties", empty_args);
+    CHECK(round_trips(empties));
+
+    // default_profile naming a non-default profile.
+    consola::ApplicationConfig named = consola::default_application_config();
+    named.profiles.emplace("named", consola::ProfileConfig{});
+    named.default_profile = "named";
+    CHECK(round_trips(named));
+
+    // A profile with every optional field set.
+    consola::ApplicationConfig full = consola::default_application_config();
+    consola::ProfileConfig everything;
+    everything.shell = "/bin/fish";
+    everything.arguments = std::vector<std::string>{"-l"};
+    everything.working_directory = "/srv";
+    everything.login_shell = true;
+    everything.term = "vt100";
+    everything.colorterm = std::string{};
+    everything.scrollback = 0;
+    everything.font = consola::FontConfig{.family = "Mono", .size = 9};
+    everything.word_chars = "x";
+    everything.bell = consola::BellMode::audible;
+    everything.cursor =
+        consola::CursorConfig{.shape = consola::CursorShape::underline, .blink = false};
+    everything.colours.background = consola::Rgb{0, 0, 1};
+    full.profiles.emplace("everything", everything);
+    CHECK(round_trips(full));
+}
+
+void test_invalid_utf8_is_rejected()
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "consola_writer_utf8_test";
+    const std::filesystem::path path = directory / "config.yml";
+    std::filesystem::remove_all(directory);
+
+    consola::ApplicationConfig config = consola::default_application_config();
+    config.general.shell = std::string("\xff\xfe");
+    const std::optional<std::string> error = consola::save_config(path, config);
+    CHECK(error.has_value());
+    CHECK(!std::filesystem::exists(path));
+
+    std::filesystem::remove_all(directory);
+}
+
 void test_save_and_load()
 {
     const std::filesystem::path directory =
@@ -172,6 +272,8 @@ int main()
         test_rich_round_trip();
         test_stable_output();
         test_special_characters();
+        test_edge_values();
+        test_invalid_utf8_is_rejected();
         test_save_and_load();
     } catch (const std::exception &exception) {
         std::fprintf(stderr, "unexpected exception: %s\n", exception.what());
