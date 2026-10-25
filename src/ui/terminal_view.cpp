@@ -20,6 +20,18 @@ namespace {
 // Pixels either side of a divider that still count as a grab.
 constexpr int kDividerGrab = 3;
 
+// Collects an emulator's encoded output so one input action can be admitted as
+// a single queue item (DIP 1.7 whole-action admission, 6.1 broadcast).
+struct ByteSink {
+    std::string bytes;
+};
+
+void collect_bytes(void *context, std::span<const std::byte> bytes)
+{
+    auto *sink = static_cast<ByteSink *>(context);
+    sink->bytes.append(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+}
+
 } // namespace
 
 TerminalView::TerminalView(int x, int y, int w, int h, TerminalManager &manager,
@@ -201,6 +213,11 @@ void TerminalView::set_broadcast(bool enabled)
 
 std::vector<TerminalId> TerminalView::broadcast_targets(TerminalId source)
 {
+    const TerminalInstance *source_instance = manager_.find(source);
+    if (source_instance == nullptr || !source_instance->input_enabled() ||
+        !manager_.tab().layout().contains(source)) {
+        return {};
+    }
     if (!broadcast_) {
         return {source};
     }
@@ -211,18 +228,31 @@ std::vector<TerminalId> TerminalView::broadcast_targets(TerminalId source)
             targets.push_back(id);
         }
     }
-    if (targets.empty()) {
-        targets.push_back(source);
-    }
     return targets;
 }
 
 void TerminalView::dispatch_key_input(TerminalId source, std::span<const KeyEvent> events)
 {
     for (const TerminalId destination : broadcast_targets(source)) {
+        const auto context = contexts_.find(destination);
+        if (context == contexts_.end()) {
+            continue;
+        }
         TerminalEmulator &emulator = manager_.emulator(destination);
+        // Encode the whole action first, then admit it as one queue item.
+        ByteSink sink;
+        emulator.set_output_callback(&collect_bytes, &sink);
         for (const KeyEvent &event : events) {
             emulator.handle_keyboard(event);
+        }
+        emulator.set_output_callback(&TerminalView::output_callback, context->second.get());
+        if (sink.bytes.empty()) {
+            continue;
+        }
+        const auto bytes = std::span<const std::byte>(
+            reinterpret_cast<const std::byte *>(sink.bytes.data()), sink.bytes.size());
+        if (!manager_.send(destination, bytes) && broadcast_) {
+            log(LogLevel::Warning, "broadcast: a destination rejected key input");
         }
     }
 }
@@ -233,12 +263,12 @@ void TerminalView::dispatch_paste_input(TerminalId source, std::string_view text
         TerminalEmulator &emulator = manager_.emulator(destination);
         const PasteCapture capture = emulator.capture_paste(text, style_.max_paste_bytes);
         if (!capture.ok) {
-            log(LogLevel::Warning, "paste rejected for a broadcast destination");
+            log(LogLevel::Warning, "paste rejected (oversized or empty)");
             continue;
         }
         const auto bytes = std::span<const std::byte>(
             reinterpret_cast<const std::byte *>(capture.bytes.data()), capture.bytes.size());
-        if (!manager_.send(destination, bytes)) {
+        if (!manager_.send(destination, bytes) && broadcast_) {
             log(LogLevel::Warning, "broadcast: a destination rejected paste input");
         }
     }
@@ -648,9 +678,9 @@ LayoutMetrics TerminalView::metrics() const
 void TerminalView::output_callback(void *context, std::span<const std::byte> bytes)
 {
     auto *self = static_cast<Context *>(context);
-    if (!self->view->manager_.send(self->id, bytes) && self->view->broadcast_) {
-        log(LogLevel::Warning, "broadcast: a destination rejected terminal output");
-    }
+    // Encoded output and feed() replies stay session-local; broadcast rejection
+    // is reported at the key/paste dispatch layer instead.
+    self->view->manager_.send(self->id, bytes);
 }
 
 void TerminalView::paste_text_callback(void *context, std::string_view text)

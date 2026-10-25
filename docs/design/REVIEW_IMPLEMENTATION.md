@@ -889,4 +889,19 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   paste framing, feed-reply locality), `terminal_view_test` broadcast target
   selection/toggle, and `commands_test` for the new default binding. Debug and
   ASan/UBSan suites pass 29/29; format/tidy clean. Pane zoom/movement, tab
-  movement, renaming and OSC 7 remain in 6.1.
+  movement, renaming and OSC 7 remain in 6.1. **Luna-Six review: FAIL**,
+  addressed here: (a) whole-action admission — each destination now encodes the
+  complete translated action into a buffer and admits it as one queue item
+  instead of pushing per event; (b) rejection reporting is scoped to the
+  key/paste dispatch layer (with the destination) and the emulator output
+  callback is silent again, so `feed()` replies cannot produce broadcast
+  warnings; (c) `broadcast_targets()` validates that the source is live,
+  input-enabled and in the active tab and no longer falls back to an invalid
+  source; (d) added `broadcast_view_test`, which drives real dispatch through
+  `TerminalView` with two `cat` panes: one broadcast key appears exactly once in
+  each pane and a non-broadcast key reaches only the source. **Open/deferred:**
+  a paste larger than the outbound queue still requires the streaming-paste
+  transport (DIP 1.7), which is explicitly deferred until after the app; the
+  busy/closing and shortcut/mouse-locality cases are structural (dispatch only
+  sees translated keys/raw paste) and the large-paste regression remains with
+  that transport. Debug and ASan/UBSan suites pass 30/30; format/tidy clean.

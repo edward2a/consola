@@ -50,6 +50,14 @@ add_test(NAME terminal_view_test
             $<TARGET_FILE:consola_terminal_view_test>)
 set_tests_properties(terminal_view_test PROPERTIES TIMEOUT 30)
 
+add_executable(consola_broadcast_view_test broadcast_view_test.cpp)
+target_link_libraries(consola_broadcast_view_test PRIVATE terminal_ui)
+
+add_test(NAME broadcast_view_test
+    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
+            $<TARGET_FILE:consola_broadcast_view_test>)
+set_tests_properties(broadcast_view_test PROPERTIES TIMEOUT 30)
+
 add_executable(consola_terminal_frame_test terminal_frame_test.cpp)
 target_link_libraries(consola_terminal_frame_test PRIVATE terminal_ui)
 
@@ -160,6 +168,7 @@ if(CONSOLA_SANITIZERS)
     set(lsan_options "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tests/lsan.supp")
     set_tests_properties(smoke_test PROPERTIES ENVIRONMENT "${smoke_env};${lsan_options}")
     set_tests_properties(terminal_view_test PROPERTIES ENVIRONMENT "${lsan_options}")
+    set_tests_properties(broadcast_view_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(terminal_frame_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(font_metrics_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set(session_smoke_env "${session_smoke_env};${lsan_options}")
