@@ -910,4 +910,6 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   buffer and its callback never allocates/throws, with an RAII guard restoring
   the destination's output callback even if encoding throws (the libtsm callback
   contract forbids exceptions). The large-paste item remains the documented
-  streaming-paste deferral.
+  streaming-paste deferral. **Third review: PASS WITH FINDINGS** (P3): paste
+  capture rejections now name the destination pane too. S6-CS1 broadcast input
+  is complete; Debug and ASan/UBSan suites pass 30/30; format/tidy clean.

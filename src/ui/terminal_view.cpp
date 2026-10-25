@@ -297,7 +297,8 @@ void TerminalView::dispatch_paste_input(TerminalId source, std::string_view text
         TerminalEmulator &emulator = manager_.emulator(destination);
         const PasteCapture capture = emulator.capture_paste(text, style_.max_paste_bytes);
         if (!capture.ok) {
-            log(LogLevel::Warning, "paste rejected (oversized or empty)");
+            log(LogLevel::Warning, "paste rejected (oversized or empty) for pane " +
+                                       std::to_string(destination.value));
             continue;
         }
         const auto bytes = std::span<const std::byte>(
