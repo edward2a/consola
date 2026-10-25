@@ -905,3 +905,9 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   busy/closing and shortcut/mouse-locality cases are structural (dispatch only
   sees translated keys/raw paste) and the large-paste regression remains with
   that transport. Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
+  **Second review: FAIL**, resolved here: (e) broadcast rejection warnings now
+  name the destination pane; (f) the key-action capture sink is a fixed 4 KiB
+  buffer and its callback never allocates/throws, with an RAII guard restoring
+  the destination's output callback even if encoding throws (the libtsm callback
+  contract forbids exceptions). The large-paste item remains the documented
+  streaming-paste deferral.

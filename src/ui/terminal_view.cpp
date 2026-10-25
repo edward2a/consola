@@ -3,6 +3,7 @@
 #include <ui/terminal_view.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <unordered_set>
@@ -21,16 +22,38 @@ namespace {
 constexpr int kDividerGrab = 3;
 
 // Collects an emulator's encoded output so one input action can be admitted as
-// a single queue item (DIP 1.7 whole-action admission, 6.1 broadcast).
+// a single queue item (DIP 1.7 whole-action admission, 6.1 broadcast). The
+// buffer is fixed-size and the callback never throws: libtsm invokes it inside
+// its C callback path, where exceptions must not escape.
 struct ByteSink {
-    std::string bytes;
+    static constexpr std::size_t kCapacity = 4096;
+    std::array<std::byte, kCapacity> bytes{};
+    std::size_t size = 0;
+    bool overflow = false;
 };
 
 void collect_bytes(void *context, std::span<const std::byte> bytes)
 {
     auto *sink = static_cast<ByteSink *>(context);
-    sink->bytes.append(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    if (bytes.size() > ByteSink::kCapacity - sink->size) {
+        sink->overflow = true;
+        return;
+    }
+    std::ranges::copy(bytes, sink->bytes.begin() + sink->size);
+    sink->size += bytes.size();
 }
+
+// Restores a destination's output callback even if encoding throws.
+struct OutputCallbackGuard {
+    TerminalEmulator &emulator;
+    TerminalEmulator::OutputCallback callback;
+    void *context;
+
+    ~OutputCallbackGuard()
+    {
+        emulator.set_output_callback(callback, context);
+    }
+};
 
 } // namespace
 
@@ -242,17 +265,28 @@ void TerminalView::dispatch_key_input(TerminalId source, std::span<const KeyEven
         // Encode the whole action first, then admit it as one queue item.
         ByteSink sink;
         emulator.set_output_callback(&collect_bytes, &sink);
-        for (const KeyEvent &event : events) {
-            emulator.handle_keyboard(event);
+        {
+            OutputCallbackGuard guard{.emulator = emulator,
+                                      .callback = &TerminalView::output_callback,
+                                      .context = context->second.get()};
+            for (const KeyEvent &event : events) {
+                emulator.handle_keyboard(event);
+            }
         }
-        emulator.set_output_callback(&TerminalView::output_callback, context->second.get());
-        if (sink.bytes.empty()) {
+        if (sink.overflow) {
+            if (broadcast_) {
+                log(LogLevel::Warning, "broadcast: key action too large for pane " +
+                                           std::to_string(destination.value));
+            }
             continue;
         }
-        const auto bytes = std::span<const std::byte>(
-            reinterpret_cast<const std::byte *>(sink.bytes.data()), sink.bytes.size());
+        if (sink.size == 0) {
+            continue;
+        }
+        const auto bytes = std::span<const std::byte>(sink.bytes.data(), sink.size);
         if (!manager_.send(destination, bytes) && broadcast_) {
-            log(LogLevel::Warning, "broadcast: a destination rejected key input");
+            log(LogLevel::Warning,
+                "broadcast: pane " + std::to_string(destination.value) + " rejected key input");
         }
     }
 }
@@ -269,7 +303,8 @@ void TerminalView::dispatch_paste_input(TerminalId source, std::string_view text
         const auto bytes = std::span<const std::byte>(
             reinterpret_cast<const std::byte *>(capture.bytes.data()), capture.bytes.size());
         if (!manager_.send(destination, bytes) && broadcast_) {
-            log(LogLevel::Warning, "broadcast: a destination rejected paste input");
+            log(LogLevel::Warning,
+                "broadcast: pane " + std::to_string(destination.value) + " rejected paste input");
         }
     }
 }
