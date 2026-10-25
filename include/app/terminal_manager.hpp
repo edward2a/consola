@@ -152,6 +152,8 @@ public:
     void focus(TerminalId id) noexcept;
     [[nodiscard]] std::optional<TerminalId> focused() const noexcept;
     bool set_split_ratio(NodeId split, float ratio) noexcept;
+    // Swap two terminals in the active tab's layout (pane movement, DIP 6.1).
+    bool swap_terminals(TerminalId first, TerminalId second) noexcept;
     void equalize() noexcept;
 
     [[nodiscard]] TerminalInstance *find(TerminalId id) noexcept;

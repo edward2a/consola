@@ -46,6 +46,13 @@ void test_shortcuts()
     check('t', cs, Command::NewTab, FocusDirection::left);
     check('X', cs, Command::CloseTab, FocusDirection::left);
     check('b', cs, Command::ToggleBroadcast, FocusDirection::left);
+    check('z', cs, Command::ToggleZoom, FocusDirection::left);
+    check(FL_Page_Up, cs, Command::MoveTabLeft, FocusDirection::left);
+    check(FL_Page_Down, cs, Command::MoveTabRight, FocusDirection::left);
+    check(FL_Left, cs | alt, Command::MovePane, FocusDirection::left);
+    check(FL_Right, cs | alt, Command::MovePane, FocusDirection::right);
+    check(FL_Up, cs | alt, Command::MovePane, FocusDirection::up);
+    check(FL_Down, cs | alt, Command::MovePane, FocusDirection::down);
 
     check(FL_Page_Down, FL_CTRL, Command::NextTab, FocusDirection::left);
     check(FL_Page_Up, FL_CTRL, Command::PreviousTab, FocusDirection::left);
@@ -68,7 +75,7 @@ void test_unmapped()
     CHECK(!command_for_key(FL_Left, 0).has_value());
     CHECK(!command_for_key(FL_Left, FL_CTRL).has_value());
     CHECK(!command_for_key(FL_Page_Down, 0).has_value());
-    CHECK(!command_for_key(FL_Page_Down, FL_CTRL | FL_SHIFT).has_value());
+    CHECK(!command_for_key(FL_Page_Down, FL_CTRL | FL_ALT).has_value());
     CHECK(!command_for_key('t', FL_CTRL).has_value());
 
     // Near-miss modifier combinations are not shortcuts.

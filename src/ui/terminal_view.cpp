@@ -133,6 +133,7 @@ bool TerminalView::pump()
 
 std::optional<TerminalId> TerminalView::split_focused(Orientation orientation)
 {
+    zoomed_.reset();
     const std::optional<TerminalId> focused = manager_.focused();
     if (!focused || !can_split(*focused, orientation)) {
         return std::nullopt;
@@ -181,6 +182,9 @@ void TerminalView::equalize()
 
 void TerminalView::focus(TerminalId id)
 {
+    if (zoomed_.has_value() && zoomed_.value() != id) {
+        zoomed_.reset();
+    }
     manager_.focus(id);
     // focus() may select a different tab, so re-apply geometry before syncing
     // FLTK focus to the newly active tab's pane.
@@ -221,6 +225,15 @@ bool TerminalView::execute(const CommandRequest &request)
     case Command::ToggleBroadcast:
         set_broadcast(!broadcast_);
         return true;
+    case Command::ToggleZoom:
+        toggle_zoom();
+        return true;
+    case Command::MovePane:
+        return move_focused(request.direction);
+    case Command::MoveTabLeft:
+        return move_tab(-1);
+    case Command::MoveTabRight:
+        return move_tab(1);
     }
     return false;
 }
@@ -310,8 +323,57 @@ void TerminalView::dispatch_paste_input(TerminalId source, std::string_view text
     }
 }
 
+void TerminalView::toggle_zoom()
+{
+    if (zoomed_.has_value()) {
+        zoomed_.reset();
+    } else {
+        zoomed_ = manager_.focused();
+        if (!zoomed_.has_value()) {
+            return;
+        }
+    }
+    layout();
+    sync_focus();
+}
+
+bool TerminalView::move_focused(FocusDirection direction)
+{
+    const std::optional<TerminalId> focused = manager_.focused();
+    if (!focused.has_value()) {
+        return false;
+    }
+    const std::optional<TerminalId> neighbor =
+        focus_neighbor(last_layout_, focused.value(), direction);
+    if (!neighbor.has_value()) {
+        return false;
+    }
+    if (!manager_.swap_terminals(focused.value(), neighbor.value())) {
+        return false;
+    }
+    layout();
+    sync_focus();
+    return true;
+}
+
+bool TerminalView::move_tab(int delta)
+{
+    const TabId active = manager_.tabs().active_id();
+    const std::optional<std::size_t> index = manager_.tabs().index_of(active);
+    if (!index.has_value() || delta == 0) {
+        return false;
+    }
+    const auto count = static_cast<long>(manager_.tabs().count());
+    const long target = static_cast<long>(index.value()) + static_cast<long>(delta);
+    if (target < 0 || target >= count) {
+        return false;
+    }
+    return manager_.move_tab(active, static_cast<std::size_t>(target));
+}
+
 std::optional<TerminalId> TerminalView::new_tab()
 {
+    zoomed_.reset();
     const TabId tab = manager_.create_tab();
     const std::optional<TerminalId> id = manager_.create_root_terminal(
         tab, TerminalOptions{.session = split_options_, .style = style_});
@@ -336,6 +398,7 @@ bool TerminalView::close_tab(TabId id)
 
 bool TerminalView::select_tab(TabId id)
 {
+    zoomed_.reset();
     if (!manager_.select_tab(id)) {
         return false;
     }
@@ -608,20 +671,37 @@ void TerminalView::layout()
         }
     }
 
+    // Drop a zoom whose pane is no longer in the active tab (closed or the tab
+    // changed).
+    if (zoomed_.has_value() && !manager_.tab().layout().contains(zoomed_.value())) {
+        zoomed_.reset();
+    }
+
     // Only the active tab's panes are shown; widgets for other tabs are kept
     // (preserving their emulator state) but hidden until their tab is active.
-    // Active widgets are left untouched so a redundant hide/show never steals
-    // FLTK focus from the focused pane.
-    std::unordered_set<TerminalId> active;
-    for (const PaneRect &pane : last_layout_.panes) {
-        active.insert(pane.terminal);
+    // A zoomed pane is the only visible pane. Active widgets are left untouched
+    // so a redundant hide/show never steals FLTK focus from the focused pane.
+    std::unordered_set<TerminalId> visible;
+    if (zoomed_.has_value()) {
+        visible.insert(zoomed_.value());
+    } else {
+        for (const PaneRect &pane : last_layout_.panes) {
+            visible.insert(pane.terminal);
+        }
     }
     for (auto &entry : widgets_) {
-        if (!active.contains(entry.first)) {
+        if (!visible.contains(entry.first)) {
             entry.second->hide();
         } else if (entry.second->visible() == 0) {
             entry.second->show();
         }
+    }
+    if (zoomed_.has_value()) {
+        if (TerminalWidget *zoomed_widget = widget(zoomed_.value())) {
+            zoomed_widget->resize(x(), y(), w(), h());
+        }
+        redraw();
+        return;
     }
     for (const PaneRect &pane : last_layout_.panes) {
         const auto it = widgets_.find(pane.terminal);

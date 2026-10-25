@@ -25,6 +25,10 @@ enum class Command : std::uint8_t {
     NextTab,
     PreviousTab,
     ToggleBroadcast,
+    ToggleZoom,
+    MovePane,
+    MoveTabLeft,
+    MoveTabRight,
 };
 
 // A resolved shortcut: the command plus the direction it applies to. The

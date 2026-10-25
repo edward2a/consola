@@ -225,6 +225,32 @@ bool LayoutTree::set_split_ratio(NodeId split_id, float ratio) noexcept
     return true;
 }
 
+bool LayoutTree::swap_terminals(TerminalId first, TerminalId second) noexcept
+{
+    if (first == second) {
+        return false;
+    }
+    const std::optional<NodeId> first_node = find_terminal(first);
+    const std::optional<NodeId> second_node = find_terminal(second);
+    if (!first_node.has_value() || !second_node.has_value()) {
+        return false;
+    }
+    const NodeId first_id = first_node.value();
+    const NodeId second_id = second_node.value();
+    auto first_entry = nodes_.find(first_id.value);
+    auto second_entry = nodes_.find(second_id.value);
+    if (first_entry == nodes_.end() || second_entry == nodes_.end()) {
+        return false;
+    }
+    auto *first_terminal = std::get_if<TerminalNode>(&first_entry->second.node);
+    auto *second_terminal = std::get_if<TerminalNode>(&second_entry->second.node);
+    if (first_terminal == nullptr || second_terminal == nullptr) {
+        return false;
+    }
+    std::swap(first_terminal->terminal, second_terminal->terminal);
+    return true;
+}
+
 NodeId LayoutTree::allocate() noexcept
 {
     return NodeId{next_id_++};

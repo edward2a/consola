@@ -136,6 +136,28 @@ int main()
     CHECK(view.focus_direction(FocusDirection::right));
     CHECK(manager.focused() == second);
 
+    // Pane zoom/maximize (DIP 6.1): only the focused pane is visible.
+    view.toggle_zoom();
+    CHECK(view.zoomed());
+    CHECK(view.widget(REQUIRED(root))->visible() == 0);
+    CHECK(view.widget(REQUIRED(second))->visible() != 0);
+    view.toggle_zoom();
+    CHECK(!view.zoomed());
+    CHECK(view.widget(REQUIRED(root))->visible() != 0);
+    CHECK(view.widget(REQUIRED(second))->visible() != 0);
+
+    // Pane movement (DIP 6.1): swap the focused pane with its left neighbor.
+    CHECK(view.move_focused(FocusDirection::left));
+    const auto moved = manager.tab().layout().terminals();
+    CHECK(moved.size() == 2);
+    CHECK(moved[0] == REQUIRED(second));
+    CHECK(moved[1] == REQUIRED(root));
+    CHECK(manager.focused() == second);
+    CHECK(view.move_focused(FocusDirection::right)); // swap back
+    const auto restored = manager.tab().layout().terminals();
+    CHECK(restored[0] == REQUIRED(root));
+    CHECK(restored[1] == REQUIRED(second));
+
     // Command dispatch (DIP 3.6).
     CHECK(
         view.execute(consola::CommandRequest{consola::Command::ResizePane, FocusDirection::left}));
@@ -184,6 +206,19 @@ int main()
     CHECK(view.widget(REQUIRED(tab_root)) != nullptr);
     CHECK(view.widget(REQUIRED(root))->visible() == 0);
     CHECK(view.widget(REQUIRED(tab_root))->visible() != 0);
+
+    // Tab movement (DIP 6.1): move the active (second) tab left and back.
+    const auto tab_order = manager.tabs().ids();
+    CHECK(tab_order.size() == 2);
+    CHECK(tab_order[0] == first_tab);
+    CHECK(tab_order[1] == second_tab);
+    CHECK(view.move_tab(-1));
+    const auto moved_tabs = manager.tabs().ids();
+    CHECK(moved_tabs[0] == second_tab);
+    CHECK(moved_tabs[1] == first_tab);
+    CHECK(manager.tabs().active_id() == second_tab);
+    CHECK(view.move_tab(1));
+    CHECK(manager.tabs().ids()[0] == first_tab);
 
     CHECK(manager.select_tab(first_tab));
     view.pump();

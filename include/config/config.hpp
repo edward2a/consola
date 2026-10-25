@@ -158,6 +158,13 @@ struct ShortcutConfig {
     std::string resize_down = "Ctrl+Shift+Down";
     std::string cancel_paste = "Escape";
     std::string toggle_broadcast = "Ctrl+Shift+B";
+    std::string toggle_zoom = "Ctrl+Shift+Z";
+    std::string move_tab_left = "Ctrl+Shift+PageUp";
+    std::string move_tab_right = "Ctrl+Shift+PageDown";
+    std::string move_pane_left = "Ctrl+Shift+Alt+Left";
+    std::string move_pane_right = "Ctrl+Shift+Alt+Right";
+    std::string move_pane_up = "Ctrl+Shift+Alt+Up";
+    std::string move_pane_down = "Ctrl+Shift+Alt+Down";
 
     friend bool operator==(const ShortcutConfig &, const ShortcutConfig &) = default;
 };

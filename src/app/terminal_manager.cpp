@@ -546,6 +546,11 @@ bool TerminalManager::set_split_ratio(NodeId split, float ratio) noexcept
     return tabs_.active().layout().set_split_ratio(split, ratio);
 }
 
+bool TerminalManager::swap_terminals(TerminalId first, TerminalId second) noexcept
+{
+    return tabs_.active().layout().swap_terminals(first, second);
+}
+
 void TerminalManager::equalize() noexcept
 {
     tabs_.active().layout().equalize();

@@ -827,6 +827,20 @@ bool parse_shortcuts(ryml::ConstNodeRef node, ShortcutConfig &shortcuts, Diagnos
             field = &shortcuts.cancel_paste;
         } else if (key == "toggle_broadcast") {
             field = &shortcuts.toggle_broadcast;
+        } else if (key == "toggle_zoom") {
+            field = &shortcuts.toggle_zoom;
+        } else if (key == "move_tab_left") {
+            field = &shortcuts.move_tab_left;
+        } else if (key == "move_tab_right") {
+            field = &shortcuts.move_tab_right;
+        } else if (key == "move_pane_left") {
+            field = &shortcuts.move_pane_left;
+        } else if (key == "move_pane_right") {
+            field = &shortcuts.move_pane_right;
+        } else if (key == "move_pane_up") {
+            field = &shortcuts.move_pane_up;
+        } else if (key == "move_pane_down") {
+            field = &shortcuts.move_pane_down;
         }
         if (field == nullptr) {
             diag.warnings.push_back("shortcuts: unknown key '" + key + "'");

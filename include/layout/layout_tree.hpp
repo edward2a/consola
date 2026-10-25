@@ -92,6 +92,11 @@ public:
     // `split` is not a split node or `ratio` is not in (0, 1).
     bool set_split_ratio(NodeId split, float ratio) noexcept;
 
+    // Swap the terminals of two leaves (pane movement, DIP 6.1). Focus follows
+    // the terminal, so the moved pane keeps focus. Returns false when either
+    // terminal is absent or both refer to the same terminal.
+    bool swap_terminals(TerminalId first, TerminalId second) noexcept;
+
 private:
     struct Entry {
         NodeId parent; // zero for the root

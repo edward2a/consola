@@ -913,3 +913,19 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   streaming-paste deferral. **Third review: PASS WITH FINDINGS** (P3): paste
   capture rejections now name the destination pane too. S6-CS1 broadcast input
   is complete; Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
+- **S6-CS2 — pane zoom, pane movement, tab movement (§6.1)**:
+  `TerminalView::toggle_zoom()` temporarily shows only the focused pane at the
+  full content rectangle (other widgets hidden; the layout tree is unchanged).
+  Zoom is cleared on a focus change, split, new tab, tab switch, or when the
+  zoomed pane leaves the active tab. Pane movement uses
+  `LayoutTree::swap_terminals()` (exposed via `TerminalManager`) and
+  `TerminalView::move_focused(direction)`, which swaps the focused pane with its
+  `focus_neighbor()` in that direction; focus follows the terminal. Tab movement
+  uses `TabManager::move()` through `TerminalView::move_tab(delta)`. New
+  commands `ToggleZoom`, `MovePane` (direction) and `MoveTabLeft/Right` are
+  wired through `ShortcutMap`, the loader, docs and the example with defaults
+  `Ctrl+Shift+Z`, `Ctrl+Shift+Alt+Arrow` and `Ctrl+Shift+PageUp/PageDown`.
+  Tests: `commands_test` covers the new bindings; `terminal_view_test` covers
+  zoom visibility, pane swap order (focus preserved) and tab reordering. Debug
+  and ASan/UBSan suites pass 30/30; format/tidy clean. Terminal renaming and
+  OSC 7 remain in 6.1.

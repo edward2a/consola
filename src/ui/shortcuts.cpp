@@ -185,6 +185,20 @@ ShortcutMap::ShortcutMap(const ShortcutConfig &config)
          FocusDirection::down);
     bind("toggle_broadcast", config.toggle_broadcast, defaults.toggle_broadcast,
          Command::ToggleBroadcast, FocusDirection::left);
+    bind("toggle_zoom", config.toggle_zoom, defaults.toggle_zoom, Command::ToggleZoom,
+         FocusDirection::left);
+    bind("move_tab_left", config.move_tab_left, defaults.move_tab_left, Command::MoveTabLeft,
+         FocusDirection::left);
+    bind("move_tab_right", config.move_tab_right, defaults.move_tab_right, Command::MoveTabRight,
+         FocusDirection::left);
+    bind("move_pane_left", config.move_pane_left, defaults.move_pane_left, Command::MovePane,
+         FocusDirection::left);
+    bind("move_pane_right", config.move_pane_right, defaults.move_pane_right, Command::MovePane,
+         FocusDirection::right);
+    bind("move_pane_up", config.move_pane_up, defaults.move_pane_up, Command::MovePane,
+         FocusDirection::up);
+    bind("move_pane_down", config.move_pane_down, defaults.move_pane_down, Command::MovePane,
+         FocusDirection::down);
 
     // Validate and carry the cancel-paste binding; the action belongs to the
     // deferred streaming-paste transport.

@@ -83,6 +83,19 @@ public:
     void dispatch_key_input(TerminalId source, std::span<const KeyEvent> events);
     void dispatch_paste_input(TerminalId source, std::string_view text);
 
+    // Pane zoom/maximize (DIP 6.1): temporarily show only the focused pane in
+    // the active tab. Any focus change, split or tab switch clears it.
+    void toggle_zoom();
+    [[nodiscard]] bool zoomed() const noexcept
+    {
+        return zoomed_.has_value();
+    }
+
+    // Pane movement (DIP 6.1): swap the focused pane with its neighbor in
+    // `direction`. Tab movement: move the active tab by `delta` (-1/+1).
+    bool move_focused(FocusDirection direction);
+    bool move_tab(int delta);
+
     [[nodiscard]] TerminalManager &manager() noexcept
     {
         return manager_;
@@ -137,6 +150,7 @@ private:
     ShortcutMap shortcuts_;
     SessionOptions split_options_;
     bool broadcast_ = false;
+    std::optional<TerminalId> zoomed_;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalWidget>> widgets_;
     // Heap-allocated so callback contexts have stable addresses.
     std::unordered_map<TerminalId, std::unique_ptr<Context>> contexts_;
