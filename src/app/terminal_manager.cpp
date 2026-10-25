@@ -484,19 +484,21 @@ bool TerminalManager::close_terminal(TerminalId id)
     return true;
 }
 
-void TerminalManager::send(TerminalId id, std::span<const std::byte> bytes)
+bool TerminalManager::send(TerminalId id, std::span<const std::byte> bytes)
 {
     const auto it = instances_.find(id);
     if (it == instances_.end() || bytes.empty()) {
-        return;
+        return false;
     }
     TerminalInstance *instance = it->second;
     if (!instance->input_enabled()) {
-        return;
+        return false;
     }
-    if (instance->outbound().try_push(bytes)) {
-        loop_->write_pending(id);
+    if (!instance->outbound().try_push(bytes)) {
+        return false;
     }
+    loop_->write_pending(id);
+    return true;
 }
 
 void TerminalManager::resize(TerminalId id, int columns, int rows)

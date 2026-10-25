@@ -45,6 +45,7 @@ void test_shortcuts()
     check('w', cs, Command::ClosePane, FocusDirection::left);
     check('t', cs, Command::NewTab, FocusDirection::left);
     check('X', cs, Command::CloseTab, FocusDirection::left);
+    check('b', cs, Command::ToggleBroadcast, FocusDirection::left);
 
     check(FL_Page_Down, FL_CTRL, Command::NextTab, FocusDirection::left);
     check(FL_Page_Up, FL_CTRL, Command::PreviousTab, FocusDirection::left);

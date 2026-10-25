@@ -151,6 +151,7 @@ Modifiers are `Ctrl`, `Shift` and `Alt`. Key names use FLTK/`X` names
 | `resize_up` | `Ctrl+Shift+Up` |
 | `resize_down` | `Ctrl+Shift+Down` |
 | `cancel_paste` | `Escape` |
+| `toggle_broadcast` | `Ctrl+Shift+B` |
 
 `cancel_paste` is parsed and reserved for the streaming-paste transport, which is
 deferred until after the application is complete; it has no effect yet.

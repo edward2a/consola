@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -114,6 +115,21 @@ int main()
     CHECK(both_running);
     CHECK(manager.focused() == second);
 
+    // Broadcast targets (DIP 6.1): the source alone when off; every
+    // input-enabled pane in the active tab (source included once) when on.
+    view.set_broadcast(false);
+    const auto single = view.broadcast_targets(REQUIRED(root));
+    CHECK(single.size() == 1);
+    CHECK(single.front() == REQUIRED(root));
+    view.set_broadcast(true);
+    const auto targets = view.broadcast_targets(REQUIRED(root));
+    CHECK(targets.size() == 2);
+    CHECK(std::ranges::find(targets, REQUIRED(root)) != targets.end());
+    CHECK(std::ranges::find(targets, REQUIRED(second)) != targets.end());
+    CHECK(view.execute(
+        consola::CommandRequest{consola::Command::ToggleBroadcast, FocusDirection::left}));
+    CHECK(!view.broadcast());
+
     // The split placed the new pane to the right; focus left returns to root.
     CHECK(view.focus_direction(FocusDirection::left));
     CHECK(manager.focused() == root);
@@ -161,7 +177,7 @@ int main()
     tab_options.executable = "/bin/sh";
     tab_options.arguments = {"-c", "sleep 5"};
     const auto tab_root =
-        manager.create_root_terminal(second_tab, consola::TerminalOptions{tab_options});
+        manager.create_root_terminal(second_tab, consola::TerminalOptions{.session = tab_options});
     CHECK(tab_root.has_value());
     view.pump();
     CHECK(view.widget(REQUIRED(root)) != nullptr);
@@ -204,7 +220,7 @@ int main()
     const consola::TabId titled_tab = manager.tabs().active_id();
     const consola::TabId other_tab = manager.create_tab();
     const auto other_root =
-        manager.create_root_terminal(other_tab, consola::TerminalOptions{options});
+        manager.create_root_terminal(other_tab, consola::TerminalOptions{.session = options});
     CHECK(other_root.has_value());
     view.pump();
     const std::string before(window.label());
@@ -245,7 +261,7 @@ int main()
     short_options.executable = "/bin/sh";
     short_options.arguments = {"-c", "printf bye"};
     const auto short_root =
-        manager.create_root_terminal(short_tab, consola::TerminalOptions{short_options});
+        manager.create_root_terminal(short_tab, consola::TerminalOptions{.session = short_options});
     CHECK(short_root.has_value());
     const bool auto_closed =
         wait_for([&] { return manager.find(REQUIRED(short_root)) == nullptr; }, 8000, view);

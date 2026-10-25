@@ -869,3 +869,24 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   as data only. Runtime layout reconstruction and per-pane profile selection
   remain Stage 6.4/6.5. Debug and ASan/UBSan suites pass 28/28; format/tidy
   clean.
+- **S6-CS1 — pane broadcast input (§6.1)**: `translate_fltk_key_events()` now
+  translates the FLTK event once into `KeyEvent`s; the widget hands them to the
+  view instead of encoding locally. `TerminalView` keeps a broadcast flag and
+  `broadcast_targets()` (just the source when off, otherwise every
+  input-enabled pane in the active tab, source included once).
+  `dispatch_key_input()` calls each destination's own `handle_keyboard()`, so
+  every pane encodes with its own libtsm modes (normal vs application cursor
+  keys) and routes through its own output callback; `dispatch_paste_input()`
+  captures the raw text per destination so bracketed-paste framing is
+  independent, then sends the resulting bytes to that session only. `send()`
+  now returns whether the pane accepted the bytes, and broadcast rejections
+  (busy/closing/oversized) are logged without blocking other destinations.
+  Shortcuts, copy/paste requests, mouse reporting and scrollback stay local;
+  `feed()` replies remain session-local. Added `Command::ToggleBroadcast` and
+  the `toggle_broadcast` shortcut (default `Ctrl+Shift+B`), wired through
+  `ShortcutMap`, the loader, docs and the example. Tests: new
+  `broadcast_test` (per-destination cursor-key encoding, bracketed vs plain
+  paste framing, feed-reply locality), `terminal_view_test` broadcast target
+  selection/toggle, and `commands_test` for the new default binding. Debug and
+  ASan/UBSan suites pass 29/29; format/tidy clean. Pane zoom/movement, tab
+  movement, renaming and OSC 7 remain in 6.1.

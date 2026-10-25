@@ -133,8 +133,10 @@ public:
     // terminals. Returns true when any emulator was fed (a redraw is needed).
     bool pump();
 
-    // Route encoded terminal output (keys/paste) to a running session.
-    void send(TerminalId id, std::span<const std::byte> bytes);
+    // Route encoded terminal output (keys/paste) to a running session. Returns
+    // false when the pane is unknown, not input-enabled, or its outbound queue
+    // is full (DIP 1.7); callers may report a rejected broadcast destination.
+    bool send(TerminalId id, std::span<const std::byte> bytes);
 
     // Begin closing a pane (DIP 4.4): a Starting pane cancels its launch and is
     // retained until the result is consumed; a running pane is terminated

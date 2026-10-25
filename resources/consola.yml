@@ -74,3 +74,4 @@ shortcuts:
   resize_up: Ctrl+Shift+Up
   resize_down: Ctrl+Shift+Down
   cancel_paste: Escape
+  toggle_broadcast: Ctrl+Shift+B

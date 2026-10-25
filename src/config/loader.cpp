@@ -825,6 +825,8 @@ bool parse_shortcuts(ryml::ConstNodeRef node, ShortcutConfig &shortcuts, Diagnos
             field = &shortcuts.resize_down;
         } else if (key == "cancel_paste") {
             field = &shortcuts.cancel_paste;
+        } else if (key == "toggle_broadcast") {
+            field = &shortcuts.toggle_broadcast;
         }
         if (field == nullptr) {
             diag.warnings.push_back("shortcuts: unknown key '" + key + "'");

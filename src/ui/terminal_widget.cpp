@@ -264,10 +264,10 @@ void TerminalWidget::paste_clipboard()
     Fl::paste(*this, 1);
 }
 
-void TerminalWidget::set_paste_callback(PasteCallback paste_callback, void *context)
+void TerminalWidget::set_paste_text_callback(PasteTextCallback paste_text_callback, void *context)
 {
-    paste_callback_ = paste_callback;
-    paste_context_ = context;
+    paste_text_callback_ = paste_text_callback;
+    paste_text_context_ = context;
 }
 
 void TerminalWidget::set_resize_callback(ResizeCallback resize_callback, void *context)
@@ -286,6 +286,12 @@ void TerminalWidget::set_key_callback(KeyCallback key_callback, void *context)
 {
     key_callback_ = key_callback;
     key_context_ = context;
+}
+
+void TerminalWidget::set_key_input_callback(KeyInputCallback key_input_callback, void *context)
+{
+    key_input_callback_ = key_input_callback;
+    key_input_context_ = context;
 }
 
 void TerminalWidget::resize(int x, int y, int w, int h)
@@ -641,21 +647,24 @@ int TerminalWidget::handle(int event)
             emulator_.scroll_to_bottom();
             full_redraw_requested_ = true;
         }
-        // The terminal consumes every key; libtsm encodes those it knows.
-        dispatch_fltk_key(emulator_);
+        // The terminal consumes every key; the view fans out translated events
+        // to the broadcast destinations (each encodes with its own VTE, 6.1).
+        const std::vector<KeyEvent> events = translate_fltk_key_events();
+        if (key_input_callback_ != nullptr) {
+            key_input_callback_(key_input_context_, events);
+        } else {
+            for (const KeyEvent &key_event : events) {
+                emulator_.handle_keyboard(key_event);
+            }
+        }
         return 1;
     }
     case FL_PASTE: {
         const char *text = Fl::event_text();
         const int length = Fl::event_length();
-        if (paste_callback_ != nullptr && text != nullptr && length > 0) {
-            const PasteCapture capture = emulator_.capture_paste(
-                std::string_view(text, static_cast<std::size_t>(length)), style_.max_paste_bytes);
-            if (capture.ok) {
-                paste_callback_(paste_context_, capture.bytes);
-            } else {
-                log(LogLevel::Warning, "paste rejected (oversized or empty)");
-            }
+        if (paste_text_callback_ != nullptr && text != nullptr && length > 0) {
+            paste_text_callback_(paste_text_context_,
+                                 std::string_view(text, static_cast<std::size_t>(length)));
         }
         return 1;
     }

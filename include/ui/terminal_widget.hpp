@@ -39,11 +39,14 @@ public:
 
     // Copy the current selection to the clipboard / selection buffer (DIP 2.8).
     void copy_selection();
-    // Request the clipboard and deliver an encoded paste through the callback.
+    // Request the clipboard; FLTK delivers it as an FL_PASTE event.
     void paste_clipboard();
 
-    using PasteCallback = void (*)(void *context, std::string_view bytes);
-    void set_paste_callback(PasteCallback paste_callback, void *context);
+    // The raw pasted text, before terminal encoding. Each broadcast destination
+    // encodes it with its own VTE so bracketed-paste modes stay independent
+    // (DIP 2.8, 6.1).
+    using PasteTextCallback = void (*)(void *context, std::string_view text);
+    void set_paste_text_callback(PasteTextCallback paste_text_callback, void *context);
 
     // Notified with the new grid size when the widget is resized.
     using ResizeCallback = void (*)(void *context, int columns, int rows);
@@ -58,6 +61,11 @@ public:
     // to consume the key as an application command (DIP 3.6).
     using KeyCallback = bool (*)(void *context, int key, int state);
     void set_key_callback(KeyCallback key_callback, void *context);
+
+    // Translated key events for this press. When set, the view fans them out to
+    // the broadcast destinations; otherwise the widget encodes locally (DIP 6.1).
+    using KeyInputCallback = void (*)(void *context, std::span<const KeyEvent> events);
+    void set_key_input_callback(KeyInputCallback key_input_callback, void *context);
 
     [[nodiscard]] TerminalEmulator &emulator() noexcept
     {
@@ -134,8 +142,8 @@ private:
     int pressed_button_ = -1;
 
     // Clipboard (DIP 2.8).
-    PasteCallback paste_callback_ = nullptr;
-    void *paste_context_ = nullptr;
+    PasteTextCallback paste_text_callback_ = nullptr;
+    void *paste_text_context_ = nullptr;
 
     // Resize notification (DIP 2.11).
     ResizeCallback resize_callback_ = nullptr;
@@ -148,6 +156,10 @@ private:
     // Application command shortcut hook (DIP 3.6).
     KeyCallback key_callback_ = nullptr;
     void *key_context_ = nullptr;
+
+    // Translated key fan-out hook (DIP 6.1).
+    KeyInputCallback key_input_callback_ = nullptr;
+    void *key_input_context_ = nullptr;
 };
 
 } // namespace consola

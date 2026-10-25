@@ -12,6 +12,8 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 
+#include <app/log.hpp>
+
 namespace consola {
 namespace {
 
@@ -181,8 +183,65 @@ bool TerminalView::execute(const CommandRequest &request)
         return select_next_tab();
     case Command::PreviousTab:
         return select_previous_tab();
+    case Command::ToggleBroadcast:
+        set_broadcast(!broadcast_);
+        return true;
     }
     return false;
+}
+
+void TerminalView::set_broadcast(bool enabled)
+{
+    if (broadcast_ == enabled) {
+        return;
+    }
+    broadcast_ = enabled;
+    log(LogLevel::Info, enabled ? "broadcast input enabled" : "broadcast input disabled");
+}
+
+std::vector<TerminalId> TerminalView::broadcast_targets(TerminalId source)
+{
+    if (!broadcast_) {
+        return {source};
+    }
+    std::vector<TerminalId> targets;
+    for (const TerminalId id : manager_.tab().layout().terminals()) {
+        const TerminalInstance *instance = manager_.find(id);
+        if (instance != nullptr && instance->input_enabled()) {
+            targets.push_back(id);
+        }
+    }
+    if (targets.empty()) {
+        targets.push_back(source);
+    }
+    return targets;
+}
+
+void TerminalView::dispatch_key_input(TerminalId source, std::span<const KeyEvent> events)
+{
+    for (const TerminalId destination : broadcast_targets(source)) {
+        TerminalEmulator &emulator = manager_.emulator(destination);
+        for (const KeyEvent &event : events) {
+            emulator.handle_keyboard(event);
+        }
+    }
+}
+
+void TerminalView::dispatch_paste_input(TerminalId source, std::string_view text)
+{
+    for (const TerminalId destination : broadcast_targets(source)) {
+        TerminalEmulator &emulator = manager_.emulator(destination);
+        const PasteCapture capture = emulator.capture_paste(text, style_.max_paste_bytes);
+        if (!capture.ok) {
+            log(LogLevel::Warning, "paste rejected for a broadcast destination");
+            continue;
+        }
+        const auto bytes = std::span<const std::byte>(
+            reinterpret_cast<const std::byte *>(capture.bytes.data()), capture.bytes.size());
+        if (!manager_.send(destination, bytes)) {
+            log(LogLevel::Warning, "broadcast: a destination rejected paste input");
+        }
+    }
 }
 
 std::optional<TerminalId> TerminalView::new_tab()
@@ -439,10 +498,11 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     auto widget = std::make_unique<TerminalWidget>(0, 0, 1, 1, emulator, style_);
     emulator.set_output_callback(&TerminalView::output_callback, context_ptr);
     emulator.set_title_callback(&TerminalView::title_callback, context_ptr);
-    widget->set_paste_callback(&TerminalView::paste_callback, context_ptr);
+    widget->set_paste_text_callback(&TerminalView::paste_text_callback, context_ptr);
     widget->set_resize_callback(&TerminalView::resize_callback, context_ptr);
     widget->set_focus_callback(&TerminalView::focus_callback, context_ptr);
     widget->set_key_callback(&TerminalView::key_callback, context_ptr);
+    widget->set_key_input_callback(&TerminalView::key_input_callback, context_ptr);
 
     TerminalWidget *raw = widget.get();
     add(raw);
@@ -588,15 +648,21 @@ LayoutMetrics TerminalView::metrics() const
 void TerminalView::output_callback(void *context, std::span<const std::byte> bytes)
 {
     auto *self = static_cast<Context *>(context);
-    self->view->manager_.send(self->id, bytes);
+    if (!self->view->manager_.send(self->id, bytes) && self->view->broadcast_) {
+        log(LogLevel::Warning, "broadcast: a destination rejected terminal output");
+    }
 }
 
-void TerminalView::paste_callback(void *context, std::string_view bytes)
+void TerminalView::paste_text_callback(void *context, std::string_view text)
 {
     auto *self = static_cast<Context *>(context);
-    self->view->manager_.send(
-        self->id, std::span<const std::byte>(reinterpret_cast<const std::byte *>(bytes.data()),
-                                             bytes.size()));
+    self->view->dispatch_paste_input(self->id, text);
+}
+
+void TerminalView::key_input_callback(void *context, std::span<const KeyEvent> events)
+{
+    auto *self = static_cast<Context *>(context);
+    self->view->dispatch_key_input(self->id, events);
 }
 
 void TerminalView::resize_callback(void *context, int columns, int rows)

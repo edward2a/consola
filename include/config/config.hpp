@@ -157,6 +157,7 @@ struct ShortcutConfig {
     std::string resize_up = "Ctrl+Shift+Up";
     std::string resize_down = "Ctrl+Shift+Down";
     std::string cancel_paste = "Escape";
+    std::string toggle_broadcast = "Ctrl+Shift+B";
 
     friend bool operator==(const ShortcutConfig &, const ShortcutConfig &) = default;
 };

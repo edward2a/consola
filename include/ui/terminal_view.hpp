@@ -8,6 +8,7 @@
 #include <span>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include <FL/Fl_Group.H>
 
@@ -66,6 +67,22 @@ public:
     // Execute a resolved command (DIP 3.6). Returns true when it applied.
     bool execute(const CommandRequest &request);
 
+    // Broadcast input (DIP 6.1). When enabled, translated keys and explicit
+    // pastes go to every input-enabled pane in the active tab, the focused pane
+    // exactly once. Shortcuts, mouse events and scrollback stay local.
+    void set_broadcast(bool enabled);
+    [[nodiscard]] bool broadcast() const noexcept
+    {
+        return broadcast_;
+    }
+    // Destinations for input from `source`: `source` alone when broadcast is off,
+    // otherwise the input-enabled panes of the active tab.
+    [[nodiscard]] std::vector<TerminalId> broadcast_targets(TerminalId source);
+    // Fan out already-translated key events / raw paste text on the UI thread.
+    // Each destination encodes with its own VTE (DIP 6.1).
+    void dispatch_key_input(TerminalId source, std::span<const KeyEvent> events);
+    void dispatch_paste_input(TerminalId source, std::string_view text);
+
     [[nodiscard]] TerminalManager &manager() noexcept
     {
         return manager_;
@@ -108,16 +125,18 @@ private:
     void remove_widget(TerminalId id);
 
     static void output_callback(void *context, std::span<const std::byte> bytes);
-    static void paste_callback(void *context, std::string_view bytes);
+    static void paste_text_callback(void *context, std::string_view text);
     static void resize_callback(void *context, int columns, int rows);
     static void title_callback(void *context, std::string_view title);
     static void focus_callback(void *context);
     static bool key_callback(void *context, int key, int state);
+    static void key_input_callback(void *context, std::span<const KeyEvent> events);
 
     TerminalManager &manager_;
     TerminalStyle style_;
     ShortcutMap shortcuts_;
     SessionOptions split_options_;
+    bool broadcast_ = false;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalWidget>> widgets_;
     // Heap-allocated so callback contexts have stable addresses.
     std::unordered_map<TerminalId, std::unique_ptr<Context>> contexts_;

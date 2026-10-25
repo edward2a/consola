@@ -47,38 +47,49 @@ KeyEvent translate_fltk_key()
                          Fl::event_length());
 }
 
-bool dispatch_fltk_key(TerminalEmulator &emulator)
+std::vector<KeyEvent> translate_fltk_key_events()
 {
     const auto state = static_cast<unsigned>(Fl::event_state());
     const char *text = Fl::event_text();
     const int length = Fl::event_length();
+    const auto key = static_cast<std::uint32_t>(Fl::event_key());
 
+    std::vector<KeyEvent> events;
     // Ctrl combinations use the ASCII keysym path; composed/text input is
     // split into one codepoint per KeyEvent with no keysym (DIP 2.6).
     if ((state & FL_CTRL) == 0 && text != nullptr && length > 0) {
         const char *cursor = text;
         const char *end = text + length;
-        bool produced = false;
         while (cursor < end) {
             int decoded_length = 0;
             const auto codepoint = fl_utf8decode(cursor, end, &decoded_length);
             if (decoded_length <= 0) {
                 break;
             }
-            KeyEvent event = translate_key(static_cast<std::uint32_t>(Fl::event_key()), state,
-                                           cursor, decoded_length);
+            KeyEvent event = translate_key(key, state, cursor, decoded_length);
             event.keysym = kKeysymNone;
             event.unicode = codepoint;
-            if (emulator.handle_keyboard(event)) {
-                produced = true;
-            }
+            events.push_back(event);
             cursor += decoded_length;
         }
-        return produced;
+        if (!events.empty()) {
+            return events;
+        }
     }
 
-    return emulator.handle_keyboard(
-        translate_key(static_cast<std::uint32_t>(Fl::event_key()), state, text, length));
+    events.push_back(translate_key(key, state, text, length));
+    return events;
+}
+
+bool dispatch_fltk_key(TerminalEmulator &emulator)
+{
+    bool produced = false;
+    for (const KeyEvent &event : translate_fltk_key_events()) {
+        if (emulator.handle_keyboard(event)) {
+            produced = true;
+        }
+    }
+    return produced;
 }
 
 } // namespace consola

@@ -183,6 +183,8 @@ ShortcutMap::ShortcutMap(const ShortcutConfig &config)
          FocusDirection::up);
     bind("resize_down", config.resize_down, defaults.resize_down, Command::ResizePane,
          FocusDirection::down);
+    bind("toggle_broadcast", config.toggle_broadcast, defaults.toggle_broadcast,
+         Command::ToggleBroadcast, FocusDirection::left);
 
     // Validate and carry the cancel-paste binding; the action belongs to the
     // deferred streaming-paste transport.

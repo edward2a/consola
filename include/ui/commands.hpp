@@ -24,6 +24,7 @@ enum class Command : std::uint8_t {
     CloseTab,
     NextTab,
     PreviousTab,
+    ToggleBroadcast,
 };
 
 // A resolved shortcut: the command plus the direction it applies to. The
