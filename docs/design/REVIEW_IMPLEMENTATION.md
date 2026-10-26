@@ -1074,5 +1074,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `launch_failed()` is false); `first_pane()` now has the same 256-level depth
   bound as `build()`; `pump()` prunes per-pane metadata for removed terminals so
   failed additive restores leave nothing behind; and the bad-shell test uses a
-  pid-unique temp file. Debug and ASan/UBSan suites pass 32/32; format/tidy
-  clean. S6-CS7 is complete.
+  pid-unique temp file. **Third review: PASS WITH FINDINGS** (clear the failure
+  flag when a failed pane is finalized) — intentionally kept: the CLI contract
+  (`config_cli_test`) requires a non-zero exit after a configured shell fails
+  even when the failed pane is auto-removed, and `terminal_manager_test` asserts
+  the same; a recovered retry is cleared on the successful attach. The flag
+  therefore means "a launch failed at some point", not "a failed pane is still
+  open". Debug and ASan/UBSan suites pass 32/32; format/tidy clean. S6-CS7 is
+  complete and Stage 6 is complete.
