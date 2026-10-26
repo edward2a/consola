@@ -93,6 +93,7 @@ SessionOptions resolve_session_options(const ApplicationConfig &config, const st
     options.colorterm = config.general.colorterm;
     options.drain_output_on_close = config.general.drain_output_on_close;
     options.outgoing_limit_bytes = config.general.outgoing_limit_bytes;
+    std::map<std::string, std::string> environment = config.general.environment;
 
     if (const ProfileConfig *overrides = find_profile(config, profile)) {
         if (overrides->shell.has_value()) {
@@ -113,6 +114,16 @@ SessionOptions resolve_session_options(const ApplicationConfig &config, const st
         if (overrides->colorterm.has_value()) {
             options.colorterm = overrides->colorterm.value();
         }
+        if (overrides->environment.has_value()) {
+            for (const auto &entry : overrides->environment.value()) {
+                environment[entry.first] = entry.second;
+            }
+        }
+    }
+    options.environment.clear();
+    options.environment.reserve(environment.size());
+    for (const auto &entry : environment) {
+        options.environment.push_back(entry.first + "=" + entry.second);
     }
     if (options.executable.empty()) {
         options.executable = environment_shell();

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include <config/apply.hpp>
 #include <config/loader.hpp>
 
 namespace {
@@ -372,6 +373,38 @@ shortcuts:
     CHECK(result.config.shortcuts.move_pane_down == "Ctrl+Shift+Alt+Down");
 }
 
+void test_environment()
+{
+    const consola::ConfigLoadResult result = consola::parse_config(R"(version: 1
+general:
+  environment:
+    FOO: bar
+    EMPTY: ""
+profiles:
+  default: {}
+  work:
+    environment:
+      FOO: override
+      BAZ: qux
+)");
+    CHECK(result.ok());
+    if (!result.ok()) {
+        return;
+    }
+    CHECK(result.config.general.environment.at("FOO") == "bar");
+    CHECK(result.config.general.environment.at("EMPTY").empty());
+    const auto work = result.config.profiles.at("work").environment;
+    CHECK(work.has_value());
+    if (work.has_value()) {
+        CHECK(work->at("FOO") == "override");
+        CHECK(work->at("BAZ") == "qux");
+    }
+    const consola::SessionOptions options = consola::resolve_session_options(result.config, "work");
+    CHECK(std::ranges::find(options.environment, "FOO=override") != options.environment.end());
+    CHECK(std::ranges::find(options.environment, "BAZ=qux") != options.environment.end());
+    CHECK(std::ranges::find(options.environment, "EMPTY=") != options.environment.end());
+}
+
 } // namespace
 
 int main()
@@ -392,6 +425,7 @@ int main()
         test_default_config_path();
         test_shipped_example();
         test_new_shortcut_keys();
+        test_environment();
     } catch (const std::exception &exception) {
         std::fprintf(stderr, "unexpected exception: %s\n", exception.what());
         return EXIT_FAILURE;

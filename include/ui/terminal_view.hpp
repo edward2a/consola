@@ -87,6 +87,7 @@ public:
     {
         return active_profile_;
     }
+    [[nodiscard]] bool profile_known(std::string_view name) const;
     // The profile assigned to a live pane (empty when it uses the view's
     // constructor defaults), for capture/restore (DIP 6.4, 6.5).
     [[nodiscard]] std::string profile_for(TerminalId id) const;
@@ -160,9 +161,14 @@ private:
     void update_window_title();
     bool resize_focused(FocusDirection direction);
     [[nodiscard]] LayoutMetrics metrics() const;
+    [[nodiscard]] LayoutMetrics metrics_for(TerminalId id) const;
     [[nodiscard]] const DividerRect *divider_at(int x, int y) const;
     [[nodiscard]] bool can_split(TerminalId target, Orientation orientation) const;
-    [[nodiscard]] TerminalOptions options_for(std::string_view profile) const;
+    struct ResolvedProfile {
+        TerminalOptions options;
+        std::string name;
+    };
+    [[nodiscard]] ResolvedProfile resolve_profile(std::string_view profile) const;
     void remember_profile(TerminalId id, const TerminalOptions &options, std::string profile);
     TerminalWidget *add_widget(TerminalId id);
     void remove_widget(TerminalId id);

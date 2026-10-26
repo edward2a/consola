@@ -171,8 +171,19 @@ void test_profile_selection(TerminalView &view, TerminalManager &manager,
     CHECK(manager.close_tab(manager.tabs().active_id()));
     const bool profiled_closed = wait_for([&] { return manager.tabs().count() == 1; }, 8000, view);
     CHECK(profiled_closed);
-}
 
+    // An explicit profile applies to a split pane too and an unknown name is
+    // rejected before a pane is launched.
+    CHECK(!view.split_focused(Orientation::vertical, "missing").has_value());
+    const auto profiled_split = view.split_focused(Orientation::vertical, "one");
+    CHECK(profiled_split.has_value());
+    CHECK(view.profile_for(REQUIRED(profiled_split)) == "one");
+    CHECK(view.widget(REQUIRED(profiled_split))->style().font_size == 10);
+    CHECK(view.close_focused());
+    const bool split_closed =
+        wait_for([&] { return manager.find(REQUIRED(profiled_split)) == nullptr; }, 8000, view);
+    CHECK(split_closed);
+}
 } // namespace
 
 int main()
@@ -198,6 +209,7 @@ int main()
         5000, view);
     CHECK(root_running);
     CHECK(manager.focused() == root);
+    CHECK(view.profile_for(REQUIRED(root)).empty());
 
     // Visual bell (DIP 6.2): a BEL flashes the emitting pane.
     consola::TerminalStyle bell_style = consola::default_terminal_style();

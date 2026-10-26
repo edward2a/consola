@@ -103,6 +103,9 @@ struct GeneralConfig {
     bool login_shell = false;
     std::string term{kDefaultTerm};
     std::string colorterm{kDefaultColorTerm};
+    // Child environment overrides. Empty means inherit consola's environment
+    // (DIP 1.2, 6.4); TERM/COLORTERM are always applied from term/colorterm.
+    std::map<std::string, std::string> environment;
     int scrollback = kDefaultScrollback;
     bool scrollbar = true;
     int wheel_lines = kDefaultWheelLines;
@@ -128,6 +131,8 @@ struct ProfileConfig {
     std::optional<bool> login_shell;
     std::optional<std::string> term;
     std::optional<std::string> colorterm;
+    // Added to/over the general environment when this profile is used.
+    std::optional<std::map<std::string, std::string>> environment;
     std::optional<int> scrollback;
     FontOverrides font;
     std::optional<std::string> word_chars;

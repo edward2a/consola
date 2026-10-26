@@ -32,6 +32,9 @@ general:
   login_shell: true
   term: screen-256color
   colorterm: "truecolor"
+  environment:
+    LANG: C.UTF-8
+    EMPTY: ""
   scrollback: 2500
   scrollbar: false
   wheel_lines: 7
@@ -60,6 +63,8 @@ default_profile: work
 profiles:
   work:
     shell: /bin/bash
+    environment:
+      EDITOR: vim
     font:
       size: 18
     scrollback: 42
@@ -72,6 +77,7 @@ profiles:
   plain: {}
 shortcuts:
   new_tab: "Ctrl+Shift+N"
+  select_profile: "Ctrl+Alt+P"
   cancel_paste: "Ctrl+C"
 )";
 

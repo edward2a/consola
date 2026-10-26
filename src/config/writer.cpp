@@ -195,6 +195,19 @@ void append_cursor_overrides(std::string &out, const CursorOverrides &cursor, in
     }
 }
 
+void append_environment(std::string &out, const std::map<std::string, std::string> &environment,
+                        int indent)
+{
+    if (environment.empty()) {
+        append_line(out, indent, "environment: {}");
+        return;
+    }
+    append_line(out, indent, "environment:");
+    for (const auto &entry : environment) {
+        append_line(out, indent + 1, quote(entry.first) + ": " + quote(entry.second));
+    }
+}
+
 void append_general(std::string &out, const GeneralConfig &general)
 {
     append_line(out, 0, "general:");
@@ -204,6 +217,9 @@ void append_general(std::string &out, const GeneralConfig &general)
     append_line(out, 1, std::string{"login_shell: "} + std::string{bool_text(general.login_shell)});
     append_line(out, 1, "term: " + quote(general.term));
     append_line(out, 1, "colorterm: " + quote(general.colorterm));
+    if (!general.environment.empty()) {
+        append_environment(out, general.environment, 1);
+    }
     append_line(out, 1, "scrollback: " + std::to_string(general.scrollback));
     append_line(out, 1, std::string{"scrollbar: "} + std::string{bool_text(general.scrollbar)});
     append_line(out, 1, "wheel_lines: " + std::to_string(general.wheel_lines));
@@ -305,9 +321,10 @@ bool is_empty_profile(const ProfileConfig &profile)
     return !profile.shell.has_value() && !profile.arguments.has_value() &&
            !profile.working_directory.has_value() && !profile.login_shell.has_value() &&
            !profile.term.has_value() && !profile.colorterm.has_value() &&
-           !profile.scrollback.has_value() && font_empty && !profile.word_chars.has_value() &&
-           !profile.bell.has_value() && !profile.cursor.shape.has_value() &&
-           !profile.cursor.blink.has_value() && !has_colour_overrides(profile.colours);
+           !profile.environment.has_value() && !profile.scrollback.has_value() && font_empty &&
+           !profile.word_chars.has_value() && !profile.bell.has_value() &&
+           !profile.cursor.shape.has_value() && !profile.cursor.blink.has_value() &&
+           !has_colour_overrides(profile.colours);
 }
 
 void append_profile(std::string &out, const std::string &name, const ProfileConfig &profile)
@@ -336,6 +353,9 @@ void append_profile(std::string &out, const std::string &name, const ProfileConf
     }
     if (profile.colorterm.has_value()) {
         append_line(out, 2, "colorterm: " + quote(profile.colorterm.value()));
+    }
+    if (profile.environment.has_value()) {
+        append_environment(out, profile.environment.value(), 2);
     }
     if (profile.scrollback.has_value()) {
         append_line(out, 2, "scrollback: " + std::to_string(profile.scrollback.value()));

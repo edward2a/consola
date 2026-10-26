@@ -543,6 +543,30 @@ bool parse_arguments(ryml::ConstNodeRef node, std::vector<std::string> &out, Dia
     return true;
 }
 
+bool parse_environment(ryml::ConstNodeRef node, std::map<std::string, std::string> &out,
+                       Diagnostics &diag, const std::string &prefix)
+{
+    if (!node.is_map()) {
+        return diag.fail(prefix + ": expected a map of strings");
+    }
+    std::map<std::string, std::string> values;
+    for (ryml::ConstNodeRef child : node.children()) {
+        if (!child.has_val()) {
+            return diag.fail(prefix + ": expected a map of strings");
+        }
+        const std::string key = to_std(child.key());
+        if (key.empty() || key.find('=') != std::string::npos) {
+            std::string message = prefix + ": invalid variable name '";
+            message += key;
+            message += '\'';
+            return diag.fail(std::move(message));
+        }
+        values[key] = to_std(child.val());
+    }
+    out = std::move(values);
+    return true;
+}
+
 bool parse_general(ryml::ConstNodeRef node, GeneralConfig &general, Diagnostics &diag)
 {
     if (!node.is_map()) {
@@ -584,6 +608,10 @@ bool parse_general(ryml::ConstNodeRef node, GeneralConfig &general, Diagnostics 
                 return diag.fail("general.colorterm: expected a string");
             }
             general.colorterm = std::move(value);
+        } else if (key == "environment") {
+            if (!parse_environment(child, general.environment, diag, "general.environment")) {
+                return false;
+            }
         } else if (key == "scrollback") {
             int value = 0;
             if (!read_int(child, value)) {
@@ -726,6 +754,12 @@ bool parse_profile(ryml::ConstNodeRef node, ProfileConfig &profile, Diagnostics 
                 return diag.fail(prefix + ".colorterm: expected a string");
             }
             profile.colorterm = std::move(value);
+        } else if (key == "environment") {
+            std::map<std::string, std::string> values;
+            if (!parse_environment(child, values, diag, prefix + ".environment")) {
+                return false;
+            }
+            profile.environment = std::move(values);
         } else if (key == "scrollback") {
             int value = 0;
             if (!read_int(child, value)) {

@@ -91,7 +91,8 @@ std::optional<TerminalId> TerminalView::start(const SessionOptions &options)
     if (!id) {
         return std::nullopt;
     }
-    remember_profile(*id, TerminalOptions{.session = options, .style = style_}, active_profile_);
+    remember_profile(*id, TerminalOptions{.session = options, .style = style_},
+                     profile_resolver_ ? active_profile_ : std::string{});
     create_widgets();
     layout();
     sync_focus();
@@ -156,12 +157,16 @@ std::optional<TerminalId> TerminalView::split_focused(Orientation orientation,
     if (!focused || !can_split(*focused, orientation)) {
         return std::nullopt;
     }
-    const TerminalOptions options = options_for(profile);
-    const std::optional<TerminalId> id = manager_.split_terminal(*focused, orientation, options);
+    if (!profile.empty() && !profile_known(profile)) {
+        return std::nullopt;
+    }
+    const ResolvedProfile resolved = resolve_profile(profile);
+    const std::optional<TerminalId> id =
+        manager_.split_terminal(*focused, orientation, resolved.options);
     if (!id) {
         return std::nullopt;
     }
-    remember_profile(*id, options, profile.empty() ? active_profile_ : std::string(profile));
+    remember_profile(*id, resolved.options, resolved.name);
     manager_.focus(*id);
     create_widgets();
     layout();
@@ -409,15 +414,18 @@ bool TerminalView::move_tab(int delta)
 std::optional<TerminalId> TerminalView::new_tab(std::string_view profile)
 {
     zoomed_.reset();
+    if (!profile.empty() && !profile_known(profile)) {
+        return std::nullopt;
+    }
+    const ResolvedProfile resolved = resolve_profile(profile);
     const TabId tab = manager_.create_tab();
-    const TerminalOptions options = options_for(profile);
-    const std::optional<TerminalId> id = manager_.create_root_terminal(tab, options);
+    const std::optional<TerminalId> id = manager_.create_root_terminal(tab, resolved.options);
     if (!id) {
         // Roll back the empty tab so a failed launch does not leave a blank tab.
         manager_.close_tab(tab);
         return std::nullopt;
     }
-    remember_profile(*id, options, profile.empty() ? active_profile_ : std::string(profile));
+    remember_profile(*id, resolved.options, resolved.name);
     manager_.focus(*id);
     create_widgets();
     last_tab_ = manager_.tabs().active_id();
@@ -501,14 +509,19 @@ void TerminalView::set_profile_names(std::vector<std::string> names)
     profile_names_ = std::move(names);
 }
 
+bool TerminalView::profile_known(std::string_view name) const
+{
+    if (name.empty() || profile_names_.empty()) {
+        return true;
+    }
+    return std::ranges::any_of(profile_names_,
+                               [name](const std::string &candidate) { return candidate == name; });
+}
+
 bool TerminalView::select_profile(std::string_view name)
 {
-    if (!name.empty() && !profile_names_.empty()) {
-        const bool known = std::ranges::any_of(
-            profile_names_, [name](const std::string &candidate) { return candidate == name; });
-        if (!known) {
-            return false;
-        }
+    if (!profile_known(name)) {
+        return false;
     }
     active_profile_ = std::string(name);
     return true;
@@ -520,13 +533,16 @@ std::string TerminalView::profile_for(TerminalId id) const
     return it == terminal_profiles_.end() ? std::string{} : it->second;
 }
 
-TerminalOptions TerminalView::options_for(std::string_view profile) const
+TerminalView::ResolvedProfile TerminalView::resolve_profile(std::string_view profile) const
 {
     const std::string name = profile.empty() ? active_profile_ : std::string(profile);
     if (!name.empty() && profile_resolver_) {
-        return profile_resolver_(name);
+        return ResolvedProfile{.options = profile_resolver_(name), .name = name};
     }
-    return TerminalOptions{.session = split_options_, .style = style_};
+    // No resolver or no selected profile: use the view defaults and do not
+    // claim an assignment that was not actually applied.
+    return ResolvedProfile{.options = TerminalOptions{.session = split_options_, .style = style_},
+                           .name = {}};
 }
 
 void TerminalView::remember_profile(TerminalId id, const TerminalOptions &options,
@@ -887,7 +903,7 @@ bool TerminalView::can_split(TerminalId target, Orientation orientation) const
     if (!preview.split_terminal(target, orientation, placeholder)) {
         return false;
     }
-    const Size minimum = minimum_size(preview, metrics());
+    const Size minimum = minimum_size(preview, metrics_for(target));
     return minimum.width <= w() && minimum.height <= h();
 }
 
@@ -897,12 +913,34 @@ LayoutMetrics TerminalView::metrics() const
     if (widgets_.empty()) {
         return result;
     }
-    const FontMetrics &font = widgets_.begin()->second->metrics();
-    result.cell_width = std::max(1, static_cast<int>(std::lround(font.cell_width)));
-    result.cell_height = std::max(1, font.cell_height);
-    result.scrollbar_width = style_.scrollbar ? std::max(4, result.cell_width / 4) : 0;
+    // Different profiles may use different fonts; advertise the largest cell
+    // so the window/split minimum is conservative for every pane (DIP 3.3).
+    int cell_width = 1;
+    int cell_height = 1;
+    for (const auto &entry : widgets_) {
+        const FontMetrics &font = entry.second->metrics();
+        cell_width = std::max(cell_width, static_cast<int>(std::lround(font.cell_width)));
+        cell_height = std::max(cell_height, font.cell_height);
+    }
+    result.cell_width = cell_width;
+    result.cell_height = cell_height;
+    result.scrollbar_width = style_.scrollbar ? std::max(4, cell_width / 4) : 0;
     result.pane_border = 0;
     result.divider_thickness = 2;
+    return result;
+}
+
+LayoutMetrics TerminalView::metrics_for(TerminalId id) const
+{
+    LayoutMetrics result = metrics();
+    const auto it = widgets_.find(id);
+    if (it != widgets_.end()) {
+        const FontMetrics &font = it->second->metrics();
+        result.cell_width = std::max(1, static_cast<int>(std::lround(font.cell_width)));
+        result.cell_height = std::max(1, font.cell_height);
+        result.scrollbar_width =
+            it->second->style().scrollbar ? std::max(4, result.cell_width / 4) : 0;
+    }
     return result;
 }
 

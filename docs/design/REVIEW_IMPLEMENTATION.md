@@ -1025,5 +1025,16 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   No live reconfiguration is attempted. Tests: `commands_test`/`shortcuts_test`
   cover the binding, `config_loader_test` the key, `terminal_view_test` the
   resolver/assignment/style and unknown-name rejection, and
-  `config_layout_test` the per-pane capture override. Debug and ASan/UBSan
-  suites pass 31/31; format/tidy clean. Awaiting Luna-Six review.
+  `config_layout_test` the per-pane capture override. **Luna-Six review: FAIL**,
+  resolved here: (a) P1 — environment is now part of the config model
+  (`general.environment` and per-profile overrides), parsed/validated by the
+  loader, merged by `resolve_session_options` into `SessionOptions.environment`
+  (empty still inherits), and written only when present; the writer round-trip
+  and loader/apply tests cover it; (b) P2 — explicit profile names are validated
+  against the loaded names before a tab/pane is created, and a profile is
+  recorded only when a resolver actually applied it; (c) P2 — layout metrics
+  use the largest pane cell size for the advertised minimum and
+  `can_split()` uses the target pane's metrics; (d) P3 — tests now cover an
+  explicit-profile split, the initial pane's empty assignment, and a writer
+  round-trip with `environment` and a custom `select_profile` binding. Debug
+  and ASan/UBSan suites pass 31/31; format/tidy clean.
