@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -120,6 +121,32 @@ void test_window_titles(Fl_Window &window, TerminalManager &manager, TerminalVie
     CHECK(std::string(window.label()) == "/tmp/osc7-dir");
 }
 
+// Visual-bell timer lifecycle (DIP 6.2): the flash expires, a repeated BEL
+// restarts it, and destroying a widget with a pending timeout is safe.
+void test_bell_timer(const consola::TerminalStyle &style)
+{
+    consola::TerminalEmulator emulator;
+    auto widget = std::make_unique<consola::TerminalWidget>(0, 0, 40, 20, emulator, style);
+
+    widget->ring_bell();
+    CHECK(widget->bell_flash_active());
+    std::this_thread::sleep_for(std::chrono::milliseconds(160));
+    Fl::check();
+    CHECK(!widget->bell_flash_active());
+
+    widget->ring_bell();
+    CHECK(widget->bell_flash_active());
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    widget->ring_bell();
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    Fl::check();
+    CHECK(widget->bell_flash_active());
+
+    // The timer is still pending here; the destructor must cancel it.
+    widget.reset();
+    Fl::check();
+}
+
 } // namespace
 
 int main()
@@ -154,6 +181,7 @@ int main()
         ->emulator()
         .feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>("\a"), 1));
     CHECK(view.widget(REQUIRED(root))->bell_flash_active());
+    test_bell_timer(bell_style);
 
     // Forced undersizing keeps the PTY grid positive (DIP 3.3, 2.11).
     window.size(1, 1);

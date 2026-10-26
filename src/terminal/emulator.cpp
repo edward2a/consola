@@ -293,7 +293,7 @@ TerminalEmulator::TerminalEmulator(const TerminalStyle &style)
     set_max_scrollback(style.scrollback);
     tsm_screen_set_cursor_style(impl_->screen,
                                 from_cursor_config(style.cursor_shape, style.cursor_blink));
-    // Window title (OSC 0/2) and a no-op bell (DIP 2.12, 2.8a).
+    // Window title (OSC 0/2) and the VTE bell (DIP 2.12, 2.8a).
     tsm_vte_set_osc_cb(impl_->vte, &osc_callback, impl_.get());
     tsm_vte_set_bell_cb(impl_->vte, &bell_callback, impl_.get());
 }

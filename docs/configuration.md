@@ -76,8 +76,9 @@ digits only.
 | `outgoing_limit_bytes` | integer, 32768–67108864 | `1048576` | Outgoing queue + in-flight limit. |
 | `max_paste_bytes` | integer, 1–268435456 | `16777216` | Largest encoded paste, framing included. |
 
-`term` and `colorterm` replace any inherited `TERM`/`COLORTERM` values in the
-child environment; all other environment variables are inherited unchanged.
+When consola supplies no custom environment, the child inherits consola's
+environment; a custom environment replaces it wholesale. In both cases
+`term` and `colorterm` replace any `TERM`/`COLORTERM` values.
 
 `cursor` keys: `shape` (`block`, `underline`, `bar`; default `block`) and
 `blink` (bool, default `true`).

@@ -978,5 +978,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   environment while everything else is inherited; a new `pty_session_test` case
   launches a shell with a custom environment and asserts both values. Tests:
   `emulator_test` counts BEL callbacks; `terminal_view_test` asserts a visual
-  BEL sets the flash state. Debug and ASan/UBSan suites pass 30/30;
-  format/tidy clean. Awaiting Luna-Six review.
+  BEL sets the flash state. **Luna-Six review: PASS WITH FINDINGS** (all P3),
+  resolved here: (a) `docs/configuration.md` now states that a custom
+  environment replaces the inherited one wholesale while TERM/COLORTERM are
+  replaced in both cases; (b) `terminal_view_test` now covers flash expiry,
+  repeated-BEL timer restart, and destroying a widget with a pending timeout;
+  (c) stale "no-op bell" comments in `terminal_style.hpp` and `emulator.cpp`
+  were removed. Debug and ASan/UBSan suites pass 30/30 (the view test was run
+  five times for the timing checks); format/tidy clean. S6-CS4 is complete.

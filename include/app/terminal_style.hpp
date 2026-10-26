@@ -35,7 +35,7 @@ struct TerminalStyle {
     bool backspace_sends_delete = true;
     CursorShape cursor_shape = CursorShape::block;
     bool cursor_blink = true;
-    // Carried for the Stage 6 bell implementation; the v1 handler is a no-op.
+    // Audible/visual bell selection (DIP 2.8a, 6.2).
     BellMode bell = BellMode::none;
 };
 
