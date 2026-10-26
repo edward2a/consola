@@ -347,6 +347,7 @@ void test_new_shortcut_keys()
 shortcuts:
   toggle_broadcast: "Ctrl+Shift+B"
   rename_tab: "Ctrl+Shift+R"
+  select_profile: "Ctrl+Shift+P"
   toggle_zoom: "Ctrl+Shift+Z"
   move_tab_left: "Ctrl+Shift+PageUp"
   move_tab_right: "Ctrl+Shift+PageDown"
@@ -361,6 +362,7 @@ shortcuts:
     }
     CHECK(result.config.shortcuts.toggle_broadcast == "Ctrl+Shift+B");
     CHECK(result.config.shortcuts.rename_tab == "Ctrl+Shift+R");
+    CHECK(result.config.shortcuts.select_profile == "Ctrl+Shift+P");
     CHECK(result.config.shortcuts.toggle_zoom == "Ctrl+Shift+Z");
     CHECK(result.config.shortcuts.move_tab_left == "Ctrl+Shift+PageUp");
     CHECK(result.config.shortcuts.move_tab_right == "Ctrl+Shift+PageDown");

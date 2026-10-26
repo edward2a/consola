@@ -93,6 +93,10 @@ public:
     {
         return metrics_;
     }
+    [[nodiscard]] const TerminalStyle &style() const noexcept
+    {
+        return style_;
+    }
 
 private:
     struct Rect {

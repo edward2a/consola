@@ -147,6 +147,32 @@ void test_bell_timer(const consola::TerminalStyle &style)
     Fl::check();
 }
 
+// Runtime profile selection (DIP 6.4): the resolver supplies the new pane's
+// style/session and the assignment is recorded for capture/restore.
+void test_profile_selection(TerminalView &view, TerminalManager &manager,
+                            const SessionOptions &options)
+{
+    view.set_profile_names({"one", "two"});
+    view.set_profile_resolver([options](std::string_view name) {
+        consola::TerminalOptions result;
+        result.session = options;
+        result.style = consola::default_terminal_style();
+        result.style.font_size = name == "one" ? 10 : 20;
+        return result;
+    });
+    CHECK(view.select_profile("one"));
+    CHECK(view.active_profile() == "one");
+    CHECK(!view.select_profile("missing"));
+    CHECK(view.active_profile() == "one");
+    const auto profiled_tab = view.new_tab("two");
+    CHECK(profiled_tab.has_value());
+    CHECK(view.profile_for(REQUIRED(profiled_tab)) == "two");
+    CHECK(view.widget(REQUIRED(profiled_tab))->style().font_size == 20);
+    CHECK(manager.close_tab(manager.tabs().active_id()));
+    const bool profiled_closed = wait_for([&] { return manager.tabs().count() == 1; }, 8000, view);
+    CHECK(profiled_closed);
+}
+
 } // namespace
 
 int main()
@@ -445,6 +471,8 @@ int main()
     CHECK(auto_closed);
     CHECK(manager.tabs().find(short_tab) == nullptr);
     CHECK(manager.tabs().count() == 1);
+
+    test_profile_selection(view, manager, options);
 
     manager.shutdown();
 

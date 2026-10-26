@@ -144,6 +144,7 @@ struct ShortcutConfig {
     std::string new_tab = "Ctrl+Shift+T";
     std::string close_tab = "Ctrl+Shift+X";
     std::string rename_tab = "Ctrl+Shift+R";
+    std::string select_profile = "Ctrl+Shift+P";
     std::string close_pane = "Ctrl+Shift+W";
     std::string split_horizontal = "Ctrl+Shift+O";
     std::string split_vertical = "Ctrl+Shift+E";

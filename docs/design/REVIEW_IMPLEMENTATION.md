@@ -1012,3 +1012,18 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   and rendered-style/immutability remain untested but are documented as
   out-of-scope for the ASCII row scanner. Debug and ASan/UBSan suites pass
   31/31; format/tidy clean. S6-CS5 is complete.
+- **S6-CS6 — runtime per-pane profiles (§6.4)**: `TerminalView` now holds a
+  profile resolver, the loaded profile names and an active profile.
+  `split_focused(orientation, profile)` and `new_tab(profile)` resolve an
+  explicit or active profile into `TerminalOptions` before the shared factory,
+  record the resolved style per terminal (used by the widget) and the assigned
+  profile (`profile_for()`), and erase both on widget teardown. The application
+  installs a resolver over `resolve_session_options`/`resolve_terminal_style`
+  and the loaded names; `Command::SelectProfile` (`Ctrl+Shift+P`) chooses the
+  profile used by new panes. `capture_layout` accepts a per-terminal
+  `ProfileLookup`, so saved panes can retain their assignment (DIP 6.5 input).
+  No live reconfiguration is attempted. Tests: `commands_test`/`shortcuts_test`
+  cover the binding, `config_loader_test` the key, `terminal_view_test` the
+  resolver/assignment/style and unknown-name rejection, and
+  `config_layout_test` the per-pane capture override. Debug and ASan/UBSan
+  suites pass 31/31; format/tidy clean. Awaiting Luna-Six review.

@@ -371,6 +371,7 @@ void append_shortcuts(std::string &out, const ShortcutConfig &shortcuts)
     append_line(out, 1, "new_tab: " + quote(shortcuts.new_tab));
     append_line(out, 1, "close_tab: " + quote(shortcuts.close_tab));
     append_line(out, 1, "rename_tab: " + quote(shortcuts.rename_tab));
+    append_line(out, 1, "select_profile: " + quote(shortcuts.select_profile));
     append_line(out, 1, "close_pane: " + quote(shortcuts.close_pane));
     append_line(out, 1, "split_horizontal: " + quote(shortcuts.split_horizontal));
     append_line(out, 1, "split_vertical: " + quote(shortcuts.split_vertical));

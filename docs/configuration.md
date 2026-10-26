@@ -142,6 +142,7 @@ Modifiers are `Ctrl`, `Shift` and `Alt`. Key names use FLTK/`X` names
 | `new_tab` | `Ctrl+Shift+T` |
 | `close_tab` | `Ctrl+Shift+X` |
 | `rename_tab` | `Ctrl+Shift+R` |
+| `select_profile` | `Ctrl+Shift+P` |
 | `close_pane` | `Ctrl+Shift+W` |
 | `split_horizontal` | `Ctrl+Shift+O` |
 | `split_vertical` | `Ctrl+Shift+E` |

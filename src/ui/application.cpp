@@ -218,6 +218,22 @@ int run_session(int argc, char **argv, Fl_Window &window, const ApplicationConfi
     manager.start();
 
     TerminalFrame frame(0, 0, window.w(), window.h(), manager, style, shortcuts);
+    // Runtime profile selection (DIP 6.4): resolve a named profile on demand so
+    // new panes/tabs can use any loaded profile.
+    frame.view().set_profile_resolver([config](std::string_view name) {
+        const std::string profile(name);
+        return TerminalOptions{
+            .session = resolve_session_options(config, profile),
+            .style = resolve_terminal_style(config, profile),
+        };
+    });
+    std::vector<std::string> profile_names;
+    profile_names.reserve(config.profiles.size());
+    for (const auto &entry : config.profiles) {
+        profile_names.push_back(entry.first);
+    }
+    frame.view().set_profile_names(std::move(profile_names));
+    frame.view().select_profile(config.default_profile);
     window.resizable(frame);
     window.end();
     window.show(argc, argv);

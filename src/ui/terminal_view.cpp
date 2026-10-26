@@ -91,6 +91,7 @@ std::optional<TerminalId> TerminalView::start(const SessionOptions &options)
     if (!id) {
         return std::nullopt;
     }
+    remember_profile(*id, TerminalOptions{.session = options, .style = style_}, active_profile_);
     create_widgets();
     layout();
     sync_focus();
@@ -147,18 +148,20 @@ bool TerminalView::pump()
     return manager_.terminal_count() != 0;
 }
 
-std::optional<TerminalId> TerminalView::split_focused(Orientation orientation)
+std::optional<TerminalId> TerminalView::split_focused(Orientation orientation,
+                                                      std::string_view profile)
 {
     zoomed_.reset();
     const std::optional<TerminalId> focused = manager_.focused();
     if (!focused || !can_split(*focused, orientation)) {
         return std::nullopt;
     }
-    const std::optional<TerminalId> id = manager_.split_terminal(
-        *focused, orientation, TerminalOptions{.session = split_options_, .style = style_});
+    const TerminalOptions options = options_for(profile);
+    const std::optional<TerminalId> id = manager_.split_terminal(*focused, orientation, options);
     if (!id) {
         return std::nullopt;
     }
+    remember_profile(*id, options, profile.empty() ? active_profile_ : std::string(profile));
     manager_.focus(*id);
     create_widgets();
     layout();
@@ -238,6 +241,17 @@ bool TerminalView::execute(const CommandRequest &request)
         const std::string current = manager_.tab().title();
         const char *input = fl_input("Rename tab", current.c_str());
         return input != nullptr && rename_active_tab(input);
+    }
+    case Command::SelectProfile: {
+        const char *input = fl_input("Profile for new panes", active_profile_.c_str());
+        if (input == nullptr) {
+            return false;
+        }
+        if (!select_profile(input)) {
+            log(LogLevel::Warning, "unknown profile: " + std::string(input));
+            return false;
+        }
+        return true;
     }
     case Command::NextTab:
         return select_next_tab();
@@ -392,17 +406,18 @@ bool TerminalView::move_tab(int delta)
     return manager_.move_tab(active, static_cast<std::size_t>(target));
 }
 
-std::optional<TerminalId> TerminalView::new_tab()
+std::optional<TerminalId> TerminalView::new_tab(std::string_view profile)
 {
     zoomed_.reset();
     const TabId tab = manager_.create_tab();
-    const std::optional<TerminalId> id = manager_.create_root_terminal(
-        tab, TerminalOptions{.session = split_options_, .style = style_});
+    const TerminalOptions options = options_for(profile);
+    const std::optional<TerminalId> id = manager_.create_root_terminal(tab, options);
     if (!id) {
         // Roll back the empty tab so a failed launch does not leave a blank tab.
         manager_.close_tab(tab);
         return std::nullopt;
     }
+    remember_profile(*id, options, profile.empty() ? active_profile_ : std::string(profile));
     manager_.focus(*id);
     create_widgets();
     last_tab_ = manager_.tabs().active_id();
@@ -474,6 +489,51 @@ bool TerminalView::rename_active_tab(std::string_view title)
     // The tab bar syncs from Tab::title() each frame.
     redraw();
     return true;
+}
+
+void TerminalView::set_profile_resolver(ProfileResolver resolver)
+{
+    profile_resolver_ = std::move(resolver);
+}
+
+void TerminalView::set_profile_names(std::vector<std::string> names)
+{
+    profile_names_ = std::move(names);
+}
+
+bool TerminalView::select_profile(std::string_view name)
+{
+    if (!name.empty() && !profile_names_.empty()) {
+        const bool known = std::ranges::any_of(
+            profile_names_, [name](const std::string &candidate) { return candidate == name; });
+        if (!known) {
+            return false;
+        }
+    }
+    active_profile_ = std::string(name);
+    return true;
+}
+
+std::string TerminalView::profile_for(TerminalId id) const
+{
+    const auto it = terminal_profiles_.find(id);
+    return it == terminal_profiles_.end() ? std::string{} : it->second;
+}
+
+TerminalOptions TerminalView::options_for(std::string_view profile) const
+{
+    const std::string name = profile.empty() ? active_profile_ : std::string(profile);
+    if (!name.empty() && profile_resolver_) {
+        return profile_resolver_(name);
+    }
+    return TerminalOptions{.session = split_options_, .style = style_};
+}
+
+void TerminalView::remember_profile(TerminalId id, const TerminalOptions &options,
+                                    std::string profile)
+{
+    terminal_styles_[id] = options.style;
+    terminal_profiles_[id] = std::move(profile);
 }
 
 bool TerminalView::resize_focused(FocusDirection direction)
@@ -662,7 +722,11 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     contexts_[id] = std::move(context);
 
     TerminalEmulator &emulator = manager_.emulator(id);
-    auto widget = std::make_unique<TerminalWidget>(0, 0, 1, 1, emulator, style_);
+    TerminalStyle widget_style = style_;
+    if (const auto it = terminal_styles_.find(id); it != terminal_styles_.end()) {
+        widget_style = it->second;
+    }
+    auto widget = std::make_unique<TerminalWidget>(0, 0, 1, 1, emulator, widget_style);
     emulator.set_output_callback(&TerminalView::output_callback, context_ptr);
     emulator.set_title_callback(&TerminalView::title_callback, context_ptr);
     emulator.set_working_directory_callback(&TerminalView::working_directory_callback, context_ptr);
@@ -688,6 +752,8 @@ void TerminalView::remove_widget(TerminalId id)
     Fl_Group::remove(it->second.get());
     contexts_.erase(id);
     widgets_.erase(it);
+    terminal_styles_.erase(id);
+    terminal_profiles_.erase(id);
 }
 
 void TerminalView::layout()

@@ -272,6 +272,26 @@ void test_capture()
         CHECK(second_pane.value().id == "p2");
     }
 
+    // A per-pane assignment overrides the fallback profile (DIP 6.4).
+    const std::optional<LayoutConfig> by_profile =
+        consola::capture_layout(tabs, "default", [](consola::TerminalId id) {
+            return id.value == 2 ? std::string("work") : std::string{};
+        });
+    CHECK(by_profile.has_value());
+    if (by_profile.has_value() && by_profile->tabs.size() == 1) {
+        const LayoutTabConfig &profiled_tab = by_profile->tabs.front();
+        if (profiled_tab.nodes.size() == 3) {
+            const std::optional<LayoutPaneConfig> &first = profiled_tab.nodes[1].pane;
+            const std::optional<LayoutPaneConfig> &second = profiled_tab.nodes[2].pane;
+            CHECK(first.has_value());
+            CHECK(second.has_value());
+            if (first.has_value() && second.has_value()) {
+                CHECK(first.value().profile == "default");
+                CHECK(second.value().profile == "work");
+            }
+        }
+    }
+
     // Captured data round-trips through the configuration file.
     consola::ApplicationConfig config = consola::default_application_config();
     config.layouts["captured"] = layout;

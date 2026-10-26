@@ -23,6 +23,7 @@ enum class Command : std::uint8_t {
     NewTab,
     CloseTab,
     RenameTab,
+    SelectProfile,
     NextTab,
     PreviousTab,
     ToggleBroadcast,

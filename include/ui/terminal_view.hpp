@@ -3,9 +3,11 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -47,18 +49,19 @@ public:
     // any tab.
     bool pump();
 
-    // Pane interaction (DIP 3.5).
-    std::optional<TerminalId> split_focused(Orientation orientation);
+    // Pane interaction (DIP 3.5). An explicit profile selects the profile for
+    // the new pane; empty uses the active profile (DIP 6.4).
+    std::optional<TerminalId> split_focused(Orientation orientation, std::string_view profile = {});
     bool close_focused();
     bool focus_direction(FocusDirection direction);
     void equalize();
     void focus(TerminalId id);
 
     // Tab interaction (DIP 4.2). new_tab() creates an empty tab with a root
-    // terminal using the initial session options; close_tab() closes a tab's
+    // terminal using the active/explicit profile; close_tab() closes a tab's
     // panes and removes the tab once empty. Selection applies geometry and
     // focus immediately.
-    std::optional<TerminalId> new_tab();
+    std::optional<TerminalId> new_tab(std::string_view profile = {});
     bool close_tab(TabId id);
     bool select_tab(TabId id);
     bool select_next_tab();
@@ -68,6 +71,25 @@ public:
     // clears the override and restores the positional fallback. Returns false
     // only when there is no active tab (never in practice).
     bool rename_active_tab(std::string_view title);
+
+    // Runtime profile selection (DIP 6.4): the resolver maps a loaded profile
+    // name to the session/style used by a new pane. Selecting a name outside
+    // profile_names() fails once the list has been provided.
+    using ProfileResolver = std::function<TerminalOptions(std::string_view)>;
+    void set_profile_resolver(ProfileResolver resolver);
+    void set_profile_names(std::vector<std::string> names);
+    [[nodiscard]] const std::vector<std::string> &profile_names() const noexcept
+    {
+        return profile_names_;
+    }
+    bool select_profile(std::string_view name);
+    [[nodiscard]] const std::string &active_profile() const noexcept
+    {
+        return active_profile_;
+    }
+    // The profile assigned to a live pane (empty when it uses the view's
+    // constructor defaults), for capture/restore (DIP 6.4, 6.5).
+    [[nodiscard]] std::string profile_for(TerminalId id) const;
 
     // Execute a resolved command (DIP 3.6). Returns true when it applied.
     bool execute(const CommandRequest &request);
@@ -140,6 +162,8 @@ private:
     [[nodiscard]] LayoutMetrics metrics() const;
     [[nodiscard]] const DividerRect *divider_at(int x, int y) const;
     [[nodiscard]] bool can_split(TerminalId target, Orientation orientation) const;
+    [[nodiscard]] TerminalOptions options_for(std::string_view profile) const;
+    void remember_profile(TerminalId id, const TerminalOptions &options, std::string profile);
     TerminalWidget *add_widget(TerminalId id);
     void remove_widget(TerminalId id);
 
@@ -157,6 +181,12 @@ private:
     TerminalStyle style_;
     ShortcutMap shortcuts_;
     SessionOptions split_options_;
+    ProfileResolver profile_resolver_;
+    std::vector<std::string> profile_names_;
+    std::string active_profile_;
+    // Per-pane presentation/profile assignment (DIP 6.4).
+    std::unordered_map<TerminalId, TerminalStyle> terminal_styles_;
+    std::unordered_map<TerminalId, std::string> terminal_profiles_;
     bool broadcast_ = false;
     std::optional<TerminalId> zoomed_;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalWidget>> widgets_;
