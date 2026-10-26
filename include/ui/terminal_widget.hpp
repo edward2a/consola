@@ -11,6 +11,7 @@
 
 #include <app/emulator.hpp>
 #include <app/terminal_style.hpp>
+#include <ui/url_detector.hpp>
 
 namespace consola {
 
@@ -40,6 +41,13 @@ public:
     [[nodiscard]] bool bell_flash_active() const noexcept
     {
         return bell_flash_active_;
+    }
+
+    // URLs detected in the most recent paint (DIP 6.3). Detection is
+    // presentation-only; the terminal model is unchanged.
+    [[nodiscard]] const std::vector<UrlSpan> &url_spans() const noexcept
+    {
+        return url_spans_;
     }
 
     // Apply a new style (font/DPI). Forces a full repaint (DIP 2.5). Palette
@@ -119,6 +127,11 @@ private:
     static void paint_callback(void *context, int column, int row, const Cell &cell);
     static void collect_callback(void *context, int column, int row, const Cell &cell);
     static void bell_timeout(void *context);
+    void begin_url_scan();
+    void scan_url_cell(int column, int row, const Cell &cell);
+    void flush_url_row();
+    void finish_url_scan();
+    [[nodiscard]] bool url_at(int column, int row) const noexcept;
 
     TerminalEmulator &emulator_;
     TerminalStyle style_;
@@ -175,6 +188,14 @@ private:
     // Bell flash and audible cooldown (DIP 6.2).
     bool bell_flash_active_ = false;
     std::chrono::steady_clock::time_point last_audible_bell_;
+
+    // URL detection state (DIP 6.3); cells are fed from the collect pass.
+    std::vector<UrlSpan> url_spans_;
+    bool url_scan_active_ = false;
+    int url_row_ = -1;
+    std::string url_text_;
+    std::vector<int> url_columns_;
+    std::vector<int> url_widths_;
 };
 
 } // namespace consola

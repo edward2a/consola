@@ -44,7 +44,7 @@ does not authorize implementation; that still requires explicit user approval.
 | 18 | Cursor display details | Minor | `ColourConfig` has a cursor colour that 2.4 never uses. How the cursor looks in unfocused panes is not specified. Blink timers should run only for the focused, visible pane to keep idle CPU low. | DIP §2.4 › Cursor; §5.1; §7.5 | Stage 5 / 7 | Pending |
 | 19 | Config schema is incomplete | P3 | Settings promised as configurable elsewhere are missing from 5.2: TERM/COLORTERM, login shell, word chars, cancel-paste shortcut, bell mode, cursor style. Precedence between general and profile settings (shell, font, scrollback) is undefined. | DIP §5.2; §1.2, §2.7, §2.8, §6.2, §6.4 | Stage 5 | Settled |
 | 20 | Startup worker head-of-line blocking | Minor | There is one sequential startup worker. A launch stuck before exec (e.g. a hung NFS working directory) delays every queued launch until it is cancelled. Most visible when 6.5 restores many panes. | DIP §1.3 › Startup execution; §6.5 | Stage 6 / 7 | Pending |
-| 21 | How URL detection reads screen text | P3 | 6.3 doesn't say how text is read. `tsm_screen_draw()` is the only reader and resets libtsm's "redraw everything" flag on first call, so an extra pass can swallow it. This only matters after the age counter overflows, which is realistic on macOS/Windows where it is 32-bit. URLs that wrap across lines are not addressed. | DIP §6.3, §2.5 | Stage 6 | Pending |
+| 21 | How URL detection reads screen text | P3 | 6.3 doesn't say how text is read. `tsm_screen_draw()` is the only reader and resets libtsm's "redraw everything" flag on first call, so an extra pass can swallow it. This only matters after the age counter overflows, which is realistic on macOS/Windows where it is 32-bit. URLs that wrap across lines are not addressed. | DIP §6.3, §2.5 | Stage 6 | Resolved (S6-CS5) |
 | 22 | Fixed tuning constants | P3 | The plan already marks these starting values for verification: 64 KiB / 1 ms I/O batches; 16 inbound slots, resume at 8; ~8 ms UI drain; 100 ms post-exit drain; 2 s kill timeout; 1 MiB outgoing limit with 16 KiB reserve; 16 MiB paste limit. | DIP §1.4 › I/O fairness, Post-exit output drain; §1.6; §1.7 | Stage 7 | Reviewed |
 | 23 | Memory per session | P3 | Up to 1 MiB inbound plus 1 MiB outgoing per session. Whether that is allocated up front or on demand is not specified; at 50 sessions, up-front allocation could reach ~100 MiB. A broadcast paste keeps one encoded copy per receiving pane (up to 16 MiB each). | DIP §1.7 › Inbound, Outbound, Streaming paste; §6.1 | Stage 7 | Pending |
 | 24 | Reply-overflow rule may kill sessions on binary output | P3 | Binary or random output contains terminal queries libtsm answers, such as `ESC Z` (DECID) and status requests. If the running program doesn't read its input, those replies fill the 1 MiB limit and 1.7 fails the session. Check with the "large cat" workload. | DIP §1.7 › Outbound | Stage 7 | Pending |
@@ -986,3 +986,16 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   (c) stale "no-op bell" comments in `terminal_style.hpp` and `emulator.cpp`
   were removed. Debug and ASan/UBSan suites pass 30/30 (the view test was run
   five times for the timing checks); format/tidy clean. S6-CS4 is complete.
+- **S6-CS5 — URL detection (§6.3)**: `ui/url_detector` finds `http://`,
+  `https://`, `ftp://`, `file://` and `www.` URLs in one row of visible text,
+  stopping at whitespace/quoting delimiters and trimming trailing punctuation.
+  `TerminalWidget` builds rows from the cells it already reads for damage and
+  maps each match to visible cells, underlining and tinting them with the
+  bright-blue palette entry during painting. The terminal model is never
+  mutated. This also resolves watchlist #21: detection reuses the existing
+  collect pass (no extra `tsm_screen_draw()`); URLs that wrap across rows are
+  still not joined, which is a documented limitation of the row scanner. Tests:
+  new `url_detector_test` covers schemes, boundaries, punctuation and queries;
+  `terminal_view_test` asserts the visible URL is detected as presentation-only.
+  Debug and ASan/UBSan suites pass 31/31; format/tidy clean. Awaiting Luna-Six
+  review.

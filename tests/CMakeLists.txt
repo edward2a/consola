@@ -81,6 +81,11 @@ target_link_libraries(consola_commands_test PRIVATE terminal_ui)
 
 add_test(NAME commands_test COMMAND consola_commands_test)
 
+add_executable(consola_url_detector_test url_detector_test.cpp)
+target_link_libraries(consola_url_detector_test PRIVATE terminal_ui)
+
+add_test(NAME url_detector_test COMMAND consola_url_detector_test)
+
 add_executable(consola_font_name_test font_name_test.cpp)
 target_link_libraries(consola_font_name_test PRIVATE terminal_ui)
 

@@ -183,6 +183,22 @@ int main()
     CHECK(view.widget(REQUIRED(root))->bell_flash_active());
     test_bell_timer(bell_style);
 
+    // URL detection is presentation-only (DIP 6.3).
+    {
+        const char *url_text = "\r\nvisit https://example.com/x now\r\n";
+        manager.find(REQUIRED(root))
+            ->emulator()
+            .feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(url_text),
+                                             std::strlen(url_text)));
+        consola::TerminalWidget *widget = view.widget(REQUIRED(root));
+        widget->draw();
+        const auto &spans = widget->url_spans();
+        CHECK(spans.size() == 1);
+        if (!spans.empty()) {
+            CHECK(spans[0].text == "https://example.com/x");
+        }
+    }
+
     // Forced undersizing keeps the PTY grid positive (DIP 3.3, 2.11).
     window.size(1, 1);
     Fl::check();

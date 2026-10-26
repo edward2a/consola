@@ -170,6 +170,7 @@ add_library(terminal_ui STATIC
     src/ui/terminal_frame.cpp
     src/ui/terminal_view.cpp
     src/ui/terminal_widget.cpp
+    src/ui/url_detector.cpp
 )
 target_include_directories(terminal_ui PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/generated"

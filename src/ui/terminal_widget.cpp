@@ -433,9 +433,15 @@ void TerminalWidget::draw()
         if (cursor_visible_) {
             paint_region_ = union_rect(paint_region_, cell_rect(cursor_column_, cursor_row_, 1));
         }
+    }
 
-        // Ages select content damage; expand the paint region to cover it.
-        const ContentAge collected = emulator_.draw(&collect_callback, this);
+    // One traversal reads every visible cell for damage and URL detection, so
+    // highlighting adds no extra libtsm pass (DIP 6.3, watchlist #21).
+    begin_url_scan();
+    const ContentAge collected = emulator_.draw(&collect_callback, this);
+    finish_url_scan();
+
+    if (!full_) {
         if (collected == 0) {
             full_ = true;
             paint_region_ = Rect{x(), y(), x() + w(), y() + h(), true};
@@ -490,9 +496,75 @@ void TerminalWidget::collect_callback(void *context, int column, int row, const 
 
 void TerminalWidget::collect_cell(int column, int row, const Cell &cell)
 {
+    scan_url_cell(column, row, cell);
     if (cell.age > last_painted_age_) {
         content_region_ = union_rect(content_region_, cell_rect(column, row, cell.width));
     }
+}
+
+void TerminalWidget::begin_url_scan()
+{
+    url_spans_.clear();
+    url_scan_active_ = true;
+    url_row_ = -1;
+    url_text_.clear();
+    url_columns_.clear();
+    url_widths_.clear();
+}
+
+void TerminalWidget::scan_url_cell(int column, int row, const Cell &cell)
+{
+    if (!url_scan_active_) {
+        return;
+    }
+    if (row != url_row_) {
+        flush_url_row();
+        url_row_ = row;
+        url_text_.clear();
+        url_columns_.clear();
+        url_widths_.clear();
+    }
+    if (cell.width == 0) {
+        return; // trailing half of a wide glyph
+    }
+    const bool ascii = cell.text.size() == 1 && cell.text[0] < 0x80;
+    url_text_.push_back(ascii ? static_cast<char>(cell.text[0]) : ' ');
+    url_columns_.push_back(column);
+    url_widths_.push_back(cell.width);
+}
+
+void TerminalWidget::flush_url_row()
+{
+    if (url_row_ < 0 || url_text_.empty()) {
+        return;
+    }
+    for (const UrlMatch &match : find_urls(url_text_)) {
+        if (match.end == 0 || match.end > url_columns_.size()) {
+            continue;
+        }
+        const int start = url_columns_[match.begin];
+        const int last = url_columns_[match.end - 1];
+        const int end = last + std::max(1, url_widths_[match.end - 1]);
+        url_spans_.push_back(UrlSpan{
+            .row = url_row_,
+            .start_column = start,
+            .end_column = end,
+            .text = url_text_.substr(match.begin, match.end - match.begin),
+        });
+    }
+}
+
+void TerminalWidget::finish_url_scan()
+{
+    flush_url_row();
+    url_scan_active_ = false;
+}
+
+bool TerminalWidget::url_at(int column, int row) const noexcept
+{
+    return std::ranges::any_of(url_spans_, [column, row](const UrlSpan &span) {
+        return span.row == row && column >= span.start_column && column < span.end_column;
+    });
 }
 
 void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
@@ -512,6 +584,12 @@ void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
     if (is_cursor) {
         // Neutralise libtsm's cursor-cell inversion; the renderer draws it.
         attr.inverse = !attr.inverse;
+    }
+    // URL highlighting is presentation-only (DIP 6.3): underline and tint the
+    // cell without touching the terminal model.
+    if (!is_cursor && url_at(column, row)) {
+        attr.underline = true;
+        attr.foreground = style_.ansi[12];
     }
 
     Rgb foreground = attr.inverse ? attr.background : attr.foreground;
