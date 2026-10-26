@@ -28,6 +28,7 @@ option(CONSOLA_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitize
 option(CONSOLA_TSAN "Enable ThreadSanitizer" OFF)
 option(CONSOLA_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 option(CONSOLA_USE_SYSTEM_DEPS "Use system-installed dependencies instead of FetchContent" OFF)
+option(CONSOLA_BUILD_BENCHMARKS "Build the Stage 7 benchmark harness" ON)
 
 if(CONSOLA_TSAN AND CONSOLA_SANITIZERS)
     message(FATAL_ERROR "CONSOLA_TSAN and CONSOLA_SANITIZERS are mutually exclusive")
@@ -199,4 +200,8 @@ install(FILES resources/fonts/Inconsolata-Condensed.ttf
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
+endif()
+
+if(CONSOLA_BUILD_BENCHMARKS)
+    add_subdirectory(bench)
 endif()

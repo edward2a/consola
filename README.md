@@ -36,6 +36,14 @@ Run the tests:
 ctest --test-dir build --output-on-failure
 ```
 
+Run the Stage 7 benchmark suite (Release, needs Xvfb for the redraw workload):
+
+```sh
+make bench-run
+```
+
+Results and methodology are recorded in `docs/design/PERFORMANCE.md`.
+
 Build with AddressSanitizer and UndefinedBehaviorSanitizer:
 
 ```sh

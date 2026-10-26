@@ -8,7 +8,7 @@ JOBS ?= $(shell nproc 2>/dev/null || echo 4)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test release asan tsan run clean
+.PHONY: help build test release asan tsan run bench bench-run clean
 
 help: ## Show this help.
 	@echo "Usage: make [JOBS=N] <target>"
@@ -19,6 +19,8 @@ help: ## Show this help.
 	@echo "  asan     Build and test with AddressSanitizer + UndefinedBehaviorSanitizer."
 	@echo "  tsan     Build and test with ThreadSanitizer."
 	@echo "  run      Build and run the terminal (needs a display)."
+	@echo "  bench    Build the Release benchmark harness."
+	@echo "  bench-run Build and run the benchmark suite (needs Xvfb)."
 	@echo "  clean    Remove the CMake build trees."
 
 build: ## Configure and build the Debug tree.
@@ -44,6 +46,13 @@ tsan: ## Build and test with ThreadSanitizer.
 
 run: build ## Build and run the terminal (needs a display).
 	./build/debug/terminal_app
+
+bench: ## Build the Release benchmark harness.
+	cmake -S . -B build/bench -DCMAKE_BUILD_TYPE=Release -DCONSOLA_WARNINGS_AS_ERRORS=OFF
+	cmake --build build/bench --target consola_bench terminal_app -j$(JOBS)
+
+bench-run: bench ## Build and run the benchmark suite (needs Xvfb).
+	helper-scripts/run-benchmarks.sh build/bench/consola_bench
 
 clean: ## Remove the CMake build trees.
 	rm -rf build/debug build/release build/asan build/tsan
