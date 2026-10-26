@@ -129,6 +129,7 @@ private:
     void close_exited();
     void layout();
     void sync_focus();
+    void handle_focus(TerminalId id);
     void update_window_title();
     bool resize_focused(FocusDirection direction);
     [[nodiscard]] LayoutMetrics metrics() const;

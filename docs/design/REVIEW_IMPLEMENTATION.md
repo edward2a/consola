@@ -928,4 +928,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   Tests: `commands_test` covers the new bindings; `terminal_view_test` covers
   zoom visibility, pane swap order (focus preserved) and tab reordering. Debug
   and ASan/UBSan suites pass 30/30; format/tidy clean. Terminal renaming and
-  OSC 7 remain in 6.1.
+  OSC 7 remain in 6.1. **Luna-Six review: PASS WITH FINDINGS**, resolved here:
+  (a) `focus_callback()` now routes through `handle_focus()`, which clears zoom
+  when focus changes (including a tab switch) and relayouts, so a hidden focused
+  pane cannot remain; (b) the tests now assert the zoomed pane fills the view,
+  the tree is unchanged, focus clears zoom, movement at an edge is refused, and
+  tab moves at the ends are refused; (c) `config_loader_test` now asserts every
+  new shortcut key reaches `ShortcutConfig`. Debug and ASan/UBSan suites pass
+  30/30; format/tidy clean.

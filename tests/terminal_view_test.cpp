@@ -136,17 +136,26 @@ int main()
     CHECK(view.focus_direction(FocusDirection::right));
     CHECK(manager.focused() == second);
 
-    // Pane zoom/maximize (DIP 6.1): only the focused pane is visible.
+    // Pane zoom/maximize (DIP 6.1): only the focused pane is visible at the full
+    // content rectangle; the tree is unchanged.
+    const auto before_zoom = manager.tab().layout().terminals();
     view.toggle_zoom();
     CHECK(view.zoomed());
     CHECK(view.widget(REQUIRED(root))->visible() == 0);
     CHECK(view.widget(REQUIRED(second))->visible() != 0);
-    view.toggle_zoom();
+    CHECK(view.widget(REQUIRED(second))->w() == view.w());
+    CHECK(view.widget(REQUIRED(second))->h() == view.h());
+    CHECK(manager.tab().layout().terminals() == before_zoom);
+    // A focus change clears zoom and shows both panes again.
+    view.focus(REQUIRED(root));
     CHECK(!view.zoomed());
+    CHECK(manager.focused() == root);
     CHECK(view.widget(REQUIRED(root))->visible() != 0);
     CHECK(view.widget(REQUIRED(second))->visible() != 0);
+    view.focus(REQUIRED(second));
 
-    // Pane movement (DIP 6.1): swap the focused pane with its left neighbor.
+    // Pane movement (DIP 6.1): no neighbor at an edge, then swap with the left.
+    CHECK(!view.move_focused(FocusDirection::right));
     CHECK(view.move_focused(FocusDirection::left));
     const auto moved = manager.tab().layout().terminals();
     CHECK(moved.size() == 2);
@@ -157,6 +166,9 @@ int main()
     const auto restored = manager.tab().layout().terminals();
     CHECK(restored[0] == REQUIRED(root));
     CHECK(restored[1] == REQUIRED(second));
+    view.focus(REQUIRED(root));
+    CHECK(!view.move_focused(FocusDirection::left));
+    view.focus(REQUIRED(second));
 
     // Command dispatch (DIP 3.6).
     CHECK(
@@ -219,8 +231,10 @@ int main()
     CHECK(manager.tabs().active_id() == second_tab);
     CHECK(view.move_tab(1));
     CHECK(manager.tabs().ids()[0] == first_tab);
+    CHECK(!view.move_tab(1)); // already last
 
     CHECK(manager.select_tab(first_tab));
+    CHECK(!view.move_tab(-1)); // already first
     view.pump();
     CHECK(view.widget(REQUIRED(root))->visible() != 0);
     CHECK(view.widget(REQUIRED(tab_root))->visible() == 0);

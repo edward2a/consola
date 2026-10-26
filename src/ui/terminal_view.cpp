@@ -835,13 +835,28 @@ void TerminalView::title_callback(void *context, std::string_view title)
     window->redraw();
 }
 
+void TerminalView::handle_focus(TerminalId id)
+{
+    const bool unzoom = zoomed_.has_value() && zoomed_.value() != id;
+    if (unzoom) {
+        zoomed_.reset();
+    }
+    const TabId before = manager_.tabs().active_id();
+    manager_.focus(id);
+    const TabId after = manager_.tabs().active_id();
+    if (unzoom || before != after) {
+        last_tab_ = after;
+        layout();
+    }
+    update_window_title();
+}
+
 void TerminalView::focus_callback(void *context)
 {
     // Only record focus here: taking FLTK focus again would recurse through
     // FL_FOCUS (DIP 3.5). The window title follows the focused pane.
     auto *self = static_cast<Context *>(context);
-    self->view->manager_.focus(self->id);
-    self->view->update_window_title();
+    self->view->handle_focus(self->id);
 }
 
 bool TerminalView::key_callback(void *context, int key, int state)

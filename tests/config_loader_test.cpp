@@ -341,6 +341,33 @@ void test_shipped_example()
     CHECK(result.config.general.scrollback == consola::kDefaultScrollback);
 }
 
+void test_new_shortcut_keys()
+{
+    const consola::ConfigLoadResult result = consola::parse_config(R"(version: 1
+shortcuts:
+  toggle_broadcast: "Ctrl+Shift+B"
+  toggle_zoom: "Ctrl+Shift+Z"
+  move_tab_left: "Ctrl+Shift+PageUp"
+  move_tab_right: "Ctrl+Shift+PageDown"
+  move_pane_left: "Ctrl+Shift+Alt+Left"
+  move_pane_right: "Ctrl+Shift+Alt+Right"
+  move_pane_up: "Ctrl+Shift+Alt+Up"
+  move_pane_down: "Ctrl+Shift+Alt+Down"
+)");
+    CHECK(result.ok());
+    if (!result.ok()) {
+        return;
+    }
+    CHECK(result.config.shortcuts.toggle_broadcast == "Ctrl+Shift+B");
+    CHECK(result.config.shortcuts.toggle_zoom == "Ctrl+Shift+Z");
+    CHECK(result.config.shortcuts.move_tab_left == "Ctrl+Shift+PageUp");
+    CHECK(result.config.shortcuts.move_tab_right == "Ctrl+Shift+PageDown");
+    CHECK(result.config.shortcuts.move_pane_left == "Ctrl+Shift+Alt+Left");
+    CHECK(result.config.shortcuts.move_pane_right == "Ctrl+Shift+Alt+Right");
+    CHECK(result.config.shortcuts.move_pane_up == "Ctrl+Shift+Alt+Up");
+    CHECK(result.config.shortcuts.move_pane_down == "Ctrl+Shift+Alt+Down");
+}
+
 } // namespace
 
 int main()
@@ -360,6 +387,7 @@ int main()
         test_string_lifetime();
         test_default_config_path();
         test_shipped_example();
+        test_new_shortcut_keys();
     } catch (const std::exception &exception) {
         std::fprintf(stderr, "unexpected exception: %s\n", exception.what());
         return EXIT_FAILURE;
