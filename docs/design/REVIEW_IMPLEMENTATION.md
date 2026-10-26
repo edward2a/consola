@@ -934,5 +934,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   pane cannot remain; (b) the tests now assert the zoomed pane fills the view,
   the tree is unchanged, focus clears zoom, movement at an edge is refused, and
   tab moves at the ends are refused; (c) `config_loader_test` now asserts every
-  new shortcut key reaches `ShortcutConfig`. Debug and ASan/UBSan suites pass
-  30/30; format/tidy clean.
+  new shortcut key reaches `ShortcutConfig`. **Second review: PASS WITH
+  FINDINGS** (P3 test depth) — the tests now also check the zoomed pane's origin
+  and the split orientation/ratio are unchanged, and that zoom clears when the
+  zoomed pane closes and when the active tab changes. Debug and ASan/UBSan
+  suites pass 30/30; format/tidy clean. S6-CS2 is complete.

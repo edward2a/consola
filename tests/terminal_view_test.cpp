@@ -138,14 +138,29 @@ int main()
 
     // Pane zoom/maximize (DIP 6.1): only the focused pane is visible at the full
     // content rectangle; the tree is unchanged.
+    const consola::SplitNode *split_before =
+        manager.tab().layout().split(manager.tab().layout().root());
+    CHECK(split_before != nullptr);
+    const consola::Orientation orientation_before =
+        split_before != nullptr ? split_before->orientation : Orientation::horizontal;
+    const float ratio_before = split_before != nullptr ? split_before->ratio : 0.5F;
     const auto before_zoom = manager.tab().layout().terminals();
     view.toggle_zoom();
     CHECK(view.zoomed());
     CHECK(view.widget(REQUIRED(root))->visible() == 0);
     CHECK(view.widget(REQUIRED(second))->visible() != 0);
+    CHECK(view.widget(REQUIRED(second))->x() == view.x());
+    CHECK(view.widget(REQUIRED(second))->y() == view.y());
     CHECK(view.widget(REQUIRED(second))->w() == view.w());
     CHECK(view.widget(REQUIRED(second))->h() == view.h());
     CHECK(manager.tab().layout().terminals() == before_zoom);
+    const consola::SplitNode *split_during =
+        manager.tab().layout().split(manager.tab().layout().root());
+    CHECK(split_during != nullptr);
+    if (split_during != nullptr) {
+        CHECK(split_during->orientation == orientation_before);
+        CHECK(split_during->ratio == ratio_before);
+    }
     // A focus change clears zoom and shows both panes again.
     view.focus(REQUIRED(root));
     CHECK(!view.zoomed());
@@ -185,10 +200,14 @@ int main()
     CHECK(root_split != nullptr);
     CHECK(root_split->ratio == 0.5F);
 
+    // Zoom is cleared when the zoomed pane closes.
+    view.toggle_zoom();
+    CHECK(view.zoomed());
     CHECK(view.close_focused());
     const bool collapsed =
         wait_for([&] { return manager.tab().terminal_count() == 1; }, 5000, view);
     CHECK(collapsed);
+    CHECK(!view.zoomed());
     CHECK(manager.tab().layout().contains(REQUIRED(root)));
     CHECK(!manager.tab().layout().contains(REQUIRED(second)));
 
@@ -233,9 +252,14 @@ int main()
     CHECK(manager.tabs().ids()[0] == first_tab);
     CHECK(!view.move_tab(1)); // already last
 
+    // Zoom is cleared when the active tab changes (the zoomed pane leaves the
+    // active tab).
+    view.toggle_zoom();
+    CHECK(view.zoomed());
     CHECK(manager.select_tab(first_tab));
-    CHECK(!view.move_tab(-1)); // already first
     view.pump();
+    CHECK(!view.zoomed());
+    CHECK(!view.move_tab(-1)); // already first
     CHECK(view.widget(REQUIRED(root))->visible() != 0);
     CHECK(view.widget(REQUIRED(tab_root))->visible() == 0);
 
