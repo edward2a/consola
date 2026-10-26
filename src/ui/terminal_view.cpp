@@ -56,6 +56,34 @@ struct OutputCallbackGuard {
     }
 };
 
+const LayoutNodeConfig *layout_node(const LayoutTabConfig &tab, std::size_t index)
+{
+    return index < tab.nodes.size() ? &tab.nodes[index] : nullptr;
+}
+
+const LayoutPaneConfig *first_pane(const LayoutTabConfig &tab, std::size_t index,
+                                   std::unordered_set<std::size_t> &visiting)
+{
+    const LayoutNodeConfig *node = layout_node(tab, index);
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (node->pane.has_value()) {
+        return &node->pane.value();
+    }
+    if (node->children.size() != 2 || !visiting.insert(index).second) {
+        return nullptr;
+    }
+    const LayoutPaneConfig *left = first_pane(tab, node->children[0], visiting);
+    return left != nullptr ? left : first_pane(tab, node->children[1], visiting);
+}
+
+const LayoutPaneConfig *first_pane(const LayoutTabConfig &tab, std::size_t index)
+{
+    std::unordered_set<std::size_t> visiting;
+    return first_pane(tab, index, visiting);
+}
+
 } // namespace
 
 TerminalView::TerminalView(int x, int y, int w, int h, TerminalManager &manager,
@@ -557,6 +585,137 @@ void TerminalView::remember_profile(TerminalId id, const TerminalOptions &option
     terminal_profiles_[id] = std::move(profile);
 }
 
+bool TerminalView::restore_layout(const LayoutConfig &saved, const RestoreResolver &resolver,
+                                  std::vector<std::string> *warnings)
+{
+    const auto warn = [warnings](std::string message) {
+        if (warnings != nullptr) {
+            warnings->push_back(std::move(message));
+        }
+    };
+    if (saved.tabs.empty() || !resolver) {
+        warn("layout: no tabs to restore");
+        return false;
+    }
+
+    // The application calls this before creating a terminal, so the initial
+    // empty tab can host the first saved tab. If panes already exist, restore
+    // additively into fresh tabs.
+    const bool reuse_first = manager_.terminal_count() == 0;
+    bool ok = true;
+    std::vector<TabId> restored_tabs;
+    std::vector<std::unordered_map<std::string, TerminalId>> pane_ids(saved.tabs.size());
+
+    for (std::size_t i = 0; i < saved.tabs.size(); ++i) {
+        const LayoutTabConfig &tab_config = saved.tabs[i];
+        if (tab_config.nodes.empty() || tab_config.root >= tab_config.nodes.size()) {
+            warn("layout tab " + std::to_string(i) + ": invalid root");
+            ok = false;
+            continue;
+        }
+        const LayoutPaneConfig *root_pane = first_pane(tab_config, tab_config.root);
+        if (root_pane == nullptr) {
+            warn("layout tab " + std::to_string(i) + ": invalid tree");
+            ok = false;
+            continue;
+        }
+
+        const TabId tab =
+            (i == 0 && reuse_first) ? manager_.tabs().active_id() : manager_.create_tab();
+        restored_tabs.push_back(tab);
+        auto &ids = pane_ids[i];
+
+        const auto create = [&](const LayoutPaneConfig &pane, std::optional<TerminalId> target,
+                                Orientation orientation, float ratio) -> std::optional<TerminalId> {
+            RestorePaneOptions resolved = resolver(pane);
+            for (const std::string &message : resolved.warnings) {
+                warn(message);
+            }
+            const TerminalOptions options{.session = resolved.session, .style = resolved.style};
+            const std::optional<TerminalId> id =
+                target.has_value() ? manager_.split_terminal(*target, orientation, options, ratio)
+                                   : manager_.create_root_terminal(tab, options);
+            if (!id) {
+                warn("layout pane " + pane.id + ": could not be created");
+                return std::nullopt;
+            }
+            ids[pane.id] = *id;
+            remember_profile(*id, options, resolved.profile);
+            if (resolved.retain_on_exit) {
+                retain_exited_.insert(*id);
+            }
+            return id;
+        };
+
+        const std::optional<TerminalId> root_id =
+            create(*root_pane, std::nullopt, Orientation::horizontal, 0.5F);
+        if (!root_id) {
+            ok = false;
+            continue;
+        }
+
+        std::function<bool(std::size_t, TerminalId)> build;
+        build = [&](std::size_t index, TerminalId leaf) -> bool {
+            const LayoutNodeConfig *node = layout_node(tab_config, index);
+            if (node == nullptr) {
+                warn("layout tab " + std::to_string(i) + ": invalid node");
+                return false;
+            }
+            if (node->pane.has_value()) {
+                return true;
+            }
+            if (node->children.size() != 2) {
+                warn("layout tab " + std::to_string(i) + ": malformed split");
+                return false;
+            }
+            const LayoutPaneConfig *right_first = first_pane(tab_config, node->children[1]);
+            if (right_first == nullptr) {
+                warn("layout tab " + std::to_string(i) + ": invalid right subtree");
+                return false;
+            }
+            const std::optional<TerminalId> right =
+                create(*right_first, leaf, node->orientation, node->ratio);
+            if (!right) {
+                return false;
+            }
+            return build(node->children[1], *right) && build(node->children[0], leaf);
+        };
+
+        if (!build(tab_config.root, *root_id)) {
+            ok = false;
+            continue;
+        }
+        if (!tab_config.focused.empty()) {
+            const auto focused = ids.find(tab_config.focused);
+            if (focused != ids.end()) {
+                manager_.focus(focused->second);
+            } else {
+                warn("layout tab " + std::to_string(i) + ": unknown focused pane");
+            }
+        }
+    }
+
+    if (!restored_tabs.empty()) {
+        const std::size_t active_index = std::min(saved.active_tab, restored_tabs.size() - 1);
+        manager_.select_tab(restored_tabs[active_index]);
+        const LayoutTabConfig &active_config = saved.tabs[active_index];
+        if (!active_config.focused.empty()) {
+            const auto focused = pane_ids[active_index].find(active_config.focused);
+            if (focused != pane_ids[active_index].end()) {
+                manager_.focus(focused->second);
+            }
+        }
+    }
+
+    create_widgets();
+    last_tab_ = manager_.tabs().active_id();
+    layout();
+    sync_focus();
+    update_window_title();
+    redraw();
+    return ok;
+}
+
 bool TerminalView::resize_focused(FocusDirection direction)
 {
     const std::optional<TerminalId> focused = manager_.focused();
@@ -719,6 +878,17 @@ void TerminalView::close_exited()
         TerminalInstance *instance = manager_.find(id);
         if (instance != nullptr && instance->state() == TerminalState::exited &&
             !instance->closing()) {
+            if (retain_exited_.contains(id)) {
+                // A restored pane whose shell could not launch stays visible
+                // with a one-time explanation (DIP 6.5).
+                if (notified_exited_.insert(id).second) {
+                    const std::string message =
+                        "\r\n[consola] could not launch the configured shell for this pane.\r\n";
+                    instance->emulator().feed(
+                        std::as_bytes(std::span(message.data(), message.size())));
+                }
+                continue;
+            }
             manager_.close_terminal(id);
         }
     }
@@ -775,6 +945,8 @@ void TerminalView::remove_widget(TerminalId id)
     widgets_.erase(it);
     terminal_styles_.erase(id);
     terminal_profiles_.erase(id);
+    retain_exited_.erase(id);
+    notified_exited_.erase(id);
 }
 
 void TerminalView::layout()

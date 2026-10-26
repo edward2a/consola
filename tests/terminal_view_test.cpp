@@ -184,6 +184,85 @@ void test_profile_selection(TerminalView &view, TerminalManager &manager,
         wait_for([&] { return manager.find(REQUIRED(profiled_split)) == nullptr; }, 8000, view);
     CHECK(split_closed);
 }
+// Saved-layout restore (DIP 6.5): rebuild tabs, split ratios, profiles, active
+// tab and focus through the asynchronous factory.
+void test_restore_layout(TerminalView &view, TerminalManager &manager,
+                         const SessionOptions &options)
+{
+    consola::LayoutConfig layout;
+
+    consola::LayoutTabConfig tab0;
+    tab0.nodes.resize(3);
+    tab0.root = 0;
+    tab0.nodes[0].orientation = Orientation::horizontal;
+    tab0.nodes[0].ratio = 0.4F;
+    tab0.nodes[0].children = {1, 2};
+    tab0.nodes[1].pane =
+        consola::LayoutPaneConfig{.id = "p1", .profile = "one", .working_directory = {}};
+    tab0.nodes[2].pane =
+        consola::LayoutPaneConfig{.id = "p2", .profile = "two", .working_directory = {}};
+    tab0.focused = "p2";
+
+    consola::LayoutTabConfig tab1;
+    tab1.nodes.resize(1);
+    tab1.nodes[0].pane =
+        consola::LayoutPaneConfig{.id = "p3", .profile = "one", .working_directory = {}};
+    tab1.focused = "p3";
+
+    layout.tabs = {tab0, tab1};
+    layout.active_tab = 1;
+
+    const auto resolver = [options](const consola::LayoutPaneConfig &pane) {
+        consola::RestorePaneOptions resolved;
+        resolved.session = options;
+        resolved.style = consola::default_terminal_style();
+        resolved.style.font_size = pane.profile == "one" ? 10 : 20;
+        resolved.profile = pane.profile;
+        return resolved;
+    };
+    std::vector<std::string> warnings;
+    CHECK(view.restore_layout(layout, resolver, &warnings));
+    CHECK(warnings.empty());
+
+    const std::size_t count = manager.tabs().count();
+    CHECK(count >= 3);
+    const auto ids = manager.tabs().ids();
+    const consola::Tab *first = manager.tabs().find(ids[ids.size() - 2]);
+    const consola::Tab *second = manager.tabs().find(ids[ids.size() - 1]);
+    CHECK(first != nullptr);
+    CHECK(second != nullptr);
+    if (first != nullptr) {
+        CHECK(first->layout().terminal_count() == 2);
+        const consola::SplitNode *split = first->layout().split(first->layout().root());
+        CHECK(split != nullptr);
+        if (split != nullptr) {
+            CHECK(split->orientation == Orientation::horizontal);
+            CHECK(split->ratio == 0.4F);
+        }
+        CHECK(first->layout().focused().has_value());
+        if (first->layout().focused().has_value()) {
+            CHECK(view.profile_for(first->layout().focused().value()) == "two");
+        }
+    }
+    if (second != nullptr) {
+        CHECK(second->layout().terminal_count() == 1);
+        const auto terminals = second->layout().terminals();
+        CHECK(terminals.size() == 1);
+        if (!terminals.empty()) {
+            CHECK(view.profile_for(terminals.front()) == "one");
+            CHECK(view.widget(terminals.front())->style().font_size == 10);
+        }
+    }
+    CHECK(manager.tabs().active_id() == ids[ids.size() - 1]);
+
+    // Close the two restored tabs, leaving the original view state.
+    for (std::size_t i = 0; i < 2; ++i) {
+        const consola::TabId active = manager.tabs().active_id();
+        CHECK(manager.close_tab(active));
+        CHECK(wait_for([&] { return manager.tabs().count() == count - 1 - i; }, 8000, view));
+    }
+}
+
 } // namespace
 
 int main()
@@ -485,6 +564,7 @@ int main()
     CHECK(manager.tabs().count() == 1);
 
     test_profile_selection(view, manager, options);
+    test_restore_layout(view, manager, options);
 
     manager.shutdown();
 

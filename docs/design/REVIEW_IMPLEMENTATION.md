@@ -1044,3 +1044,20 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   widgets in the active tab, so an inactive tab's font cannot raise the active
   tab's minimum. Debug and ASan/UBSan suites pass 31/31; format/tidy clean.
   S6-CS6 is complete.
+- **S6-CS7 — layout restore (§6.5)**: `--layout NAME` requests an explicit
+  restore at startup (unknown names fail). `config/restore` resolves each saved
+  pane's profile (unknown profiles fall back to the default with a warning),
+  validates the working directory (unavailable directories fall back with a
+  warning) and probes the shell: an unavailable configured shell falls back to
+  the default shell once; if that is also unavailable the pane is marked to be
+  retained. `TerminalView::restore_layout()` rebuilds the saved tabs and trees
+  through the asynchronous factory (fresh application-wide ids), preserving
+  split orientations/ratios, per-pane profiles/styles, saved focus and the
+  active tab; it is additive when the view is non-empty and reuses the initial
+  empty tab in the normal startup path. Panes marked retained stay visible after
+  a failed launch with a one-time message instead of auto-closing. Saved
+  foreground jobs are not recreated. Tests: `config_restore_test` covers
+  profile/directory/shell resolution and the retained fallback;
+  `terminal_view_test` restores a two-tab layout and verifies the tree/ratio,
+  profiles/styles, focus and active tab. Debug and ASan/UBSan suites pass 32/32;
+  format/tidy clean. Awaiting Luna-Six review.

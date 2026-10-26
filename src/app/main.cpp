@@ -33,6 +33,7 @@ int main(int argc, char **argv)
     try {
         bool smoke_test = false;
         std::optional<std::filesystem::path> config_path;
+        std::optional<std::string> layout_name;
         std::vector<char *> fltk_args;
         fltk_args.push_back(argv[0]);
         for (int i = 1; i < argc; ++i) {
@@ -53,12 +54,24 @@ int main(int argc, char **argv)
                 config_path = std::filesystem::path(std::string(arg.substr(9)));
                 continue;
             }
+            if (arg == "--layout") {
+                if (i + 1 >= argc) {
+                    consola::log(consola::LogLevel::Error, "--layout requires a name");
+                    return EXIT_FAILURE;
+                }
+                layout_name = std::string(argv[++i]);
+                continue;
+            }
+            if (arg.starts_with("--layout=")) {
+                layout_name = std::string(arg.substr(9));
+                continue;
+            }
             fltk_args.push_back(argv[i]);
         }
         fltk_args.push_back(nullptr);
 
         return consola::run_application(static_cast<int>(fltk_args.size()) - 1, fltk_args.data(),
-                                        smoke_test, config_path);
+                                        smoke_test, config_path, layout_name);
     } catch (const std::exception &error) {
         consola::log(consola::LogLevel::Error, error.what());
         return EXIT_FAILURE;

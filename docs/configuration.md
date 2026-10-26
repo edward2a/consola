@@ -5,6 +5,11 @@ consola reads a single YAML file. The default location is
 `XDG_CONFIG_HOME` is unset); a path given on the command line overrides it. A
 missing file is not an error: the built-in defaults apply.
 
+`--config PATH` selects the file. `--layout NAME` restores the named saved
+layout at startup instead of creating a single default terminal; missing
+directories and unavailable shells are reported and fall back as described in
+[DIP 6.5](design/detailed-implementation-plan.md).
+
 The schema is versioned. Every file must start with:
 
 ```yaml

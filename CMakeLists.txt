@@ -91,6 +91,7 @@ add_library(terminal_core STATIC
     src/config/apply.cpp
     src/config/config.cpp
     src/config/loader.cpp
+    src/config/restore.cpp
     src/config/writer.cpp
     src/layout/layout_geometry.cpp
     src/layout/layout_tree.cpp

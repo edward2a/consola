@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <FL/Fl_Group.H>
@@ -17,6 +18,8 @@
 #include <app/session.hpp>
 #include <app/terminal_manager.hpp>
 #include <app/terminal_style.hpp>
+#include <config/layout_config.hpp>
+#include <config/restore.hpp>
 #include <layout/layout_geometry.hpp>
 #include <ui/commands.hpp>
 #include <ui/shortcuts.hpp>
@@ -91,6 +94,14 @@ public:
     // The profile assigned to a live pane (empty when it uses the view's
     // constructor defaults), for capture/restore (DIP 6.4, 6.5).
     [[nodiscard]] std::string profile_for(TerminalId id) const;
+
+    // Rebuild tabs/panes from validated saved data (DIP 6.5). Every saved pane
+    // goes through the resolver (which applies profile, directory and shell
+    // policy); the view creates fresh ids and preserves the saved tree, ratios,
+    // active tab and focused pane. Additive when the active tab is occupied.
+    using RestoreResolver = std::function<RestorePaneOptions(const LayoutPaneConfig &)>;
+    bool restore_layout(const LayoutConfig &saved, const RestoreResolver &resolver,
+                        std::vector<std::string> *warnings = nullptr);
 
     // Execute a resolved command (DIP 3.6). Returns true when it applied.
     bool execute(const CommandRequest &request);
@@ -193,6 +204,10 @@ private:
     // Per-pane presentation/profile assignment (DIP 6.4).
     std::unordered_map<TerminalId, TerminalStyle> terminal_styles_;
     std::unordered_map<TerminalId, std::string> terminal_profiles_;
+    // Restored panes whose default shell was unavailable: keep them visible
+    // after the failed launch (DIP 6.5).
+    std::unordered_set<TerminalId> retain_exited_;
+    std::unordered_set<TerminalId> notified_exited_;
     bool broadcast_ = false;
     std::optional<TerminalId> zoomed_;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalWidget>> widgets_;

@@ -21,6 +21,7 @@
 #include <app/terminal_style.hpp>
 #include <config/apply.hpp>
 #include <config/loader.hpp>
+#include <config/restore.hpp>
 #include <consola_dejavu_sans_mono.hpp>
 #include <ui/fonts.hpp>
 #include <ui/shortcuts.hpp>
@@ -208,7 +209,8 @@ int run_smoke_test(int argc, char **argv, Fl_Window &window, const ApplicationCo
     return EXIT_SUCCESS;
 }
 
-int run_session(int argc, char **argv, Fl_Window &window, const ApplicationConfig &config)
+int run_session(int argc, char **argv, Fl_Window &window, const ApplicationConfig &config,
+                const std::optional<std::string> &layout_name)
 {
     const TerminalStyle style = resolve_terminal_style(config);
     const SessionOptions session = resolve_session_options(config);
@@ -243,7 +245,29 @@ int run_session(int argc, char **argv, Fl_Window &window, const ApplicationConfi
         return EXIT_FAILURE;
     }
 
-    if (!frame.view().start(session)) {
+    if (layout_name.has_value()) {
+        const auto found = config.layouts.find(*layout_name);
+        if (found == config.layouts.end()) {
+            log(LogLevel::Error, "layout '" + *layout_name + "' was not found");
+            manager.shutdown();
+            return EXIT_FAILURE;
+        }
+        std::vector<std::string> warnings;
+        const auto restore_resolver = [config](const LayoutPaneConfig &pane) {
+            return resolve_restore_pane(config, pane);
+        };
+        if (!frame.view().restore_layout(found->second, restore_resolver, &warnings)) {
+            for (const std::string &warning : warnings) {
+                log(LogLevel::Warning, warning);
+            }
+            log(LogLevel::Error, "layout restore failed");
+            manager.shutdown();
+            return EXIT_FAILURE;
+        }
+        for (const std::string &warning : warnings) {
+            log(LogLevel::Warning, warning);
+        }
+    } else if (!frame.view().start(session)) {
         log(LogLevel::Error, "failed to create the initial terminal");
         manager.shutdown();
         return EXIT_FAILURE;
@@ -304,7 +328,8 @@ void register_application_fonts()
 }
 
 int run_application(int argc, char **argv, bool smoke_test,
-                    const std::optional<std::filesystem::path> &config_path)
+                    const std::optional<std::filesystem::path> &config_path,
+                    const std::optional<std::string> &layout_name)
 {
     register_application_fonts();
 
@@ -321,7 +346,7 @@ int run_application(int argc, char **argv, bool smoke_test,
     if (smoke_test) {
         return run_smoke_test(argc, argv, window, loaded.config);
     }
-    return run_session(argc, argv, window, loaded.config);
+    return run_session(argc, argv, window, loaded.config, layout_name);
 }
 
 } // namespace consola
