@@ -122,15 +122,17 @@ bool TerminalView::pump()
 
     const bool dirty = manager_.pump();
     close_exited();
-    if (destroy_stale_widgets()) {
-        layout();
-    }
+    const bool stale = destroy_stale_widgets();
     // Closing the active tab can select another tab during the manager pump;
-    // retitle from the new active tab's focused pane.
+    // retitle from the new active tab's focused pane. Relayout once even if
+    // stale widgets also required it.
     const TabId active_after = manager_.tabs().active_id();
-    if (active_after != active_tab) {
+    const bool tab_changed_after = active_after != active_tab;
+    if (stale || tab_changed_after) {
         last_tab_ = active_after;
         layout();
+    }
+    if (tab_changed_after) {
         update_window_title();
     }
     if (dirty) {

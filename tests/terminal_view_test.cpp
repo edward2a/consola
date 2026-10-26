@@ -114,6 +114,8 @@ void test_window_titles(Fl_Window &window, TerminalManager &manager, TerminalVie
     CHECK(std::string(window.label()) == "/tmp/osc7-dir");
     feed_root("\x1b]0;explicit\x07");
     CHECK(std::string(window.label()) == "explicit");
+    feed_root("\x1b]2;osc2-title\x07");
+    CHECK(std::string(window.label()) == "osc2-title");
     feed_root("\x1b]0;\x07");
     CHECK(std::string(window.label()) == "/tmp/osc7-dir");
 }

@@ -961,4 +961,8 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   text; (c) `terminal_view_test` now drives the window-title path: OSC 7 as the
   fallback, OSC 0/2 precedence, clearing back to cwd, an inactive tab not
   leaking a title, and closing the active tab retitling from the remaining tab.
-  Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
+  **Second review: PASS WITH FINDINGS** (P3): the active-tab-change path no
+  longer relayouts twice when stale widgets were also removed, and OSC 2 is
+  asserted through the window-title path (OSC 7 fallback → OSC 0 → OSC 2 →
+  clear back to cwd). Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
+  S6-CS3 is complete.
