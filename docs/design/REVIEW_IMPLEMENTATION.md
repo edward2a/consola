@@ -992,10 +992,18 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   `TerminalWidget` builds rows from the cells it already reads for damage and
   maps each match to visible cells, underlining and tinting them with the
   bright-blue palette entry during painting. The terminal model is never
-  mutated. This also resolves watchlist #21: detection reuses the existing
-  collect pass (no extra `tsm_screen_draw()`); URLs that wrap across rows are
-  still not joined, which is a documented limitation of the row scanner. Tests:
-  new `url_detector_test` covers schemes, boundaries, punctuation and queries;
-  `terminal_view_test` asserts the visible URL is detected as presentation-only.
-  Debug and ASan/UBSan suites pass 31/31; format/tidy clean. Awaiting Luna-Six
-  review.
+  mutated. This also resolves watchlist #21: incremental draws reuse the
+  damage collect pass, while a full repaint adds one *read-only* traversal (no
+  double painting) because spans must be known before cells are painted; URLs
+  that wrap across rows are not joined, which is a documented limitation of the
+  row scanner, and non-ASCII cells break a URL. Tests: new `url_detector_test`
+  covers schemes, boundaries, punctuation, queries, email rejection, malformed
+  authorities and FTP; `terminal_view_test` asserts the visible URL is detected
+  as presentation-only, including a URL at column 0. **Luna-Six review: PASS
+  WITH FINDINGS**, resolved here: (a) the scan reserves row capacity outside
+  libtsm's callback and traps allocation failure inside it, so the C callback
+  never throws; (b) email domains and malformed authorities (`http://?q`,
+  `http:///path`) are rejected while `file:///path` remains valid; (c) tests
+  cover those cases and a column-0 URL; (d) the full-repaint traversal cost is
+  accepted and documented rather than claiming a single pass everywhere. Debug
+  and ASan/UBSan suites pass 31/31; format/tidy clean.

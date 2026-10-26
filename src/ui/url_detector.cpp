@@ -43,7 +43,7 @@ std::size_t prefix_length(std::string_view text, std::size_t at)
 bool is_word_char(char c)
 {
     const auto value = static_cast<unsigned char>(c);
-    return std::isalnum(value) != 0 || c == '_';
+    return std::isalnum(value) != 0 || c == '_' || c == '@';
 }
 
 bool is_url_char(char c)
@@ -70,6 +70,14 @@ std::vector<UrlMatch> find_urls(std::string_view text)
         const std::size_t length = prefix_length(text, i);
         if (length == 0 || (i > 0 && is_word_char(text[i - 1]))) {
             ++i;
+            continue;
+        }
+        // Schemes other than file:// need a host immediately after the
+        // delimiter; file:// may be followed by an empty authority and a path.
+        const bool file_scheme = starts_with_ci(text.substr(i), "file://");
+        if (!file_scheme && (i + length >= text.size() || text[i + length] == '/' ||
+                             text[i + length] == '?' || text[i + length] == '#')) {
+            i += length;
             continue;
         }
         std::size_t end = i + length;

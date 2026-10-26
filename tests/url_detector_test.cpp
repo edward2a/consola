@@ -48,6 +48,13 @@ void test_schemes()
 
     const std::string_view www = "www.example.com/path";
     CHECK(consola::find_urls(www).size() == 1);
+
+    const std::string_view ftp = "ftp://host/file";
+    CHECK(consola::find_urls(ftp).size() == 1);
+
+    CHECK(consola::find_urls("user@www.example.com").empty());
+    CHECK(consola::find_urls("http://?q=1").empty());
+    CHECK(consola::find_urls("http:///path").empty());
 }
 
 void test_boundaries()

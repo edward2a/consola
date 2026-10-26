@@ -197,6 +197,19 @@ int main()
         if (!spans.empty()) {
             CHECK(spans[0].text == "https://example.com/x");
         }
+
+        // A URL starting at the first column maps to column 0.
+        const char *edge_text = "\r\nhttp://start.example\r\n";
+        manager.find(REQUIRED(root))
+            ->emulator()
+            .feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(edge_text),
+                                             std::strlen(edge_text)));
+        widget->draw();
+        const auto &edge_spans = widget->url_spans();
+        const bool found_edge = std::ranges::any_of(edge_spans, [](const consola::UrlSpan &span) {
+            return span.text == "http://start.example" && span.start_column == 0;
+        });
+        CHECK(found_edge);
     }
 
     // Forced undersizing keeps the PTY grid positive (DIP 3.3, 2.11).

@@ -510,6 +510,12 @@ void TerminalWidget::begin_url_scan()
     url_text_.clear();
     url_columns_.clear();
     url_widths_.clear();
+    // Reserve the row capacity outside the libtsm callback so the per-cell
+    // pushes below normally cannot allocate (DIP 2.2 callback contract).
+    const std::size_t columns = static_cast<std::size_t>(std::max(0, emulator_.columns()));
+    url_text_.reserve(columns + 1);
+    url_columns_.reserve(columns);
+    url_widths_.reserve(columns);
 }
 
 void TerminalWidget::scan_url_cell(int column, int row, const Cell &cell)
@@ -517,20 +523,31 @@ void TerminalWidget::scan_url_cell(int column, int row, const Cell &cell)
     if (!url_scan_active_) {
         return;
     }
-    if (row != url_row_) {
-        flush_url_row();
-        url_row_ = row;
+    // This runs inside libtsm's draw callback, which must not throw. Reserve
+    // capacity above; if a growth still fails, disable detection for this draw
+    // rather than let the exception escape through C.
+    try {
+        if (row != url_row_) {
+            flush_url_row();
+            url_row_ = row;
+            url_text_.clear();
+            url_columns_.clear();
+            url_widths_.clear();
+        }
+        if (cell.width == 0) {
+            return; // trailing half of a wide glyph
+        }
+        const bool ascii = cell.text.size() == 1 && cell.text[0] < 0x80;
+        url_text_.push_back(ascii ? static_cast<char>(cell.text[0]) : ' ');
+        url_columns_.push_back(column);
+        url_widths_.push_back(cell.width);
+    } catch (...) {
+        url_scan_active_ = false;
+        url_spans_.clear();
         url_text_.clear();
         url_columns_.clear();
         url_widths_.clear();
     }
-    if (cell.width == 0) {
-        return; // trailing half of a wide glyph
-    }
-    const bool ascii = cell.text.size() == 1 && cell.text[0] < 0x80;
-    url_text_.push_back(ascii ? static_cast<char>(cell.text[0]) : ' ');
-    url_columns_.push_back(column);
-    url_widths_.push_back(cell.width);
 }
 
 void TerminalWidget::flush_url_row()
@@ -556,7 +573,13 @@ void TerminalWidget::flush_url_row()
 
 void TerminalWidget::finish_url_scan()
 {
-    flush_url_row();
+    if (url_scan_active_) {
+        try {
+            flush_url_row();
+        } catch (...) {
+            url_spans_.clear();
+        }
+    }
     url_scan_active_ = false;
 }
 
