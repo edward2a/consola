@@ -49,7 +49,7 @@ not single samples.
 - **Idle CPU is not negligible.** About 1.3% for one idle pane is higher than a
   poll-blocked loop should need. Profile the I/O loop and UI pump wakeups
   before changing anything.
-- **PTY throughput is roughly half the parser rate** (27.5 vs 60.8 MiB/s).
+- **PTY throughput is roughly half the parser rate** (26.8 vs 66.0 MiB/s).
   The gap covers the loop read batch, the inbound queue copy, the wakeup and
   the UI pump. Measure the split before optimizing.
 - **Scrollback is ~5.2 KiB per line** at 160 columns, so the default 10,000-line
