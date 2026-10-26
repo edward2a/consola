@@ -148,6 +148,7 @@ private:
     static void resize_callback(void *context, int columns, int rows);
     static void title_callback(void *context, std::string_view title);
     static void working_directory_callback(void *context, std::string_view path);
+    static void bell_callback(void *context);
     static void focus_callback(void *context);
     static bool key_callback(void *context, int key, int state);
     static void key_input_callback(void *context, std::span<const KeyEvent> events);

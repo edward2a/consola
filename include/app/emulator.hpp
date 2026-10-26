@@ -147,6 +147,11 @@ public:
     [[nodiscard]] const std::string &working_directory() const;
     void set_working_directory_callback(WorkingDirectoryCallback callback, void *context);
 
+    // Bell from the VTE (DIP 2.8a, 6.2). Invoked synchronously during feed();
+    // the callback must not throw and must not touch the emulator.
+    using BellCallback = void (*)(void *context);
+    void set_bell_callback(BellCallback callback, void *context);
+
     // Raw libtsm cursor position (not clamped); prefer cursor().
     [[nodiscard]] int cursor_x_raw() const;
     [[nodiscard]] int cursor_y_raw() const;

@@ -966,3 +966,17 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   asserted through the window-title path (OSC 7 fallback → OSC 0 → OSC 2 →
   clear back to cwd). Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
   S6-CS3 is complete.
+- **S6-CS4 — bells and environment handling (§6.2)**:
+  `TerminalEmulator` exposes a `BellCallback` driven by libtsm's
+  `tsm_vte_set_bell_cb`, with no work crossing the C callback boundary.
+  `TerminalWidget::ring_bell()` applies the pane's `BellMode`: audible uses
+  `fl_beep()` coalesced to one per 100 ms, visual paints a brief full-pane
+  flash via a 120 ms `Fl::add_timeout` (cancelled in the destructor so a timer
+  cannot outlive the widget); `both` does both. `TerminalView` wires the
+  callback per pane and clears it on teardown. Environment handling is covered
+  end to end: `term`/`colorterm` replace inherited values in the child
+  environment while everything else is inherited; a new `pty_session_test` case
+  launches a shell with a custom environment and asserts both values. Tests:
+  `emulator_test` counts BEL callbacks; `terminal_view_test` asserts a visual
+  BEL sets the flash state. Debug and ASan/UBSan suites pass 30/30;
+  format/tidy clean. Awaiting Luna-Six review.

@@ -479,6 +479,37 @@ bool test_relative_path_resolution()
     return ok;
 }
 
+bool test_term_environment()
+{
+    consola::StartupWorker worker(nullptr, nullptr);
+    consola::LaunchRequest request;
+    request.id.value = 501;
+    request.options.executable = "/bin/sh";
+    request.options.arguments = {"-c", "echo \"$TERM|$COLORTERM\""};
+    request.options.environment = {"PATH=/bin:/usr/bin"};
+    request.options.term = "consola-test-term";
+    request.options.colorterm = "consola-test-color";
+    if (!worker.submit(std::move(request))) {
+        return false;
+    }
+    consola::StartupResult result;
+    if (!wait_result(worker, result, 5000)) {
+        return false;
+    }
+    bool ok = result.error == consola::SessionError::none && result.session != nullptr;
+    std::string collected;
+    if (ok) {
+        ok = read_until(*result.session, "consola-test-term|consola-test-color", collected, 5000);
+    }
+    if (result.session) {
+        result.session->terminate();
+        wait_exit(result.process_id, 5000);
+        result.session.reset();
+    }
+    worker.stop();
+    return ok;
+}
+
 } // namespace
 
 int main()
@@ -487,7 +518,7 @@ int main()
         const char *name;
         bool (*run)();
     };
-    std::array<Case, 11> cases{{
+    std::array<Case, 12> cases{{
         {.name = "echo_and_eof", .run = &test_echo_and_eof},
         {.name = "shell_io", .run = &test_shell_io},
         {.name = "exec_failed", .run = &test_exec_failed},
@@ -499,6 +530,7 @@ int main()
         {.name = "cancel_unknown", .run = &test_cancel_unknown},
         {.name = "stop_with_full_results", .run = &test_stop_with_full_results},
         {.name = "relative_path_resolution", .run = &test_relative_path_resolution},
+        {.name = "term_environment", .run = &test_term_environment},
     }};
 
     int failures = 0;

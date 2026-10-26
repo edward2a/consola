@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -27,10 +28,19 @@ class TerminalWidget : public Fl_Widget {
 public:
     TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emulator,
                    TerminalStyle style = default_terminal_style());
+    ~TerminalWidget() override;
 
     void draw() override;
     void resize(int x, int y, int w, int h) override;
     int handle(int event) override;
+
+    // Ring the bell according to this pane's BellMode (DIP 2.8a, 6.2).
+    // Audible uses FLTK's beep; visual flashes the pane briefly.
+    void ring_bell();
+    [[nodiscard]] bool bell_flash_active() const noexcept
+    {
+        return bell_flash_active_;
+    }
 
     // Apply a new style (font/DPI). Forces a full repaint (DIP 2.5). Palette
     // changes for existing content are out of scope (DIP 2.3); the emulator
@@ -108,6 +118,7 @@ private:
     int handle_wheel();
     static void paint_callback(void *context, int column, int row, const Cell &cell);
     static void collect_callback(void *context, int column, int row, const Cell &cell);
+    static void bell_timeout(void *context);
 
     TerminalEmulator &emulator_;
     TerminalStyle style_;
@@ -160,6 +171,10 @@ private:
     // Translated key fan-out hook (DIP 6.1).
     KeyInputCallback key_input_callback_ = nullptr;
     void *key_input_context_ = nullptr;
+
+    // Bell flash and audible cooldown (DIP 6.2).
+    bool bell_flash_active_ = false;
+    std::chrono::steady_clock::time_point last_audible_bell_;
 };
 
 } // namespace consola

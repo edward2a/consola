@@ -14,6 +14,7 @@
 #include <utility>
 
 #include <FL/Fl.H>
+#include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/fl_utf8.h>
 
@@ -163,6 +164,40 @@ TerminalWidget::TerminalWidget(int x, int y, int w, int h, TerminalEmulator &emu
     box(FL_NO_BOX);
     apply_font_family();
     update_metrics();
+}
+
+TerminalWidget::~TerminalWidget()
+{
+    if (bell_flash_active_) {
+        Fl::remove_timeout(&TerminalWidget::bell_timeout, this);
+    }
+}
+
+void TerminalWidget::ring_bell()
+{
+    const bool audible = style_.bell == BellMode::audible || style_.bell == BellMode::both;
+    const bool visual = style_.bell == BellMode::visual || style_.bell == BellMode::both;
+    if (audible) {
+        // Coalesce bursts so a noisy program cannot flood the audio device.
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_audible_bell_ >= std::chrono::milliseconds(100)) {
+            last_audible_bell_ = now;
+            fl_beep(FL_BEEP_DEFAULT);
+        }
+    }
+    if (visual) {
+        bell_flash_active_ = true;
+        Fl::remove_timeout(&TerminalWidget::bell_timeout, this);
+        Fl::add_timeout(0.12, &TerminalWidget::bell_timeout, this);
+        redraw();
+    }
+}
+
+void TerminalWidget::bell_timeout(void *context)
+{
+    auto *self = static_cast<TerminalWidget *>(context);
+    self->bell_flash_active_ = false;
+    self->redraw();
 }
 
 void TerminalWidget::apply_font_family() const
@@ -421,6 +456,12 @@ void TerminalWidget::draw()
         draw_cursor();
     }
     draw_scrollbar();
+
+    // Visual bell (DIP 6.2): a brief full-pane flash painted over the content.
+    if (bell_flash_active_) {
+        fl_color(FL_WHITE);
+        fl_rectf(x(), y(), w(), h());
+    }
 
     last_cursor_column_ = cursor_column_;
     last_cursor_row_ = cursor_row_;

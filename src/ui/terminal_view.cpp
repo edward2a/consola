@@ -77,6 +77,7 @@ TerminalView::~TerminalView()
             instance->emulator().set_output_callback(nullptr, nullptr);
             instance->emulator().set_title_callback(nullptr, nullptr);
             instance->emulator().set_working_directory_callback(nullptr, nullptr);
+            instance->emulator().set_bell_callback(nullptr, nullptr);
         }
         Fl_Group::remove(entry.second.get());
     }
@@ -665,6 +666,7 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     emulator.set_output_callback(&TerminalView::output_callback, context_ptr);
     emulator.set_title_callback(&TerminalView::title_callback, context_ptr);
     emulator.set_working_directory_callback(&TerminalView::working_directory_callback, context_ptr);
+    emulator.set_bell_callback(&TerminalView::bell_callback, context_ptr);
     widget->set_paste_text_callback(&TerminalView::paste_text_callback, context_ptr);
     widget->set_resize_callback(&TerminalView::resize_callback, context_ptr);
     widget->set_focus_callback(&TerminalView::focus_callback, context_ptr);
@@ -886,6 +888,15 @@ void TerminalView::working_directory_callback(void *context, std::string_view pa
         return;
     }
     self->view->update_window_title();
+}
+
+void TerminalView::bell_callback(void *context)
+{
+    auto *self = static_cast<Context *>(context);
+    TerminalWidget *widget = self->view->widget(self->id);
+    if (widget != nullptr) {
+        widget->ring_bell();
+    }
 }
 
 void TerminalView::handle_focus(TerminalId id)

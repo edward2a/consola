@@ -19,6 +19,14 @@ std::span<const std::byte> as_bytes(const char *text)
 
 std::string g_output;
 
+int g_bells = 0;
+
+void count_bell(void *context)
+{
+    static_cast<void>(context);
+    ++g_bells;
+}
+
 void collect_output(void *context, std::span<const std::byte> bytes)
 {
     static_cast<void>(context);
@@ -298,6 +306,13 @@ int main()
     }
     emulator.feed(as_bytes("\x1b]7;file://host/dir2#frag\x07"));
     if (emulator.working_directory() != "/dir2") {
+        return EXIT_FAILURE;
+    }
+
+    // The VTE bell callback (DIP 2.8a, 6.2).
+    emulator.set_bell_callback(&count_bell, nullptr);
+    emulator.feed(as_bytes("\a"));
+    if (g_bells != 1) {
         return EXIT_FAILURE;
     }
 

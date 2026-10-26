@@ -146,6 +146,15 @@ int main()
     CHECK(root_running);
     CHECK(manager.focused() == root);
 
+    // Visual bell (DIP 6.2): a BEL flashes the emitting pane.
+    consola::TerminalStyle bell_style = consola::default_terminal_style();
+    bell_style.bell = consola::BellMode::visual;
+    view.widget(REQUIRED(root))->set_style(bell_style);
+    manager.find(REQUIRED(root))
+        ->emulator()
+        .feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>("\a"), 1));
+    CHECK(view.widget(REQUIRED(root))->bell_flash_active());
+
     // Forced undersizing keeps the PTY grid positive (DIP 3.3, 2.11).
     window.size(1, 1);
     Fl::check();

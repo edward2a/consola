@@ -30,6 +30,8 @@ struct TerminalEmulatorImpl {
     TerminalEmulator::WorkingDirectoryCallback working_directory_callback = nullptr;
     void *working_directory_context = nullptr;
     std::string working_directory;
+    TerminalEmulator::BellCallback bell_notify = nullptr;
+    void *bell_notify_context = nullptr;
     // Active paste capture (DIP 2.8, 1.7); when set, write-callback output is
     // captured instead of forwarded.
     std::string *capture = nullptr;
@@ -154,9 +156,12 @@ void osc_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size_t len
     }
 }
 
-void bell_callback([[maybe_unused]] tsm_vte *vte, [[maybe_unused]] void *data)
+void bell_callback([[maybe_unused]] tsm_vte *vte, void *data)
 {
-    // Audible/visual bell arrives in Stage 6 (DIP 2.8a).
+    auto *impl = static_cast<TerminalEmulatorImpl *>(data);
+    if (impl->bell_notify != nullptr) {
+        impl->bell_notify(impl->bell_notify_context);
+    }
 }
 
 // Remove bracketed-paste framing markers from pasted text so a payload cannot
@@ -635,6 +640,12 @@ void TerminalEmulator::set_working_directory_callback(WorkingDirectoryCallback c
 {
     impl_->working_directory_callback = callback;
     impl_->working_directory_context = context;
+}
+
+void TerminalEmulator::set_bell_callback(BellCallback callback, void *context)
+{
+    impl_->bell_notify = callback;
+    impl_->bell_notify_context = context;
 }
 
 int TerminalEmulator::cursor_x_raw() const

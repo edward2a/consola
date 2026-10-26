@@ -68,13 +68,16 @@ digits only.
 | `wheel_lines` | integer > 0 | `3` | Lines scrolled per wheel notch. |
 | `alternate_scroll` | bool | `true` | Wheel sends arrow keys on the alternate screen. |
 | `backspace_sends_delete` | bool | `true` | Send DEL (0x7f) instead of BS (0x08). |
-| `bell` | string | `none` | One of `none`, `audible`, `visual`, `both` (applied in Stage 6; currently a no-op). |
+| `bell` | string | `none` | One of `none`, `audible`, `visual`, `both`. Audible uses the system beep (coalesced); visual flashes the pane. |
 | `cursor` | map | see below | Cursor shape and blink. |
 | `word_chars` | string | `-A-Za-z0-9,./?%&#:_=+@~` | Characters that form a word for double-click selection. |
 | `kill_timeout_ms` | integer, 1–600000 | `2000` | SIGHUP → SIGKILL delay. |
 | `drain_output_on_close` | bool | `false` | Keep draining output after an explicit close. |
 | `outgoing_limit_bytes` | integer, 32768–67108864 | `1048576` | Outgoing queue + in-flight limit. |
 | `max_paste_bytes` | integer, 1–268435456 | `16777216` | Largest encoded paste, framing included. |
+
+`term` and `colorterm` replace any inherited `TERM`/`COLORTERM` values in the
+child environment; all other environment variables are inherited unchanged.
 
 `cursor` keys: `shape` (`block`, `underline`, `bar`; default `block`) and
 `blink` (bool, default `true`).
