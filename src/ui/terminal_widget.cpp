@@ -435,8 +435,9 @@ void TerminalWidget::draw()
         }
     }
 
-    // One traversal reads every visible cell for damage and URL detection, so
-    // highlighting adds no extra libtsm pass (DIP 6.3, watchlist #21).
+    // Incremental draws reuse the damage collect pass for URL detection. A
+    // full repaint still needs this read-only pass before painting so spans are
+    // known; it never paints twice (DIP 6.3, watchlist #21).
     begin_url_scan();
     const ContentAge collected = emulator_.draw(&collect_callback, this);
     finish_url_scan();

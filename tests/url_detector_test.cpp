@@ -55,6 +55,7 @@ void test_schemes()
     CHECK(consola::find_urls("user@www.example.com").empty());
     CHECK(consola::find_urls("http://?q=1").empty());
     CHECK(consola::find_urls("http:///path").empty());
+    CHECK(consola::find_urls("http://:80/x").empty());
 }
 
 void test_boundaries()

@@ -1005,5 +1005,10 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   never throws; (b) email domains and malformed authorities (`http://?q`,
   `http:///path`) are rejected while `file:///path` remains valid; (c) tests
   cover those cases and a column-0 URL; (d) the full-repaint traversal cost is
-  accepted and documented rather than claiming a single pass everywhere. Debug
-  and ASan/UBSan suites pass 31/31; format/tidy clean.
+  accepted and documented rather than claiming a single pass everywhere.
+  **Second review: PASS WITH FINDINGS** (P3s): an empty-host authority
+  (`http://:80/x`) is now rejected, and the source comment in `draw()` no
+  longer claims a single pass for full repaints. Wide/multi-codepoint mapping
+  and rendered-style/immutability remain untested but are documented as
+  out-of-scope for the ASCII row scanner. Debug and ASan/UBSan suites pass
+  31/31; format/tidy clean. S6-CS5 is complete.

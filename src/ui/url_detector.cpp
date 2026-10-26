@@ -75,8 +75,9 @@ std::vector<UrlMatch> find_urls(std::string_view text)
         // Schemes other than file:// need a host immediately after the
         // delimiter; file:// may be followed by an empty authority and a path.
         const bool file_scheme = starts_with_ci(text.substr(i), "file://");
-        if (!file_scheme && (i + length >= text.size() || text[i + length] == '/' ||
-                             text[i + length] == '?' || text[i + length] == '#')) {
+        if (!file_scheme &&
+            (i + length >= text.size() || text[i + length] == '/' || text[i + length] == '?' ||
+             text[i + length] == '#' || text[i + length] == ':')) {
             i += length;
             continue;
         }
