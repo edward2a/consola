@@ -1036,5 +1036,11 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   use the largest pane cell size for the advertised minimum and
   `can_split()` uses the target pane's metrics; (d) P3 — tests now cover an
   explicit-profile split, the initial pane's empty assignment, and a writer
-  round-trip with `environment` and a custom `select_profile` binding. Debug
-  and ASan/UBSan suites pass 31/31; format/tidy clean.
+  round-trip with `environment` and a custom `select_profile` binding. **Second
+  review: PASS WITH FINDINGS** (P2/P3), resolved here: embedded NUL in an
+  environment key or value is rejected; an explicit profile now requires a
+  resolver and a loaded name (not just an empty name list); the general and
+  profile `environment` keys are documented; and `metrics()` only considers
+  widgets in the active tab, so an inactive tab's font cannot raise the active
+  tab's minimum. Debug and ASan/UBSan suites pass 31/31; format/tidy clean.
+  S6-CS6 is complete.

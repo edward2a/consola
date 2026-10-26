@@ -27,8 +27,9 @@ A key present in a profile replaces the value from the layers below; a key that
 is absent inherits. Profiles therefore store only the settings they override,
 so a partial palette override is lossless. Only per-pane settings can be
 overridden by a profile: `shell`, `arguments`, `working_directory`,
-`login_shell`, `term`, `colorterm`, `scrollback`, `font`, `word_chars`, `bell`,
-`cursor` and `colours`. Everything else in `general` is application-wide.
+`login_shell`, `term`, `colorterm`, `environment`, `scrollback`, `font`,
+`word_chars`, `bell`, `cursor` and `colours`. Everything else in `general` is
+application-wide.
 
 `default_profile` (default `default`) names the profile new panes use. It must
 name a profile that exists in `profiles`; the built-in `default` profile always
@@ -63,6 +64,7 @@ digits only.
 | `login_shell` | bool | `false` | Launch the shell as a login shell. |
 | `term` | string | `xterm-256color` | Value of `TERM`. |
 | `colorterm` | string | `truecolor` | Value of `COLORTERM`. |
+| `environment` | map of string | `{}` | Extra child environment variables; empty inherits consola's environment. |
 | `scrollback` | integer ≥ 0 | `10000` | Scrollback lines; `0` disables scrollback. |
 | `scrollbar` | bool | `true` | Show the scrollback scrollbar. |
 | `wheel_lines` | integer > 0 | `3` | Lines scrolled per wheel notch. |

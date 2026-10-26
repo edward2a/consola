@@ -511,8 +511,13 @@ void TerminalView::set_profile_names(std::vector<std::string> names)
 
 bool TerminalView::profile_known(std::string_view name) const
 {
-    if (name.empty() || profile_names_.empty()) {
+    if (name.empty()) {
         return true;
+    }
+    // An explicit profile can only be applied through a resolver and must be
+    // one of the loaded names.
+    if (!profile_resolver_ || profile_names_.empty()) {
+        return false;
     }
     return std::ranges::any_of(profile_names_,
                                [name](const std::string &candidate) { return candidate == name; });
@@ -914,13 +919,24 @@ LayoutMetrics TerminalView::metrics() const
         return result;
     }
     // Different profiles may use different fonts; advertise the largest cell
-    // so the window/split minimum is conservative for every pane (DIP 3.3).
+    // in the active tab so its window/split minimum is conservative (DIP 3.3).
+    const TabId active = manager_.tabs().active_id();
     int cell_width = 1;
     int cell_height = 1;
+    int matched = 0;
     for (const auto &entry : widgets_) {
+        if (manager_.tab_of(entry.first) != active) {
+            continue;
+        }
         const FontMetrics &font = entry.second->metrics();
         cell_width = std::max(cell_width, static_cast<int>(std::lround(font.cell_width)));
         cell_height = std::max(cell_height, font.cell_height);
+        ++matched;
+    }
+    if (matched == 0) {
+        const FontMetrics &font = widgets_.begin()->second->metrics();
+        cell_width = std::max(1, static_cast<int>(std::lround(font.cell_width)));
+        cell_height = std::max(1, font.cell_height);
     }
     result.cell_width = cell_width;
     result.cell_height = cell_height;

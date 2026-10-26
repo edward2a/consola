@@ -555,13 +555,15 @@ bool parse_environment(ryml::ConstNodeRef node, std::map<std::string, std::strin
             return diag.fail(prefix + ": expected a map of strings");
         }
         const std::string key = to_std(child.key());
-        if (key.empty() || key.find('=') != std::string::npos) {
+        const std::string value = to_std(child.val());
+        if (key.empty() || key.find('=') != std::string::npos ||
+            key.find('\0') != std::string::npos || value.find('\0') != std::string::npos) {
             std::string message = prefix + ": invalid variable name '";
             message += key;
             message += '\'';
             return diag.fail(std::move(message));
         }
-        values[key] = to_std(child.val());
+        values[key] = value;
     }
     out = std::move(values);
     return true;
