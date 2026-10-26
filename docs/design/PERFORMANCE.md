@@ -67,6 +67,35 @@ not single samples.
   positive in `std::vector` move assignment, which currently blocks the
   warnings-as-errors Release build.
 
+## Profiling (S7-CS2)
+
+Tools: `perf record -g -e cpu-clock` (hardware counters are unavailable in this
+VM) and `strace -f -c`. Samples are Release builds.
+
+- **Parser.** libtsm dominates: `tsm_screen_write`, `parse_data`,
+  `move_cursor`, `screen_erase_region`, `to_rgb`, `wcwidth`. The consola
+  wrapper is negligible. A faster parser needs a libtsm fork (the deferred
+  fork work); it is not a Stage 7 wrapper change.
+- **PTY end-to-end.** libtsm plus ~10.6% syscalls, ~4.5% malloc and ~3.9%
+  `clock_gettime` (the 1 ms batch-budget checks). The malloc is consistent with
+  the inbound queue moving/freeing each batch's vector.
+- **Idle CPU.** `strace` over a 2 s idle run shows 192 `poll()` calls and 196
+  `clock_nanosleep` calls. The sleeps are the harness's 10 ms pump; the polls
+  are the loop waking for UI commands. `TerminalManager::consume_inbound()`
+  calls `loop_->resume()` for every running pane on every `pump()`, and each
+  resume enqueues a command and signals the eventfd. That is the idle CPU
+  source, not polling of the idle PTY. Fix: only resume when a full inbound
+  queue became non-full during the pump.
+- **Redraw.** The Xlib request path dominates (~35% syscall time under Xvfb).
+  The remaining user-space cost is `paint_cell` (~3.4%), the URL prefix scan
+  (`tolower`, ~2.9%), libtsm draw/trampoline (~4%) and FLTK/X11 mutexes
+  (~2.6%). The widget traverses every visible cell twice per frame (URL collect
+  plus paint). Candidate wins, in order: batch same-attribute cells into fewer
+  text/clip calls, remove redundant `tolower` calls in the URL prefix scan, and
+  only then consider a glyph atlas.
+- **Scrollback.** ~5.2 KiB per line is libtsm's cell representation; the
+  default history is the lever, not a wrapper change.
+
 ## Optimization log
 
 | Change set | Change | Before | After |
