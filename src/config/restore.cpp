@@ -82,20 +82,27 @@ RestorePaneOptions resolve_restore_pane(const ApplicationConfig &config,
         }
     }
 
+    const SessionOptions default_session = resolve_session_options(config, config.default_profile);
     if (!executable_available(result.session.executable)) {
-        const SessionOptions fallback = resolve_session_options(config, config.default_profile);
-        if (fallback.executable != result.session.executable) {
+        if (default_session.executable != result.session.executable) {
             result.warnings.push_back("layout pane " + pane.id + ": shell '" +
                                       result.session.executable + "' cannot launch; using '" +
-                                      fallback.executable + "'");
-            result.session.executable = fallback.executable;
+                                      default_session.executable + "'");
+            result.session.executable = default_session.executable;
         }
-        if (!executable_available(result.session.executable)) {
-            result.warnings.push_back("layout pane " + pane.id +
-                                      ": the default shell is unavailable; the pane will be "
-                                      "retained after the failed launch");
-            result.retain_on_exit = true;
-        }
+    }
+    if (!executable_available(result.session.executable)) {
+        result.warnings.push_back("layout pane " + pane.id +
+                                  ": the default shell is unavailable; the pane will be "
+                                  "retained after the failed launch");
+        result.retain_on_exit = true;
+    } else if (default_session.executable != result.session.executable) {
+        // Even if preflight succeeds, the actual exec may fail (bad interpreter,
+        // permissions race); retry once with the default shell, keeping the
+        // pane's directory and environment.
+        SessionOptions fallback = result.session;
+        fallback.executable = default_session.executable;
+        result.fallback_session = std::move(fallback);
     }
     return result;
 }

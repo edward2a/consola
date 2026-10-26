@@ -21,6 +21,15 @@ void TerminalInstance::attach(std::unique_ptr<TerminalSession> session, int mast
     state_ = TerminalState::running;
 }
 
+void TerminalInstance::prepare_relaunch(SessionOptions options)
+{
+    options_ = std::move(options);
+    state_ = TerminalState::starting;
+    eof_ = false;
+    closing_ = false;
+    process_id_ = -1;
+}
+
 std::unique_ptr<TerminalSession> TerminalInstance::release_session() noexcept
 {
     master_fd_ = -1;

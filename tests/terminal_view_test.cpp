@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -261,6 +263,92 @@ void test_restore_layout(TerminalView &view, TerminalManager &manager,
         CHECK(manager.close_tab(active));
         CHECK(wait_for([&] { return manager.tabs().count() == count - 1 - i; }, 8000, view));
     }
+
+    // Defensive input validation: duplicate pane ids and cyclic trees are
+    // rejected without leaving half-built tabs.
+    const std::size_t baseline = manager.tabs().count();
+    consola::LayoutConfig duplicate;
+    consola::LayoutTabConfig duplicate_tab;
+    duplicate_tab.nodes.resize(3);
+    duplicate_tab.root = 0;
+    duplicate_tab.nodes[0].children = {1, 2};
+    duplicate_tab.nodes[1].pane =
+        consola::LayoutPaneConfig{.id = "dup", .profile = "one", .working_directory = {}};
+    duplicate_tab.nodes[2].pane =
+        consola::LayoutPaneConfig{.id = "dup", .profile = "one", .working_directory = {}};
+    duplicate.tabs = {duplicate_tab};
+    std::vector<std::string> duplicate_warnings;
+    CHECK(!view.restore_layout(duplicate, resolver, &duplicate_warnings));
+    CHECK(!duplicate_warnings.empty());
+    CHECK(wait_for([&] { return manager.tabs().count() == baseline; }, 8000, view));
+
+    consola::LayoutConfig cyclic;
+    consola::LayoutTabConfig cyclic_tab;
+    cyclic_tab.nodes.resize(1);
+    cyclic_tab.root = 0;
+    cyclic_tab.nodes[0].children = {0, 0};
+    cyclic.tabs = {cyclic_tab};
+    std::vector<std::string> cyclic_warnings;
+    CHECK(!view.restore_layout(cyclic, resolver, &cyclic_warnings));
+    CHECK(!cyclic_warnings.empty());
+    CHECK(manager.tabs().count() == baseline);
+}
+
+// A configured shell that passes the preflight but fails exec is retried once
+// with the default shell (DIP 6.5).
+void test_restore_shell_fallback(TerminalView &view, TerminalManager &manager,
+                                 const SessionOptions &options)
+{
+    const std::filesystem::path script =
+        std::filesystem::temp_directory_path() / "consola-bad-shell.sh";
+    {
+        std::ofstream output(script);
+        output << "#!/nonexistent/interpreter\n";
+    }
+    std::filesystem::permissions(
+        script, std::filesystem::perms::owner_exec | std::filesystem::perms::owner_read,
+        std::filesystem::perm_options::add);
+
+    consola::LayoutConfig layout;
+    consola::LayoutTabConfig tab;
+    tab.nodes.resize(1);
+    tab.nodes[0].pane =
+        consola::LayoutPaneConfig{.id = "p", .profile = "one", .working_directory = {}};
+    layout.tabs = {tab};
+
+    const auto resolver = [&](const consola::LayoutPaneConfig &) {
+        consola::RestorePaneOptions resolved;
+        resolved.session = options;
+        resolved.session.executable = script.string();
+        resolved.fallback_session = options;
+        resolved.profile = "one";
+        resolved.style = consola::default_terminal_style();
+        return resolved;
+    };
+    std::vector<std::string> warnings;
+    CHECK(view.restore_layout(layout, resolver, &warnings));
+    const consola::TabId restored = manager.tabs().active_id();
+    const consola::Tab *found = manager.tabs().find(restored);
+    CHECK(found != nullptr);
+    if (found != nullptr) {
+        const auto terminals = found->layout().terminals();
+        CHECK(terminals.size() == 1);
+        if (!terminals.empty()) {
+            const bool running = wait_for(
+                [&] {
+                    const consola::TerminalInstance *instance = manager.find(terminals.front());
+                    return instance != nullptr &&
+                           instance->state() == consola::TerminalState::running;
+                },
+                8000, view);
+            CHECK(running);
+            CHECK(view.profile_for(terminals.front()) == "one");
+        }
+    }
+    CHECK(manager.close_tab(restored));
+    CHECK(wait_for([&] { return manager.tabs().count() == 1; }, 8000, view));
+    std::error_code error;
+    std::filesystem::remove(script, error);
 }
 
 } // namespace
@@ -565,6 +653,7 @@ int main()
 
     test_profile_selection(view, manager, options);
     test_restore_layout(view, manager, options);
+    test_restore_shell_fallback(view, manager, options);
 
     manager.shutdown();
 

@@ -104,6 +104,33 @@ std::optional<TerminalId> TerminalManager::split_terminal(TerminalId target,
     return id;
 }
 
+bool TerminalManager::relaunch(TerminalId id, const TerminalOptions &options)
+{
+    if (!accepting_) {
+        return false;
+    }
+    const auto it = instances_.find(id);
+    if (it == instances_.end()) {
+        return false;
+    }
+    TerminalInstance *instance = it->second;
+    // Only a launch that never produced a process may be retried; a pane that
+    // ran and then exited is handled by the normal close path.
+    if (instance->state() != TerminalState::exited || instance->closing() ||
+        instance->process_id() >= 0) {
+        return false;
+    }
+    instance->prepare_relaunch(options.session);
+    LaunchRequest request;
+    request.id = id;
+    request.options = options.session;
+    if (!worker_.submit(std::move(request))) {
+        instance->set_state(TerminalState::exited);
+        return false;
+    }
+    return true;
+}
+
 TabId TerminalManager::create_tab()
 {
     return tabs_.create();

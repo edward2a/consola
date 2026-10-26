@@ -76,6 +76,18 @@ int main()
     CHECK(consola::executable_available("/bin/sh"));
     CHECK(!consola::executable_available("/nonexistent/shell"));
 
+    // An available configured shell still records the default shell for the
+    // asynchronous exec-failure retry.
+    config.general.shell = "/bin/ls";
+    config.profiles["work"].shell = "/bin/sh";
+    pane.profile = "work";
+    pane.working_directory.clear();
+    resolved = consola::resolve_restore_pane(config, pane);
+    CHECK(resolved.fallback_session.has_value());
+    if (resolved.fallback_session.has_value()) {
+        CHECK(resolved.fallback_session->executable == "/bin/ls");
+    }
+
     if (g_failures != 0) {
         std::fprintf(stderr, "%d restore resolution failure(s)\n", g_failures);
         return EXIT_FAILURE;

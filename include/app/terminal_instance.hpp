@@ -123,6 +123,10 @@ public:
     void attach(std::unique_ptr<TerminalSession> session, int master_fd, int exit_fd,
                 std::int64_t process_id);
 
+    // Reset a pane whose launch failed so the same id can be launched again
+    // (layout restore fallback, DIP 6.5).
+    void prepare_relaunch(SessionOptions options);
+
     // Give up the backend (for cleanup after the loop has retired its poll
     // entries) and disable input. Returns null when no backend is attached.
     std::unique_ptr<TerminalSession> release_session() noexcept;

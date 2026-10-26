@@ -55,7 +55,7 @@ int main(int argc, char **argv)
                 continue;
             }
             if (arg == "--layout") {
-                if (i + 1 >= argc) {
+                if (i + 1 >= argc || std::string_view(argv[i + 1]).starts_with("--")) {
                     consola::log(consola::LogLevel::Error, "--layout requires a name");
                     return EXIT_FAILURE;
                 }

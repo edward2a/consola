@@ -124,6 +124,10 @@ public:
     std::optional<TerminalId> split_terminal(TerminalId target, Orientation orientation,
                                              const TerminalOptions &options, float ratio = 0.5F);
 
+    // Relaunch a pane whose launch failed, keeping its id and layout position
+    // (DIP 6.5 fallback). Returns false unless the pane failed before running.
+    bool relaunch(TerminalId id, const TerminalOptions &options);
+
     // Begin closing a tab (DIP 4.2): every terminal in it is closed through the
     // normal pane-close path, and the tab is removed once it is empty. Returns
     // false for an unknown tab.

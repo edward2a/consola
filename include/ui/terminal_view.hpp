@@ -166,6 +166,7 @@ private:
     bool create_widgets();
     bool destroy_stale_widgets();
     void close_exited();
+    void retry_failed_restores();
     void layout();
     void sync_focus();
     void handle_focus(TerminalId id);
@@ -208,6 +209,11 @@ private:
     // after the failed launch (DIP 6.5).
     std::unordered_set<TerminalId> retain_exited_;
     std::unordered_set<TerminalId> notified_exited_;
+    struct RestoreRetry {
+        TerminalOptions fallback;
+        bool attempted = false;
+    };
+    std::unordered_map<TerminalId, RestoreRetry> restore_retry_;
     bool broadcast_ = false;
     std::optional<TerminalId> zoomed_;
     std::unordered_map<TerminalId, std::unique_ptr<TerminalWidget>> widgets_;

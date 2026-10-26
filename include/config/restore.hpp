@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,6 +23,9 @@ struct RestorePaneOptions {
     // The configured and default shells are both unavailable: create the pane
     // anyway and keep it visible after the launch failure.
     bool retain_on_exit = false;
+    // If the configured shell passes the preflight but fails asynchronously,
+    // retry once with this session (the default shell, same directory/env).
+    std::optional<SessionOptions> fallback_session;
     std::vector<std::string> warnings;
 };
 

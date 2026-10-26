@@ -1059,5 +1059,13 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   foreground jobs are not recreated. Tests: `config_restore_test` covers
   profile/directory/shell resolution and the retained fallback;
   `terminal_view_test` restores a two-tab layout and verifies the tree/ratio,
-  profiles/styles, focus and active tab. Debug and ASan/UBSan suites pass 32/32;
-  format/tidy clean. Awaiting Luna-Six review.
+  profiles/styles, focus and active tab. **Luna-Six review: FAIL**, resolved
+  here: (a) P1 — an asynchronous launch failure now retries the same pane/id
+  once via `TerminalManager::relaunch()` with the default-shell session
+  (`RestorePaneOptions::fallback_session`), and retains the pane if that also
+  fails; a bad-interpreter test exercises the retry end to end; (b) P2 —
+  restore rejects duplicate/empty pane ids, pane nodes with children, cycles
+  (visited guard), excessive depth and malformed splits, with tests for the
+  duplicate and cyclic cases; (c) P2 — `--layout` refuses a following `--flag`
+  as its value; (d) P2 — a partial restore closes the tabs it created. Debug
+  and ASan/UBSan suites pass 32/32; format/tidy clean.

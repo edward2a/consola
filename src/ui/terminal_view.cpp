@@ -152,6 +152,7 @@ bool TerminalView::pump()
     }
 
     const bool dirty = manager_.pump();
+    retry_failed_restores();
     close_exited();
     const bool stale = destroy_stale_widgets();
     // Closing the active tab can select another tab during the manager pump;
@@ -627,6 +628,10 @@ bool TerminalView::restore_layout(const LayoutConfig &saved, const RestoreResolv
 
         const auto create = [&](const LayoutPaneConfig &pane, std::optional<TerminalId> target,
                                 Orientation orientation, float ratio) -> std::optional<TerminalId> {
+            if (pane.id.empty() || ids.contains(pane.id)) {
+                warn("layout pane: duplicate or empty id '" + pane.id + "'");
+                return std::nullopt;
+            }
             RestorePaneOptions resolved = resolver(pane);
             for (const std::string &message : resolved.warnings) {
                 warn(message);
@@ -643,6 +648,11 @@ bool TerminalView::restore_layout(const LayoutConfig &saved, const RestoreResolv
             remember_profile(*id, options, resolved.profile);
             if (resolved.retain_on_exit) {
                 retain_exited_.insert(*id);
+            } else if (resolved.fallback_session.has_value()) {
+                restore_retry_[*id] = RestoreRetry{
+                    .fallback = TerminalOptions{.session = *resolved.fallback_session,
+                                                .style = resolved.style},
+                };
             }
             return id;
         };
@@ -654,14 +664,27 @@ bool TerminalView::restore_layout(const LayoutConfig &saved, const RestoreResolv
             continue;
         }
 
-        std::function<bool(std::size_t, TerminalId)> build;
-        build = [&](std::size_t index, TerminalId leaf) -> bool {
+        std::unordered_set<std::size_t> visited;
+        std::function<bool(std::size_t, TerminalId, int)> build;
+        build = [&](std::size_t index, TerminalId leaf, int depth) -> bool {
+            if (depth > 256) {
+                warn("layout tab " + std::to_string(i) + ": tree is too deep");
+                return false;
+            }
+            if (!visited.insert(index).second) {
+                warn("layout tab " + std::to_string(i) + ": cyclic or repeated node");
+                return false;
+            }
             const LayoutNodeConfig *node = layout_node(tab_config, index);
             if (node == nullptr) {
                 warn("layout tab " + std::to_string(i) + ": invalid node");
                 return false;
             }
             if (node->pane.has_value()) {
+                if (!node->children.empty()) {
+                    warn("layout tab " + std::to_string(i) + ": pane node has children");
+                    return false;
+                }
                 return true;
             }
             if (node->children.size() != 2) {
@@ -678,10 +701,11 @@ bool TerminalView::restore_layout(const LayoutConfig &saved, const RestoreResolv
             if (!right) {
                 return false;
             }
-            return build(node->children[1], *right) && build(node->children[0], leaf);
+            return build(node->children[1], *right, depth + 1) &&
+                   build(node->children[0], leaf, depth + 1);
         };
 
-        if (!build(tab_config.root, *root_id)) {
+        if (!build(tab_config.root, *root_id, 0)) {
             ok = false;
             continue;
         }
@@ -705,6 +729,17 @@ bool TerminalView::restore_layout(const LayoutConfig &saved, const RestoreResolv
                 manager_.focus(focused->second);
             }
         }
+    }
+
+    if (!ok) {
+        // A partial restore must not leave half-built tabs behind (the startup
+        // caller also shuts down, but additive callers continue running).
+        for (const TabId tab : restored_tabs) {
+            if (manager_.tabs().find(tab) != nullptr) {
+                manager_.close_tab(tab);
+            }
+        }
+        return false;
     }
 
     create_widgets();
@@ -869,6 +904,39 @@ bool TerminalView::destroy_stale_widgets()
     return !stale.empty();
 }
 
+void TerminalView::retry_failed_restores()
+{
+    for (auto it = restore_retry_.begin(); it != restore_retry_.end();) {
+        TerminalInstance *instance = manager_.find(it->first);
+        if (instance == nullptr) {
+            it = restore_retry_.erase(it);
+            continue;
+        }
+        if (instance->state() != TerminalState::exited || instance->closing()) {
+            ++it;
+            continue;
+        }
+        if (instance->process_id() >= 0) {
+            // The pane ran and then exited normally; the close path owns it.
+            it = restore_retry_.erase(it);
+            continue;
+        }
+        if (!it->second.attempted) {
+            it->second.attempted = true;
+            if (!manager_.relaunch(it->first, it->second.fallback)) {
+                retain_exited_.insert(it->first);
+                it = restore_retry_.erase(it);
+                continue;
+            }
+            ++it;
+            continue;
+        }
+        // The fallback launch also failed: retain the pane with its message.
+        retain_exited_.insert(it->first);
+        it = restore_retry_.erase(it);
+    }
+}
+
 void TerminalView::close_exited()
 {
     // A pane whose process has exited closes itself (DIP 4.4). Ordinary child
@@ -947,6 +1015,7 @@ void TerminalView::remove_widget(TerminalId id)
     terminal_profiles_.erase(id);
     retain_exited_.erase(id);
     notified_exited_.erase(id);
+    restore_retry_.erase(id);
 }
 
 void TerminalView::layout()
