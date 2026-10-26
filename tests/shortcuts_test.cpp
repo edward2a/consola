@@ -45,6 +45,7 @@ void test_defaults()
     check_match(map, 'T', ctrl_shift, Command::NewTab, FocusDirection::left);
     check_match(map, 'w', ctrl_shift, Command::ClosePane, FocusDirection::left);
     check_match(map, 'x', ctrl_shift, Command::CloseTab, FocusDirection::left);
+    check_match(map, 'r', ctrl_shift, Command::RenameTab, FocusDirection::left);
     check_match(map, 'o', ctrl_shift, Command::SplitHorizontal, FocusDirection::left);
     check_match(map, 'e', ctrl_shift, Command::SplitVertical, FocusDirection::left);
 

@@ -64,6 +64,11 @@ public:
     bool select_next_tab();
     bool select_previous_tab();
 
+    // Rename the active tab (DIP 6.1). The label is trimmed; an empty label
+    // clears the override and restores the positional fallback. Returns false
+    // only when there is no active tab (never in practice).
+    bool rename_active_tab(std::string_view title);
+
     // Execute a resolved command (DIP 3.6). Returns true when it applied.
     bool execute(const CommandRequest &request);
 
@@ -142,6 +147,7 @@ private:
     static void paste_text_callback(void *context, std::string_view text);
     static void resize_callback(void *context, int columns, int rows);
     static void title_callback(void *context, std::string_view title);
+    static void working_directory_callback(void *context, std::string_view path);
     static void focus_callback(void *context);
     static bool key_callback(void *context, int key, int state);
     static void key_input_callback(void *context, std::span<const KeyEvent> events);

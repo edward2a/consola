@@ -22,6 +22,7 @@ enum class Command : std::uint8_t {
     ResizePane,
     NewTab,
     CloseTab,
+    RenameTab,
     NextTab,
     PreviousTab,
     ToggleBroadcast,

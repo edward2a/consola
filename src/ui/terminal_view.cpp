@@ -12,6 +12,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
+#include <FL/fl_ask.H>
 
 #include <app/log.hpp>
 
@@ -75,6 +76,7 @@ TerminalView::~TerminalView()
         if (instance != nullptr) {
             instance->emulator().set_output_callback(nullptr, nullptr);
             instance->emulator().set_title_callback(nullptr, nullptr);
+            instance->emulator().set_working_directory_callback(nullptr, nullptr);
         }
         Fl_Group::remove(entry.second.get());
     }
@@ -218,6 +220,11 @@ bool TerminalView::execute(const CommandRequest &request)
         return new_tab().has_value();
     case Command::CloseTab:
         return close_tab(manager_.tabs().active_id());
+    case Command::RenameTab: {
+        const std::string current = manager_.tab().title();
+        const char *input = fl_input("Rename tab", current.c_str());
+        return input != nullptr && rename_active_tab(input);
+    }
     case Command::NextTab:
         return select_next_tab();
     case Command::PreviousTab:
@@ -438,6 +445,23 @@ bool TerminalView::select_previous_tab()
     return true;
 }
 
+bool TerminalView::rename_active_tab(std::string_view title)
+{
+    const std::string_view whitespace = " \t";
+    const std::size_t begin = title.find_first_not_of(whitespace);
+    const std::size_t end = title.find_last_not_of(whitespace);
+    std::string trimmed;
+    if (begin != std::string_view::npos) {
+        trimmed.assign(title.substr(begin, end - begin + 1));
+    }
+    if (!manager_.set_tab_title(manager_.tabs().active_id(), std::move(trimmed))) {
+        return false;
+    }
+    // The tab bar syncs from Tab::title() each frame.
+    redraw();
+    return true;
+}
+
 bool TerminalView::resize_focused(FocusDirection direction)
 {
     const std::optional<TerminalId> focused = manager_.focused();
@@ -627,6 +651,7 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     auto widget = std::make_unique<TerminalWidget>(0, 0, 1, 1, emulator, style_);
     emulator.set_output_callback(&TerminalView::output_callback, context_ptr);
     emulator.set_title_callback(&TerminalView::title_callback, context_ptr);
+    emulator.set_working_directory_callback(&TerminalView::working_directory_callback, context_ptr);
     widget->set_paste_text_callback(&TerminalView::paste_text_callback, context_ptr);
     widget->set_resize_callback(&TerminalView::resize_callback, context_ptr);
     widget->set_focus_callback(&TerminalView::focus_callback, context_ptr);
@@ -736,15 +761,24 @@ void TerminalView::update_window_title()
     if (win == nullptr) {
         return;
     }
-    // Retitle from the newly active tab's focused terminal, falling back to the
-    // application name when that terminal has not set a title.
-    std::string title = "consola";
+    // Retitle from the newly active tab's focused terminal, preferring an OSC
+    // 0/2 title and falling back to the OSC 7 working directory, then the
+    // application name.
+    std::string title;
     const std::optional<TerminalId> focused = manager_.focused();
     if (focused) {
         TerminalInstance *instance = manager_.find(*focused);
-        if (instance != nullptr && !instance->emulator().title().empty()) {
-            title = instance->emulator().title();
+        if (instance != nullptr) {
+            const TerminalEmulator &emulator = instance->emulator();
+            if (!emulator.title().empty()) {
+                title = emulator.title();
+            } else if (!emulator.working_directory().empty()) {
+                title = emulator.working_directory();
+            }
         }
+    }
+    if (title.empty()) {
+        title = "consola";
     }
     win->copy_label(title.c_str());
     win->redraw();
@@ -819,6 +853,7 @@ void TerminalView::resize_callback(void *context, int columns, int rows)
 
 void TerminalView::title_callback(void *context, std::string_view title)
 {
+    static_cast<void>(title);
     auto *self = static_cast<Context *>(context);
     // Only the focused terminal of the active tab drives the window title; a
     // background pane must not retitle the window.
@@ -826,13 +861,18 @@ void TerminalView::title_callback(void *context, std::string_view title)
     if (!focused || *focused != self->id) {
         return;
     }
-    Fl_Window *window = self->view->window();
-    if (window == nullptr) {
+    self->view->update_window_title();
+}
+
+void TerminalView::working_directory_callback(void *context, std::string_view path)
+{
+    static_cast<void>(path);
+    auto *self = static_cast<Context *>(context);
+    const std::optional<TerminalId> focused = self->view->manager_.focused();
+    if (!focused || *focused != self->id) {
         return;
     }
-    const std::string text(title);
-    window->copy_label(text.empty() ? "consola" : text.c_str());
-    window->redraw();
+    self->view->update_window_title();
 }
 
 void TerminalView::handle_focus(TerminalId id)

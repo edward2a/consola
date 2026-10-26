@@ -263,6 +263,13 @@ int main()
     CHECK(view.widget(REQUIRED(root))->visible() != 0);
     CHECK(view.widget(REQUIRED(tab_root))->visible() == 0);
 
+    // Tab renaming (DIP 6.1): surrounding whitespace is trimmed and an empty
+    // label clears the override.
+    CHECK(view.rename_active_tab("  work  "));
+    CHECK(manager.tab().title() == "work");
+    CHECK(view.rename_active_tab("   "));
+    CHECK(manager.tab().title().empty());
+
     CHECK(manager.close_tab(second_tab));
     const bool tab_removed =
         wait_for([&] { return manager.find(REQUIRED(tab_root)) == nullptr; }, 8000, view);

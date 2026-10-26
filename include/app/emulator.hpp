@@ -135,10 +135,17 @@ public:
     void scroll_to_top();
     void scroll_to_bottom();
 
-    // Window title from OSC 0/2 (DIP 2.12).
+    // Window title from OSC 0/2 (DIP 2.12) and working directory from OSC 7.
     using TitleCallback = void (*)(void *context, std::string_view title);
     [[nodiscard]] const std::string &title() const;
     void set_title_callback(TitleCallback callback, void *context);
+
+    // Working directory reported by OSC 7 (DIP 6.1). Empty until a valid
+    // file:// URI arrives; percent-escapes are decoded and the URI's host is
+    // ignored (the path is what matters to the terminal).
+    using WorkingDirectoryCallback = void (*)(void *context, std::string_view path);
+    [[nodiscard]] const std::string &working_directory() const;
+    void set_working_directory_callback(WorkingDirectoryCallback callback, void *context);
 
     // Raw libtsm cursor position (not clamped); prefer cursor().
     [[nodiscard]] int cursor_x_raw() const;

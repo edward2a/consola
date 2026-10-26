@@ -939,3 +939,17 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   and the split orientation/ratio are unchanged, and that zoom clears when the
   zoomed pane closes and when the active tab changes. Debug and ASan/UBSan
   suites pass 30/30; format/tidy clean. S6-CS2 is complete.
+- **S6-CS3 — terminal renaming and OSC 7 working directory (§6.1)**:
+  `TerminalEmulator` now parses OSC 7 (`file://HOST/PATH`), decodes
+  percent-escapes, ignores non-`file://` or path-less URIs, and exposes
+  `working_directory()` plus a callback; the window title falls back to the
+  focused pane's working directory when no OSC 0/2 title is set. Renaming the
+  active tab uses `Command::RenameTab` (`Ctrl+Shift+R`), an FLTK input dialog,
+  and `TerminalView::rename_active_tab()`, which trims the label, treats an empty
+  label as "clear the override", and delegates to
+  `TerminalManager::set_tab_title()`. The loader, writer, docs and example carry
+  the new key. Tests: `emulator_test` covers valid, percent-escaped, non-file and
+  path-less OSC 7 reports; `terminal_view_test` covers trimming and clearing;
+  `commands_test`/`shortcuts_test` cover the binding; `config_loader_test`
+  asserts the key. Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
+  Awaiting Luna-Six review.

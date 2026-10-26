@@ -346,6 +346,7 @@ void test_new_shortcut_keys()
     const consola::ConfigLoadResult result = consola::parse_config(R"(version: 1
 shortcuts:
   toggle_broadcast: "Ctrl+Shift+B"
+  rename_tab: "Ctrl+Shift+R"
   toggle_zoom: "Ctrl+Shift+Z"
   move_tab_left: "Ctrl+Shift+PageUp"
   move_tab_right: "Ctrl+Shift+PageDown"
@@ -359,6 +360,7 @@ shortcuts:
         return;
     }
     CHECK(result.config.shortcuts.toggle_broadcast == "Ctrl+Shift+B");
+    CHECK(result.config.shortcuts.rename_tab == "Ctrl+Shift+R");
     CHECK(result.config.shortcuts.toggle_zoom == "Ctrl+Shift+Z");
     CHECK(result.config.shortcuts.move_tab_left == "Ctrl+Shift+PageUp");
     CHECK(result.config.shortcuts.move_tab_right == "Ctrl+Shift+PageDown");

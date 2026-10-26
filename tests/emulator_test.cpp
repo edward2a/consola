@@ -261,6 +261,28 @@ int main()
         return EXIT_FAILURE;
     }
 
+    // OSC 7 working-directory reporting (DIP 6.1): file:// URIs with
+    // percent-escapes are decoded; non-file and path-less URIs are ignored.
+    if (!emulator.working_directory().empty()) {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;file://host/tmp/some%20dir\x07"));
+    if (emulator.working_directory() != "/tmp/some dir") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;file:///srv/data\x1b\\"));
+    if (emulator.working_directory() != "/srv/data") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;http://host/tmp\x07"));
+    if (emulator.working_directory() != "/srv/data") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;file://host\x07"));
+    if (emulator.working_directory() != "/srv/data") {
+        return EXIT_FAILURE;
+    }
+
     emulator.feed(as_bytes("\x1b[?1049h"));
     if (!emulator.alternate_screen()) {
         return EXIT_FAILURE;

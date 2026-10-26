@@ -45,6 +45,7 @@ void test_shortcuts()
     check('w', cs, Command::ClosePane, FocusDirection::left);
     check('t', cs, Command::NewTab, FocusDirection::left);
     check('X', cs, Command::CloseTab, FocusDirection::left);
+    check('R', cs, Command::RenameTab, FocusDirection::left);
     check('b', cs, Command::ToggleBroadcast, FocusDirection::left);
     check('z', cs, Command::ToggleZoom, FocusDirection::left);
     check(FL_Page_Up, cs, Command::MoveTabLeft, FocusDirection::left);

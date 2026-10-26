@@ -159,6 +159,8 @@ ShortcutMap::ShortcutMap(const ShortcutConfig &config)
     bind("new_tab", config.new_tab, defaults.new_tab, Command::NewTab, FocusDirection::left);
     bind("close_tab", config.close_tab, defaults.close_tab, Command::CloseTab,
          FocusDirection::left);
+    bind("rename_tab", config.rename_tab, defaults.rename_tab, Command::RenameTab,
+         FocusDirection::left);
     bind("close_pane", config.close_pane, defaults.close_pane, Command::ClosePane,
          FocusDirection::left);
     bind("split_horizontal", config.split_horizontal, defaults.split_horizontal,

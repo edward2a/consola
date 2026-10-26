@@ -797,6 +797,8 @@ bool parse_shortcuts(ryml::ConstNodeRef node, ShortcutConfig &shortcuts, Diagnos
             field = &shortcuts.new_tab;
         } else if (key == "close_tab") {
             field = &shortcuts.close_tab;
+        } else if (key == "rename_tab") {
+            field = &shortcuts.rename_tab;
         } else if (key == "close_pane") {
             field = &shortcuts.close_pane;
         } else if (key == "split_horizontal") {

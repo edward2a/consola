@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -26,6 +27,9 @@ struct TerminalEmulatorImpl {
     TerminalEmulator::TitleCallback title_callback = nullptr;
     void *title_context = nullptr;
     std::string title;
+    TerminalEmulator::WorkingDirectoryCallback working_directory_callback = nullptr;
+    void *working_directory_context = nullptr;
+    std::string working_directory;
     // Active paste capture (DIP 2.8, 1.7); when set, write-callback output is
     // captured instead of forwarded.
     std::string *capture = nullptr;
@@ -68,6 +72,54 @@ void vte_write_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size
     }
 }
 
+int hex_value(char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
+// OSC 7 payload shape: file://HOST/PATH. Only the path is retained; invalid
+// escapes are kept verbatim so a malformed report never drops the update.
+std::optional<std::string> parse_osc7_path(std::string_view uri)
+{
+    constexpr std::string_view kScheme = "file://";
+    if (!uri.starts_with(kScheme)) {
+        return std::nullopt;
+    }
+    uri.remove_prefix(kScheme.size());
+    const std::size_t slash = uri.find('/');
+    if (slash == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const std::string_view encoded = uri.substr(slash);
+    std::string path;
+    path.reserve(encoded.size());
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+        if (encoded[i] == '%' && i + 2 < encoded.size()) {
+            const int high = hex_value(encoded[i + 1]);
+            const int low = hex_value(encoded[i + 2]);
+            if (high >= 0 && low >= 0) {
+                path.push_back(static_cast<char>((high << 4) | low));
+                i += 2;
+                continue;
+            }
+        }
+        path.push_back(encoded[i]);
+    }
+    if (path.empty()) {
+        return std::nullopt;
+    }
+    return path;
+}
+
 void osc_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size_t len, void *data)
 {
     auto *impl = static_cast<TerminalEmulatorImpl *>(data);
@@ -77,12 +129,23 @@ void osc_callback([[maybe_unused]] tsm_vte *vte, const char *u8, std::size_t len
         return;
     }
     const std::string_view command = payload.substr(0, separator);
-    if (command != "0" && command != "2") {
+    if (command == "0" || command == "2") {
+        impl->title.assign(payload.substr(separator + 1));
+        if (impl->title_callback != nullptr) {
+            impl->title_callback(impl->title_context, impl->title);
+        }
         return;
     }
-    impl->title.assign(payload.substr(separator + 1));
-    if (impl->title_callback != nullptr) {
-        impl->title_callback(impl->title_context, impl->title);
+    if (command == "7") {
+        const std::optional<std::string> path = parse_osc7_path(payload.substr(separator + 1));
+        if (!path) {
+            return;
+        }
+        impl->working_directory = *path;
+        if (impl->working_directory_callback != nullptr) {
+            impl->working_directory_callback(impl->working_directory_context,
+                                             impl->working_directory);
+        }
     }
 }
 
@@ -555,6 +618,18 @@ void TerminalEmulator::set_title_callback(TitleCallback callback, void *context)
 {
     impl_->title_callback = callback;
     impl_->title_context = context;
+}
+
+const std::string &TerminalEmulator::working_directory() const
+{
+    return impl_->working_directory;
+}
+
+void TerminalEmulator::set_working_directory_callback(WorkingDirectoryCallback callback,
+                                                      void *context)
+{
+    impl_->working_directory_callback = callback;
+    impl_->working_directory_context = context;
 }
 
 int TerminalEmulator::cursor_x_raw() const
