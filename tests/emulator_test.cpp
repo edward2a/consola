@@ -282,6 +282,24 @@ int main()
     if (emulator.working_directory() != "/srv/data") {
         return EXIT_FAILURE;
     }
+    // Malformed escapes stay verbatim; query/fragment text is not a path and
+    // trailing suffixes are stripped.
+    emulator.feed(as_bytes("\x1b]7;file:///tmp/%zz\x07"));
+    if (emulator.working_directory() != "/tmp/%zz") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;file://host?query/path\x07"));
+    if (emulator.working_directory() != "/tmp/%zz") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;file://host/dir?x\x07"));
+    if (emulator.working_directory() != "/dir") {
+        return EXIT_FAILURE;
+    }
+    emulator.feed(as_bytes("\x1b]7;file://host/dir2#frag\x07"));
+    if (emulator.working_directory() != "/dir2") {
+        return EXIT_FAILURE;
+    }
 
     emulator.feed(as_bytes("\x1b[?1049h"));
     if (!emulator.alternate_screen()) {

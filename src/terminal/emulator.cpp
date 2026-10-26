@@ -96,10 +96,15 @@ std::optional<std::string> parse_osc7_path(std::string_view uri)
     }
     uri.remove_prefix(kScheme.size());
     const std::size_t slash = uri.find('/');
-    if (slash == std::string_view::npos) {
+    const std::size_t terminator = uri.find_first_of("?#");
+    if (slash == std::string_view::npos ||
+        (terminator != std::string_view::npos && terminator < slash)) {
         return std::nullopt;
     }
-    const std::string_view encoded = uri.substr(slash);
+    std::string_view encoded = uri.substr(slash);
+    if (const std::size_t end = encoded.find_first_of("?#"); end != std::string_view::npos) {
+        encoded = encoded.substr(0, end);
+    }
     std::string path;
     path.reserve(encoded.size());
     for (std::size_t i = 0; i < encoded.size(); ++i) {

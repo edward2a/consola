@@ -115,12 +115,23 @@ bool TerminalView::pump()
         last_height_ = h();
         last_metrics_ = current_metrics;
         layout();
+        if (tab_changed) {
+            update_window_title();
+        }
     }
 
     const bool dirty = manager_.pump();
     close_exited();
     if (destroy_stale_widgets()) {
         layout();
+    }
+    // Closing the active tab can select another tab during the manager pump;
+    // retitle from the new active tab's focused pane.
+    const TabId active_after = manager_.tabs().active_id();
+    if (active_after != active_tab) {
+        last_tab_ = active_after;
+        layout();
+        update_window_title();
     }
     if (dirty) {
         for (auto &entry : widgets_) {

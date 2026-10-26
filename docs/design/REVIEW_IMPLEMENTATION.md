@@ -952,4 +952,13 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   path-less OSC 7 reports; `terminal_view_test` covers trimming and clearing;
   `commands_test`/`shortcuts_test` cover the binding; `config_loader_test`
   asserts the key. Debug and ASan/UBSan suites pass 30/30; format/tidy clean.
-  Awaiting Luna-Six review.
+  **Luna-Six review: PASS WITH FINDINGS**, resolved here: (a) P2 —
+  `TerminalView::pump()` now calls `update_window_title()` when the active tab
+  changes, including a change caused by closing the active tab during
+  `manager_.pump()`, so the new tab's OSC title/cwd is applied immediately; (b)
+  P3 — the OSC 7 parser stops at `?`/`#` and rejects a query/fragment that
+  appears before the path, with tests for malformed escapes, query and fragment
+  text; (c) `terminal_view_test` now drives the window-title path: OSC 7 as the
+  fallback, OSC 0/2 precedence, clearing back to cwd, an inactive tab not
+  leaking a title, and closing the active tab retitling from the remaining tab.
+  Debug and ASan/UBSan suites pass 30/30; format/tidy clean.

@@ -66,6 +66,58 @@ bool wait_for(const std::function<bool()> &predicate, int timeout_ms, TerminalVi
     return predicate();
 }
 
+// Window-title behaviour (DIP 2.12, 6.1): OSC 0/2 wins, OSC 7 is the fallback,
+// an inactive tab cannot retitle, and closing the active tab retitles from the
+// remaining tab.
+void test_window_titles(Fl_Window &window, TerminalManager &manager, TerminalView &view,
+                        TerminalId root, const SessionOptions &options)
+{
+    const consola::TabId titled_tab = manager.tabs().active_id();
+    const consola::TabId other_tab = manager.create_tab();
+    const auto other_root =
+        manager.create_root_terminal(other_tab, consola::TerminalOptions{.session = options});
+    CHECK(other_root.has_value());
+    view.pump();
+    const std::string before(window.label());
+    const char *osc = "\x1b]0;hello-title\x07";
+    manager.find(root)->emulator().feed(
+        std::span<const std::byte>(reinterpret_cast<const std::byte *>(osc), std::strlen(osc)));
+    view.pump();
+    CHECK(std::string(window.label()) == before);
+    CHECK(view.select_tab(titled_tab));
+    CHECK(std::string(window.label()) == "hello-title");
+
+    // Give the other tab a distinct title, select it, then close the active tab;
+    // the window must retitle from the remaining tab through pump().
+    const char *other_osc = "\x1b]0;other-title\x07";
+    manager.find(REQUIRED(other_root))
+        ->emulator()
+        .feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(other_osc),
+                                         std::strlen(other_osc)));
+    CHECK(view.select_tab(other_tab));
+    CHECK(std::string(window.label()) == "other-title");
+    CHECK(manager.close_tab(other_tab));
+    const bool other_closed = wait_for([&] { return manager.tabs().count() == 1; }, 8000, view);
+    CHECK(other_closed);
+    view.pump();
+    CHECK(std::string(window.label()) == "hello-title");
+
+    // OSC 7 is the fallback when no OSC 0/2 title is set; an explicit title
+    // takes precedence, and clearing it restores the cwd.
+    const auto feed_root = [&](const char *bytes) {
+        manager.find(root)->emulator().feed(std::span<const std::byte>(
+            reinterpret_cast<const std::byte *>(bytes), std::strlen(bytes)));
+        view.pump();
+    };
+    feed_root("\x1b]0;\x07");
+    feed_root("\x1b]7;file:///tmp/osc7-dir\x07");
+    CHECK(std::string(window.label()) == "/tmp/osc7-dir");
+    feed_root("\x1b]0;explicit\x07");
+    CHECK(std::string(window.label()) == "explicit");
+    feed_root("\x1b]0;\x07");
+    CHECK(std::string(window.label()) == "/tmp/osc7-dir");
+}
+
 } // namespace
 
 int main()
@@ -294,30 +346,7 @@ int main()
     CHECK(tab_closed);
     CHECK(manager.terminal_count() == 1);
 
-    // Switching tabs restores the window title from the newly active terminal:
-    // a title update from an inactive tab must not leak, but selecting that tab
-    // must refresh the label.
-    const consola::TabId titled_tab = manager.tabs().active_id();
-    const consola::TabId other_tab = manager.create_tab();
-    const auto other_root =
-        manager.create_root_terminal(other_tab, consola::TerminalOptions{.session = options});
-    CHECK(other_root.has_value());
-    view.pump();
-    const std::string before(window.label());
-    const char *osc = "\x1b]0;hello-title\x07";
-    manager.find(REQUIRED(root))
-        ->emulator()
-        .feed(
-            std::span<const std::byte>(reinterpret_cast<const std::byte *>(osc), std::strlen(osc)));
-    view.pump();
-    CHECK(std::string(window.label()) == before);
-    CHECK(view.select_tab(titled_tab));
-    CHECK(std::string(window.label()) == "hello-title");
-
-    CHECK(manager.close_tab(other_tab));
-    const bool other_closed =
-        wait_for([&] { return manager.find(REQUIRED(other_root)) == nullptr; }, 8000, view);
-    CHECK(other_closed);
+    test_window_titles(window, manager, view, REQUIRED(root), options);
 
     // A background pane's title must not retitle the window; focusing that pane
     // does. The split pane becomes focused, so root is background.
