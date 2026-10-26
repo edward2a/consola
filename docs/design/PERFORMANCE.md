@@ -11,7 +11,9 @@ visible.
   regular `release` preset still enables warnings-as-errors.
 - Harness: `bench/bench_main.cpp`, driven by
   `helper-scripts/run-benchmarks.sh`. Each workload runs in a fresh process;
-  the redraw workload runs under Xvfb through `helper-scripts/run-headless.sh`.
+  the redraw workload and the app smoke run under one Xvfb through
+  `helper-scripts/run-headless.sh`. Startup samples are warm-process (five
+  managers in one process), not cold process startup.
 - Workloads are deterministic. The parser/PTY stream is generated in-process
   (coloured words, cursor home, occasional clear) and the PTY child re-executes
   the benchmark binary in `--emit` mode, so external tools do not affect the
@@ -25,19 +27,22 @@ Environment: Linux 6.18.49_1 x86_64, 8 CPUs, AMD Ryzen AI 9 HX 370.
 
 | Workload | Setting | Result |
 | --- | --- | --- |
-| Startup (first terminal running) | median of 5 | 2.46 ms (min 2.37, max 4.61) |
-| Full app startup (`--smoke-test`) | includes fixed 100 ms timer | 208 ms |
-| Parser throughput | 256 MiB, 160x48, 1k scrollback | 60.8 MiB/s |
-| PTY end-to-end throughput | 64 MiB, 160x48 | 27.5 MiB/s |
-| Memory, 1 terminal | RSS delta after manager start | 372 KiB |
+| Startup (first terminal running) | warm process, median of 5 | 2.50 ms (min 1.57, max 3.02) |
+| Full app smoke (`--smoke-test`) | inside Xvfb, includes fixed 100 ms timer | 147 ms |
+| Parser throughput | 256 MiB, 160x48, 1k scrollback | 66.0 MiB/s |
+| PTY end-to-end throughput | 64 MiB, 160x48 | 26.8 MiB/s |
+| Memory, 1 terminal | RSS delta after manager start | 388 KiB |
 | Memory, 10 terminals | RSS delta after manager start | 1.59 MiB (159 KiB/terminal) |
-| Memory, 50 terminals | RSS delta after manager start | 6.73 MiB (135 KiB/terminal) |
-| Scrollback | 10,000 lines, 160 columns | 52.8 MiB (5.4 KiB/line) |
-| Resize | emulator, 1000 alternating resizes | 4.6 us/op |
-| Redraw, full | 800x480 widget, 200 frames | 3.0 ms/frame (334 fps) |
-| Redraw, incremental | one line per frame, 200 frames | 0.99 ms/frame (1015 fps) |
-| Idle CPU, 1 terminal | 2 s, pump every 10 ms | 1.32% |
-| Idle CPU, 10 terminals | 2 s, pump every 10 ms | 1.91% |
+| Memory, 50 terminals | RSS delta after manager start | 6.70 MiB (134 KiB/terminal) |
+| Scrollback | 10,000 lines, 160 columns | 51.1 MiB (5.24 KiB/line) |
+| Resize | emulator, 1000 alternating resizes | 5.2 us/op |
+| Redraw, full | 800x480 widget, 200 frames | 2.73 ms/frame (366 fps) |
+| Redraw, incremental | one line per frame, 200 frames | 1.33 ms/frame (750 fps) |
+| Idle CPU, 1 terminal | 2 s, pump every 10 ms | 1.25% |
+| Idle CPU, 10 terminals | 2 s, pump every 10 ms | 1.63% |
+
+Run-to-run variance is roughly 10% for throughput and redraw; compare trends,
+not single samples.
 
 ## Observations and follow-ups
 
@@ -47,8 +52,8 @@ Environment: Linux 6.18.49_1 x86_64, 8 CPUs, AMD Ryzen AI 9 HX 370.
 - **PTY throughput is roughly half the parser rate** (27.5 vs 60.8 MiB/s).
   The gap covers the loop read batch, the inbound queue copy, the wakeup and
   the UI pump. Measure the split before optimizing.
-- **Scrollback is ~5.4 KiB per line** at 160 columns, so the default 10,000-line
-  history costs ~53 MiB. Decide whether the representation or the default is
+- **Scrollback is ~5.2 KiB per line** at 160 columns, so the default 10,000-line
+  history costs ~51 MiB. Decide whether the representation or the default is
   the right lever after profiling; do not change the configured default without
   evidence.
 - **Redraw cost is dominated by the per-cell text path.** A full 800x480 frame

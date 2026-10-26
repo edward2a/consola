@@ -47,13 +47,17 @@ printf '\n'
 "$bench" resize 1000
 "$bench" idle 2 1
 "$bench" idle 2 10
-"$(dirname "$0")/run-headless.sh" "$bench" redraw 200
 
-if [ -n "$app" ]; then
-    # The smoke test exits after its fixed 100 ms timer, so this includes that
-    # delay; it is a full process/window/FLTK startup measurement.
-    start=$(date +%s%N)
-    SHELL=/bin/sh "$(dirname "$0")/run-headless.sh" "$app" --smoke-test >/dev/null 2>&1
-    end=$(date +%s%N)
-    printf 'app_smoke_startup_ms=%s\n' "$(((end - start) / 1000000))"
-fi
+# Redraw and app startup share one Xvfb instance, and the app timer starts only
+# after the display is ready, so wrapper startup is excluded. The smoke test
+# itself exits after a fixed 100 ms timer; that delay is part of the result.
+"$(dirname "$0")/run-headless.sh" sh -c '
+    set -e
+    "$1" redraw 200
+    if [ -n "$2" ]; then
+        start=$(date +%s%N)
+        SHELL=/bin/sh "$2" --smoke-test >/dev/null 2>&1
+        end=$(date +%s%N)
+        printf "app_smoke_total_ms=%s\n" "$(((end - start) / 1000000))"
+    fi
+' sh "$bench" "$app"

@@ -300,10 +300,13 @@ void run_startup()
         }
     }
     std::ranges::sort(samples);
+    // Five managers in one process: this is warm-process startup latency
+    // (allocator and page cache already exercised), not cold process startup.
     std::printf("startup_runs=%d\n", kRuns);
-    std::printf("startup_min_ms=%.3f\n", samples.front() * 1000.0);
-    std::printf("startup_median_ms=%.3f\n", samples[static_cast<std::size_t>(kRuns / 2)] * 1000.0);
-    std::printf("startup_max_ms=%.3f\n", samples.back() * 1000.0);
+    std::printf("startup_warm_min_ms=%.3f\n", samples.front() * 1000.0);
+    std::printf("startup_warm_median_ms=%.3f\n",
+                samples[static_cast<std::size_t>(kRuns / 2)] * 1000.0);
+    std::printf("startup_warm_max_ms=%.3f\n", samples.back() * 1000.0);
 }
 
 void run_memory(std::size_t terminals)
@@ -361,19 +364,21 @@ void run_memory(std::size_t terminals)
 
 void run_scrollback(std::size_t lines)
 {
-    const std::optional<long> baseline = read_vm_rss_kib();
-    TerminalEmulator emulator;
-    emulator.resize(160, 48);
-    emulator.set_max_scrollback(static_cast<int>(lines));
+    // Build the input before the baseline and keep it alive so the delta only
+    // covers the emulator's scrollback, not the harness's own input buffer.
     std::string text;
     text.reserve((lines + 16) * 82);
     for (std::size_t line = 0; line < lines; ++line) {
         text += "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         text += "0123456789abcdefghij\r\n";
     }
-    const std::vector<std::byte> bytes = as_bytes(text);
+    const std::optional<long> baseline = read_vm_rss_kib();
+    TerminalEmulator emulator;
+    emulator.resize(160, 48);
+    emulator.set_max_scrollback(static_cast<int>(lines));
     const double start = now_seconds();
-    emulator.feed(bytes);
+    emulator.feed(
+        std::span<const std::byte>(reinterpret_cast<const std::byte *>(text.data()), text.size()));
     const double elapsed = now_seconds() - start;
     const std::optional<long> after = read_vm_rss_kib();
 
