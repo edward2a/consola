@@ -172,7 +172,7 @@ public:
 
     [[nodiscard]] bool launch_failed() const noexcept
     {
-        return launch_failed_;
+        return !failed_launches_.empty();
     }
 
 private:
@@ -198,7 +198,7 @@ private:
     bool accepting_ = true;
     bool shutdown_started_ = false;
     bool shutdown_finished_ = false;
-    bool launch_failed_ = false;
+    std::unordered_set<TerminalId> failed_launches_;
 };
 
 } // namespace consola

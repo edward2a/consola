@@ -167,6 +167,7 @@ private:
     bool destroy_stale_widgets();
     void close_exited();
     void retry_failed_restores();
+    void prune_terminal_metadata();
     void layout();
     void sync_focus();
     void handle_focus(TerminalId id);

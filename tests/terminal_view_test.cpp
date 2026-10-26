@@ -13,6 +13,8 @@
 #include <string>
 #include <thread>
 
+#include <unistd.h>
+
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 
@@ -300,7 +302,8 @@ void test_restore_shell_fallback(TerminalView &view, TerminalManager &manager,
                                  const SessionOptions &options)
 {
     const std::filesystem::path script =
-        std::filesystem::temp_directory_path() / "consola-bad-shell.sh";
+        std::filesystem::temp_directory_path() /
+        ("consola-bad-shell-" + std::to_string(::getpid()) + ".sh");
     {
         std::ofstream output(script);
         output << "#!/nonexistent/interpreter\n";
@@ -342,6 +345,7 @@ void test_restore_shell_fallback(TerminalView &view, TerminalManager &manager,
                 },
                 8000, view);
             CHECK(running);
+            CHECK(!manager.launch_failed());
             CHECK(view.profile_for(terminals.front()) == "one");
         }
     }

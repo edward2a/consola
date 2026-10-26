@@ -253,7 +253,7 @@ void TerminalManager::consume_results()
         if (result.session == nullptr) {
             instance->set_state(TerminalState::exited);
             if (result.error != SessionError::cancelled) {
-                launch_failed_ = true;
+                failed_launches_.insert(result.id);
             }
             if (instance->closing()) {
                 finalize(result.id);
@@ -265,6 +265,7 @@ void TerminalManager::consume_results()
         // through the normal steps (DIP 4.4).
         instance->attach(std::move(result.session), result.master_fd, result.exit_notification_fd,
                          result.process_id);
+        failed_launches_.erase(result.id);
         // The emulator may have been resized before the backend attached; keep
         // the PTY grid in step (DIP 2.11).
         if (instance->emulator().columns() > 0 && instance->emulator().rows() > 0) {
@@ -284,7 +285,7 @@ void TerminalManager::consume_results()
             session->terminate();
             session->reap();
             instance->set_state(TerminalState::exited);
-            launch_failed_ = true;
+            failed_launches_.insert(result.id);
             if (instance->closing()) {
                 finalize(result.id);
             }

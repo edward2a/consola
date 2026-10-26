@@ -62,8 +62,11 @@ const LayoutNodeConfig *layout_node(const LayoutTabConfig &tab, std::size_t inde
 }
 
 const LayoutPaneConfig *first_pane(const LayoutTabConfig &tab, std::size_t index,
-                                   std::unordered_set<std::size_t> &visiting)
+                                   std::unordered_set<std::size_t> &visiting, int depth)
 {
+    if (depth > 256) {
+        return nullptr;
+    }
     const LayoutNodeConfig *node = layout_node(tab, index);
     if (node == nullptr) {
         return nullptr;
@@ -74,14 +77,14 @@ const LayoutPaneConfig *first_pane(const LayoutTabConfig &tab, std::size_t index
     if (node->children.size() != 2 || !visiting.insert(index).second) {
         return nullptr;
     }
-    const LayoutPaneConfig *left = first_pane(tab, node->children[0], visiting);
-    return left != nullptr ? left : first_pane(tab, node->children[1], visiting);
+    const LayoutPaneConfig *left = first_pane(tab, node->children[0], visiting, depth + 1);
+    return left != nullptr ? left : first_pane(tab, node->children[1], visiting, depth + 1);
 }
 
 const LayoutPaneConfig *first_pane(const LayoutTabConfig &tab, std::size_t index)
 {
     std::unordered_set<std::size_t> visiting;
-    return first_pane(tab, index, visiting);
+    return first_pane(tab, index, visiting, 0);
 }
 
 } // namespace
@@ -155,6 +158,7 @@ bool TerminalView::pump()
     retry_failed_restores();
     close_exited();
     const bool stale = destroy_stale_widgets();
+    prune_terminal_metadata();
     // Closing the active tab can select another tab during the manager pump;
     // retitle from the new active tab's focused pane. Relayout once even if
     // stale widgets also required it.
@@ -1000,6 +1004,16 @@ TerminalWidget *TerminalView::add_widget(TerminalId id)
     add(raw);
     widgets_.emplace(id, std::move(widget));
     return raw;
+}
+
+void TerminalView::prune_terminal_metadata()
+{
+    const auto gone = [this](TerminalId id) { return manager_.find(id) == nullptr; };
+    std::erase_if(terminal_styles_, [&](const auto &entry) { return gone(entry.first); });
+    std::erase_if(terminal_profiles_, [&](const auto &entry) { return gone(entry.first); });
+    std::erase_if(restore_retry_, [&](const auto &entry) { return gone(entry.first); });
+    std::erase_if(retain_exited_, [&](TerminalId id) { return gone(id); });
+    std::erase_if(notified_exited_, [&](TerminalId id) { return gone(id); });
 }
 
 void TerminalView::remove_widget(TerminalId id)

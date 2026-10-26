@@ -1067,5 +1067,12 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   restore rejects duplicate/empty pane ids, pane nodes with children, cycles
   (visited guard), excessive depth and malformed splits, with tests for the
   duplicate and cyclic cases; (c) P2 — `--layout` refuses a following `--flag`
-  as its value; (d) P2 — a partial restore closes the tabs it created. Debug
-  and ASan/UBSan suites pass 32/32; format/tidy clean.
+  as its value; (d) P2 — a partial restore closes the tabs it created. **Second
+  review: PASS WITH FINDINGS** (P2/P3), resolved here: launch failures are
+  tracked per terminal and cleared when a retry attaches, so a recovered
+  fallback no longer forces a failure exit (the retry test asserts
+  `launch_failed()` is false); `first_pane()` now has the same 256-level depth
+  bound as `build()`; `pump()` prunes per-pane metadata for removed terminals so
+  failed additive restores leave nothing behind; and the bad-shell test uses a
+  pid-unique temp file. Debug and ASan/UBSan suites pass 32/32; format/tidy
+  clean. S6-CS7 is complete.
