@@ -45,3 +45,20 @@ Display Scroll Lock, Num Lock and Caps Lock state by wiring
 `tsm_vte_set_led_cb` (DECLL, `CSI q`) to a status indicator. Not required for
 v1; the callback is available in libtsm 4.8.0 but is not part of the current
 implementation stages.
+
+## Scrollbar Interaction
+
+Make the scrollbar interactive instead of display-only:
+
+- click a track position to jump to the corresponding scrollback position
+- drag the thumb to scroll continuously
+- keep wheel and Shift+PageUp/PageDown/Home/End behavior unchanged
+- handle the alternate screen and mouse-reporting modes without sending
+  scrollbar clicks to the application
+
+Deferred because the plan carries scrollbar dragging/interaction from §2.9 and
+it is not required for v1. Before promoting this idea into the plan:
+
+- define the pixel-to-scrollback-position mapping and thumb hit area
+- cover click, drag, release, clamping at top/bottom and live-view anchoring
+- add headless tests for the mapping and widget tests for the event routing
