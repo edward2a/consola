@@ -71,9 +71,10 @@ not single samples.
 - **Per-batch allocation (fixed in S7-CS3).** `SessionInboundQueue` now exposes
   `try_peek()`/`pop()`: the consumer feeds directly from the ring slot and the
   producer reuses its capacity, so the per-batch free/reallocation and the GCC
-  14 `std::vector` move-assignment false positive are gone. Production Release
-  targets build clean; a few test-only `get_if`/null-check false positives from
-  GCC 14 remain in the Release test build.
+  14 `std::vector` move-assignment false positive are gone. The remaining GCC 14
+  test-only `-Wnull-dereference` false positives were fixed with an explicit
+  `pane()` accessor in `layout_geometry_test`; the full Release build, including
+  tests, is clean.
 
 ## Profiling (S7-CS2)
 

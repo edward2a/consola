@@ -1116,7 +1116,8 @@ instead of 192 per 2 s); PTY throughput is unchanged within variance.
 **Luna-Six review: PASS WITH FINDINGS**, resolved here: the lifecycle push takes
 `const InboundMessage &` (no value copy, no use-after-move) and the remaining
 lvalue test caller is updated. The explicit `get_if` null checks keep the
-production Release build clean; test-only GCC 14 false positives remain.
+production Release build clean, and the test-only GCC 14 false positives were
+fixed with an explicit `pane()` accessor; the full Release build is clean.
 
 **S7-CS4 — rendering efficiency (DIP 7.5).** One clip per painted row replaces
 the per-cell clip, font/colour state is cached across cells, and the URL prefix

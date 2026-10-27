@@ -60,6 +60,16 @@ const PaneRect *find_pane(const LayoutResult &result, std::uint64_t terminal)
     return nullptr;
 }
 
+const PaneRect &pane(const LayoutResult &result, std::uint64_t terminal)
+{
+    const PaneRect *found = find_pane(result, terminal);
+    if (found == nullptr) {
+        std::fprintf(stderr, "missing pane %llu\n", static_cast<unsigned long long>(terminal));
+        std::abort();
+    }
+    return *found;
+}
+
 void check_tiling(const LayoutResult &result)
 {
     std::vector<Rect> rects;
@@ -133,12 +143,12 @@ void test_vertical_split()
 
     CHECK(result.panes.size() == 2);
     CHECK(result.dividers.size() == 1);
-    CHECK(find_pane(result, 1)->logical == Rect(0, 0, 49, 22));
-    CHECK(find_pane(result, 2)->logical == Rect(51, 0, 49, 22));
+    CHECK(pane(result, 1).logical == Rect(0, 0, 49, 22));
+    CHECK(pane(result, 2).logical == Rect(51, 0, 49, 22));
     CHECK(result.dividers[0].rect == Rect(49, 0, 2, 22));
     CHECK(result.dividers[0].orientation == Orientation::vertical);
-    CHECK(find_pane(result, 1)->visible == find_pane(result, 1)->logical);
-    CHECK(find_pane(result, 2)->visible == find_pane(result, 2)->logical);
+    CHECK(pane(result, 1).visible == pane(result, 1).logical);
+    CHECK(pane(result, 2).visible == pane(result, 2).logical);
     check_tiling(result);
 }
 
@@ -148,8 +158,8 @@ void test_horizontal_split()
     tree.split_terminal(tid(1), Orientation::horizontal, tid(2), 0.5F);
     const LayoutResult result = consola::compute_layout(tree, Rect{0, 0, 40, 100}, kMetrics);
 
-    CHECK(find_pane(result, 1)->logical == Rect(0, 0, 40, 49));
-    CHECK(find_pane(result, 2)->logical == Rect(0, 51, 40, 49));
+    CHECK(pane(result, 1).logical == Rect(0, 0, 40, 49));
+    CHECK(pane(result, 2).logical == Rect(0, 51, 40, 49));
     CHECK(result.dividers[0].rect == Rect(0, 49, 40, 2));
     CHECK(result.dividers[0].orientation == Orientation::horizontal);
     check_tiling(result);
@@ -164,9 +174,9 @@ void test_nested_tiling()
 
     CHECK(result.panes.size() == 3);
     CHECK(result.dividers.size() == 2);
-    CHECK(find_pane(result, 1)->logical == Rect(0, 0, 99, 100));
-    CHECK(find_pane(result, 2)->logical == Rect(101, 0, 99, 49));
-    CHECK(find_pane(result, 3)->logical == Rect(101, 51, 99, 49));
+    CHECK(pane(result, 1).logical == Rect(0, 0, 99, 100));
+    CHECK(pane(result, 2).logical == Rect(101, 0, 99, 49));
+    CHECK(pane(result, 3).logical == Rect(101, 51, 99, 49));
     check_tiling(result);
 }
 
@@ -179,9 +189,9 @@ void test_boundary_sized()
 
     CHECK(result.canvas == Rect(0, 0, 54, 46));
     check_tiling(result);
-    CHECK(find_pane(result, 1)->logical.width == 26);
-    CHECK(find_pane(result, 2)->logical.height == 22);
-    CHECK(find_pane(result, 3)->logical.height == 22);
+    CHECK(pane(result, 1).logical.width == 26);
+    CHECK(pane(result, 2).logical.height == 22);
+    CHECK(pane(result, 3).logical.height == 22);
 }
 
 void test_undersized_clipping()
@@ -192,10 +202,10 @@ void test_undersized_clipping()
 
     CHECK(result.content == Rect(0, 0, 40, 22));
     CHECK(result.canvas == Rect(0, 0, 54, 22));
-    CHECK(find_pane(result, 1)->logical == Rect(0, 0, 26, 22));
-    CHECK(find_pane(result, 2)->logical == Rect(28, 0, 26, 22));
-    CHECK(find_pane(result, 1)->visible == Rect(0, 0, 26, 22));
-    CHECK(find_pane(result, 2)->visible == Rect(28, 0, 12, 22));
+    CHECK(pane(result, 1).logical == Rect(0, 0, 26, 22));
+    CHECK(pane(result, 2).logical == Rect(28, 0, 26, 22));
+    CHECK(pane(result, 1).visible == Rect(0, 0, 26, 22));
+    CHECK(pane(result, 2).visible == Rect(28, 0, 12, 22));
     check_tiling(result);
 }
 
@@ -207,10 +217,10 @@ void test_partial_clip_nonzero_origin()
 
     CHECK(result.content == Rect(10, 5, 40, 22));
     CHECK(result.canvas == Rect(10, 5, 54, 22));
-    CHECK(find_pane(result, 1)->logical == Rect(10, 5, 26, 22));
-    CHECK(find_pane(result, 1)->visible == Rect(10, 5, 26, 22));
-    CHECK(find_pane(result, 2)->logical == Rect(38, 5, 26, 22));
-    CHECK(find_pane(result, 2)->visible == Rect(38, 5, 12, 22));
+    CHECK(pane(result, 1).logical == Rect(10, 5, 26, 22));
+    CHECK(pane(result, 1).visible == Rect(10, 5, 26, 22));
+    CHECK(pane(result, 2).logical == Rect(38, 5, 26, 22));
+    CHECK(pane(result, 2).visible == Rect(38, 5, 12, 22));
     CHECK(result.dividers[0].rect == Rect(36, 5, 2, 22));
     CHECK(result.dividers[0].visible == Rect(36, 5, 2, 22));
     check_tiling(result);
@@ -239,13 +249,13 @@ void test_ratio_preserved_across_resize()
     tree.split_terminal(tid(1), Orientation::vertical, tid(2), 0.3F);
 
     const LayoutResult wide = consola::compute_layout(tree, Rect{0, 0, 100, 22}, kMetrics);
-    CHECK(find_pane(wide, 1)->logical.width == 29);
+    CHECK(pane(wide, 1).logical.width == 29);
 
     const LayoutResult narrow = consola::compute_layout(tree, Rect{0, 0, 54, 22}, kMetrics);
-    CHECK(find_pane(narrow, 1)->logical.width == 26);
+    CHECK(pane(narrow, 1).logical.width == 26);
 
     const LayoutResult wide_again = consola::compute_layout(tree, Rect{0, 0, 100, 22}, kMetrics);
-    CHECK(find_pane(wide_again, 1)->logical.width == 29);
+    CHECK(pane(wide_again, 1).logical.width == 29);
 
     CHECK(tree.split(tree.root())->ratio == 0.3F);
 }
@@ -256,8 +266,8 @@ void test_divider_clamped_to_minimums()
     tree.split_terminal(tid(1), Orientation::vertical, tid(2), 0.9F);
     const LayoutResult result = consola::compute_layout(tree, Rect{0, 0, 54, 22}, kMetrics);
 
-    CHECK(find_pane(result, 1)->logical.width == 26);
-    CHECK(find_pane(result, 2)->logical.width == 26);
+    CHECK(pane(result, 1).logical.width == 26);
+    CHECK(pane(result, 2).logical.width == 26);
     check_tiling(result);
 }
 
