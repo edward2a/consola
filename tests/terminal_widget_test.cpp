@@ -106,6 +106,26 @@ int main()
     drag(widget, 6, 0, 10, 0);
     CHECK(emulator.selection_copy() == "world");
 
+    // Losing focus cancels a pending click without changing the selection.
+    press(widget, 0, 1);
+    widget.handle(FL_UNFOCUS);
+    drag_to(widget, 2, 1);
+    release(widget, 2, 1);
+    CHECK(emulator.selection_copy() == "world");
+
+    // Mouse reporting turning on mid-gesture routes drag/release to the
+    // application and cancels the pending click.
+    press(widget, 0, 1);
+    const std::string enable_tracking = "\x1b[?1006h\x1b[?1003h";
+    emulator.feed(std::span<const std::byte>(
+        reinterpret_cast<const std::byte *>(enable_tracking.data()), enable_tracking.size()));
+    drag_to(widget, 2, 1);
+    release(widget, 2, 1);
+    const std::string disable_tracking = "\x1b[?1003l\x1b[?1006l";
+    emulator.feed(std::span<const std::byte>(
+        reinterpret_cast<const std::byte *>(disable_tracking.data()), disable_tracking.size()));
+    CHECK(emulator.selection_copy() == "world");
+
     // A static click elsewhere clears the active selection.
     click(widget, 0, 1);
     CHECK(!emulator.has_selection());

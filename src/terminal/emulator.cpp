@@ -434,6 +434,9 @@ void TerminalEmulator::selection_reset()
 
 bool TerminalEmulator::has_selection() const
 {
+    // libtsm has no public selection-state query; selection_copy() is the only
+    // public probe. It returns -ENOENT without allocating when inactive, so the
+    // copy is paid only while a selection exists (bounded by the scrollback).
     char *raw = nullptr;
     const int length = tsm_screen_selection_copy(impl_->screen, &raw);
     std::free(raw);

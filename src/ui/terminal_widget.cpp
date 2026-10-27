@@ -779,6 +779,7 @@ int TerminalWidget::handle(int event)
         }
         return 1;
     case FL_UNFOCUS:
+        pending_selection_click_ = false;
         return 1;
     case FL_PUSH:
         if (focus_callback_ != nullptr) {
@@ -891,6 +892,7 @@ int TerminalWidget::handle_push()
         event.action = MouseActionPressed;
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
+        pending_selection_click_ = false;
         return 1;
     }
 
@@ -941,6 +943,7 @@ int TerminalWidget::handle_drag()
         event.dragging = pressed_button_ >= 0;
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
+        pending_selection_click_ = false;
         return 1;
     }
 
@@ -984,6 +987,7 @@ int TerminalWidget::handle_release()
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
         pressed_button_ = -1;
+        pending_selection_click_ = false;
         return 1;
     }
 
@@ -1012,6 +1016,7 @@ int TerminalWidget::handle_release()
 
 int TerminalWidget::handle_wheel()
 {
+    pending_selection_click_ = false;
     const bool shift = (Fl::event_state() & FL_SHIFT) != 0;
     if (!shift && emulator_.mouse_tracking() != MouseTracking::disabled) {
         int column = 0;

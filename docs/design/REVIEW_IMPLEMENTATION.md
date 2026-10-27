@@ -1145,7 +1145,11 @@ A single click with no active selection still selects the pressed cell. With an
 active selection, a static click now clears it instead of selecting another
 cell, and a click-drag elsewhere starts a new selection from the press cell.
 The widget defers the decision until FL_DRAG or FL_RELEASE so it can tell the
-two apart. Double-click word selection and mouse-reporting routing are
-unchanged. `TerminalEmulator` gains `has_selection()`, backed by the public
-`tsm_screen_selection_copy` probe. `terminal_widget_test` covers select,
-deselect, drag and replace; Debug and ASan/UBSan suites pass 33/33.
+two apart, and cancels the pending click on focus loss, wheel input, or when
+mouse reporting takes over the gesture. Double-click word selection is
+unchanged. `TerminalEmulator` gains `has_selection()`, backed by the only
+public libtsm probe (`tsm_screen_selection_copy`); it allocates only while a
+selection exists, bounded by the scrollback, because libtsm exposes no
+selection-state query. `terminal_widget_test` covers select, deselect, drag,
+replace and the two cancellation paths; Debug and ASan/UBSan suites pass
+33/33.
