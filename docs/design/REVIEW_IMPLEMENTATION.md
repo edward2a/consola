@@ -1130,8 +1130,10 @@ clip. The measured win is retained.
 
 **S7-CS5 — memory and long-duration validation (DIP 7.6).** The harness adds a
 `churn` workload (repeated create/close with descriptor, thread and RSS
-reporting), a 256 MiB long-output run, and a scrollback bound check.
+reporting, failing on growth), a full-screen alternate-screen workload, a
+256 MiB long-output run, and a scrollback bound check.
 `PERFORMANCE.md` records: 100 churn cycles leave descriptors and threads
 unchanged (no leaks), 64 MiB and 256 MiB PTY runs end at the same ~32.7 MiB RSS
-(bounded by scrollback), and 10,000 fed lines store 9,953. Stage 7 exit criteria
-and remaining evidence-gated follow-ups are recorded.
+(bounded by scrollback), 10,000 fed lines store 9,953, and 2,000 full-screen
+frames run at ~35.7k fps. Stage 7 exit criteria and remaining evidence-gated
+follow-ups are recorded.

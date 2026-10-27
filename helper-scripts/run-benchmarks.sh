@@ -38,6 +38,7 @@ printf '\n'
 # Each workload runs in a fresh process so RSS measurements are not polluted by
 # allocations from an earlier workload. Only the redraw workload needs X.
 "$bench" parser 256
+"$bench" fullscreen 2000
 "$bench" pty 64
 "$bench" pty 256
 "$bench" startup

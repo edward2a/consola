@@ -96,6 +96,24 @@ std::string make_chunk(std::size_t bytes)
     return out;
 }
 
+std::string make_frame(int rows, int columns)
+{
+    std::string frame = "\x1b[H";
+    for (int row = 0; row < rows; ++row) {
+        frame += "\x1b[3";
+        frame += static_cast<char>('0' + (row % 8));
+        frame += 'm';
+        for (int column = 0; column < columns; ++column) {
+            frame += static_cast<char>('a' + ((row + column) % 26));
+        }
+        frame += "\x1b[0m";
+        if (row + 1 < rows) {
+            frame += "\r\n";
+        }
+    }
+    return frame;
+}
+
 std::vector<std::byte> as_bytes(const std::string &text)
 {
     std::vector<std::byte> bytes(text.size());
@@ -226,6 +244,34 @@ void run_parser(std::size_t megabytes)
     std::printf("parser_mb=%zu\n", megabytes);
     std::printf("parser_seconds=%.6f\n", elapsed);
     std::printf("parser_mb_s=%.2f\n", mb / elapsed);
+}
+
+void run_fullscreen(std::size_t frames)
+{
+    TerminalEmulator emulator;
+    emulator.resize(80, 24);
+    emulator.set_max_scrollback(1000);
+    const std::string frame = make_frame(24, 80);
+    const std::vector<std::byte> bytes = as_bytes(frame);
+    const std::string enter_alt = "\x1b[?1049h";
+    emulator.feed(std::span<const std::byte>(reinterpret_cast<const std::byte *>(enter_alt.data()),
+                                             enter_alt.size()));
+    const std::optional<long> rss_before = read_vm_rss_kib();
+    const double start = now_seconds();
+    for (std::size_t index = 0; index < frames; ++index) {
+        emulator.feed(bytes);
+    }
+    const double elapsed = now_seconds() - start;
+    const std::optional<long> rss_after = read_vm_rss_kib();
+    const double megabytes =
+        static_cast<double>(frames * bytes.size()) / static_cast<double>(kMegabyte);
+    std::printf("fullscreen_frames=%zu\n", frames);
+    std::printf("fullscreen_seconds=%.6f\n", elapsed);
+    std::printf("fullscreen_fps=%.1f\n", static_cast<double>(frames) / elapsed);
+    std::printf("fullscreen_mb_s=%.2f\n", megabytes / elapsed);
+    if (rss_before.has_value() && rss_after.has_value()) {
+        std::printf("fullscreen_rss_delta_kib=%ld\n", rss_after.value() - rss_before.value());
+    }
 }
 
 void run_pty(std::size_t megabytes)
@@ -643,6 +689,7 @@ void usage()
 {
     std::fprintf(stderr, "usage: consola_bench <workload> [args]\n"
                          "  parser [MB]        feed the deterministic stream to one emulator\n"
+                         "  fullscreen [N]     feed N full-screen alternate-screen frames\n"
                          "  pty [MB]           end-to-end PTY read + parse of the same stream\n"
                          "  startup            first terminal running, 5 runs\n"
                          "  memory [N]         RSS with N idle terminals\n"
@@ -671,6 +718,8 @@ int main(int argc, char **argv)
         const std::string_view workload = argv[1];
         if (workload == "parser") {
             run_parser(argc >= 3 ? parse_size(argv[2], 256) : 256);
+        } else if (workload == "fullscreen") {
+            run_fullscreen(argc >= 3 ? parse_size(argv[2], 2000) : 2000);
         } else if (workload == "pty") {
             run_pty(argc >= 3 ? parse_size(argv[2], 64) : 64);
         } else if (workload == "startup") {

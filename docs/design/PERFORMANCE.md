@@ -15,9 +15,10 @@ visible.
   `helper-scripts/run-headless.sh`. Startup samples are warm-process (five
   managers in one process), not cold process startup.
 - Workloads are deterministic. The parser/PTY stream is generated in-process
-  (coloured words, cursor home, occasional clear) and the PTY child re-executes
-  the benchmark binary in `--emit` mode, so external tools do not affect the
-  numbers.
+  (coloured words, cursor home, occasional clear), the full-screen workload
+  feeds alternate-screen frames, and the PTY child re-executes the benchmark
+  binary in `--emit` mode, so external tools do not affect the numbers. Churn
+  repeatedly creates and closes terminals for leak checks.
 - `make bench-run` reproduces the table. Results are machine-specific; compare
   runs on the same host and build type.
 
@@ -40,6 +41,7 @@ Environment: Linux 6.18.49_1 x86_64, 8 CPUs, AMD Ryzen AI 9 HX 370.
 | Redraw, incremental | one line per frame, 200 frames | 1.33 ms/frame (750 fps) |
 | Idle CPU, 1 terminal | 2 s, pump every 10 ms | 1.25% |
 | Idle CPU, 10 terminals | 2 s, pump every 10 ms | 1.63% |
+| Full-screen TUI (added in S7-CS5) | 2,000 frames, 80x24 alt screen | 35,734 fps (74.5 MiB/s) |
 
 Run-to-run variance is roughly 10% for throughput and redraw; compare trends,
 not single samples.
