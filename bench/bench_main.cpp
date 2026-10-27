@@ -126,6 +126,17 @@ std::optional<long> read_vm_rss_kib()
     return std::nullopt;
 }
 
+std::size_t count_entries(const char *path)
+{
+    std::error_code error;
+    std::size_t count = 0;
+    for (std::filesystem::directory_iterator it(path, error), end; !error && it != end;
+         it.increment(error)) {
+        ++count;
+    }
+    return count;
+}
+
 double process_cpu_seconds()
 {
     timespec value{};
@@ -224,6 +235,7 @@ void run_pty(std::size_t megabytes)
         std::exit(EXIT_FAILURE);
     }
 
+    const std::optional<long> rss_before = read_vm_rss_kib();
     TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{2000});
     manager.start();
     TerminalOptions options;
@@ -260,6 +272,7 @@ void run_pty(std::size_t megabytes)
         manager, 120.0);
     const double elapsed = now_seconds() - start;
     manager.shutdown();
+    const std::optional<long> rss_after = read_vm_rss_kib();
     if (!done) {
         std::fprintf(stderr, "pty: timed out\n");
         std::exit(EXIT_FAILURE);
@@ -268,6 +281,11 @@ void run_pty(std::size_t megabytes)
     std::printf("pty_mb=%zu\n", megabytes);
     std::printf("pty_seconds=%.6f\n", elapsed);
     std::printf("pty_mb_s=%.2f\n", mb / elapsed);
+    if (rss_before.has_value() && rss_after.has_value()) {
+        std::printf("pty_rss_before_kib=%ld\n", rss_before.value());
+        std::printf("pty_rss_after_kib=%ld\n", rss_after.value());
+        std::printf("pty_rss_delta_kib=%ld\n", rss_after.value() - rss_before.value());
+    }
 }
 
 void run_startup()
@@ -362,6 +380,87 @@ void run_memory(std::size_t terminals)
     }
 }
 
+void run_churn(std::size_t cycles, std::size_t parallel)
+{
+    TerminalManager manager(nullptr, nullptr, std::chrono::milliseconds{200});
+    manager.start();
+    const std::size_t fds_before = count_entries("/proc/self/fd");
+    const std::size_t threads_before = count_entries("/proc/self/task");
+    const std::optional<long> rss_before = read_vm_rss_kib();
+    long peak_kib = rss_before.value_or(0);
+    const double start = now_seconds();
+
+    for (std::size_t cycle = 0; cycle < cycles; ++cycle) {
+        std::vector<TerminalId> ids;
+        ids.reserve(parallel);
+        for (std::size_t index = 0; index < parallel; ++index) {
+            if (index > 0) {
+                manager.create_tab();
+            }
+            TerminalOptions options;
+            options.session.executable = "/bin/sleep";
+            options.session.arguments = {"30"};
+            const auto id = manager.create_root_terminal(options);
+            if (!id.has_value()) {
+                std::fprintf(stderr, "churn: could not create terminal\n");
+                manager.shutdown();
+                std::exit(EXIT_FAILURE);
+            }
+            ids.push_back(*id);
+        }
+        const bool running = wait_for(
+            [&] {
+                return std::ranges::all_of(ids, [&](TerminalId id) {
+                    const auto *instance = manager.find(id);
+                    return instance != nullptr && instance->state() == TerminalState::running;
+                });
+            },
+            manager, 15.0);
+        if (!running) {
+            std::fprintf(stderr, "churn: terminals did not start\n");
+            manager.shutdown();
+            std::exit(EXIT_FAILURE);
+        }
+        for (const TerminalId id : ids) {
+            manager.close_terminal(id);
+        }
+        while (manager.tabs().count() > 1) {
+            manager.close_tab(manager.tabs().active_id());
+            wait_for([&] { return manager.tabs().count() == 1; }, manager, 5.0);
+        }
+        const bool removed = wait_for([&] { return manager.terminal_count() == 0; }, manager, 10.0);
+        if (!removed) {
+            std::fprintf(stderr, "churn: terminals were not removed\n");
+            manager.shutdown();
+            std::exit(EXIT_FAILURE);
+        }
+        if (const auto rss = read_vm_rss_kib(); rss.has_value()) {
+            peak_kib = std::max(peak_kib, rss.value());
+        }
+    }
+
+    const double elapsed = now_seconds() - start;
+    const std::size_t fds_after = count_entries("/proc/self/fd");
+    const std::size_t threads_after = count_entries("/proc/self/task");
+    manager.shutdown();
+    const std::size_t fds_final = count_entries("/proc/self/fd");
+    const std::size_t threads_final = count_entries("/proc/self/task");
+
+    std::printf("churn_cycles=%zu\n", cycles);
+    std::printf("churn_parallel=%zu\n", parallel);
+    std::printf("churn_seconds=%.3f\n", elapsed);
+    std::printf("churn_fd_before=%zu\n", fds_before);
+    std::printf("churn_fd_after=%zu\n", fds_after);
+    std::printf("churn_fd_final=%zu\n", fds_final);
+    std::printf("churn_thread_before=%zu\n", threads_before);
+    std::printf("churn_thread_after=%zu\n", threads_after);
+    std::printf("churn_thread_final=%zu\n", threads_final);
+    if (rss_before.has_value()) {
+        std::printf("churn_rss_before_kib=%ld\n", rss_before.value());
+        std::printf("churn_rss_peak_kib=%ld\n", peak_kib);
+    }
+}
+
 void run_scrollback(std::size_t lines)
 {
     // Build the input before the baseline and keep it alive so the delta only
@@ -384,6 +483,13 @@ void run_scrollback(std::size_t lines)
 
     std::printf("scrollback_lines=%zu\n", lines);
     std::printf("scrollback_feed_seconds=%.6f\n", elapsed);
+    const int stored = emulator.scrollback_line_count();
+    std::printf("scrollback_stored=%d\n", stored);
+    if (stored >= 0 && static_cast<std::size_t>(stored) > lines) {
+        std::fprintf(stderr, "scrollback: stored %d lines exceeds the %zu-line bound\n", stored,
+                     lines);
+        std::exit(EXIT_FAILURE);
+    }
     if (baseline.has_value() && after.has_value()) {
         const long delta = after.value() - baseline.value();
         std::printf("scrollback_delta_kib=%ld\n", delta);
@@ -522,6 +628,7 @@ void usage()
                          "  startup            first terminal running, 5 runs\n"
                          "  memory [N]         RSS with N idle terminals\n"
                          "  scrollback [LINES] RSS for a full scrollback\n"
+                         "  churn [CYCLES] [N] create/close terminals and report leaks\n"
                          "  resize [COUNT]     emulator resize cost\n"
                          "  redraw [COUNT]     full and incremental widget draws (needs X)\n"
                          "  idle [SECONDS] [N] CPU while pumping N idle terminals\n"
@@ -553,6 +660,9 @@ int main(int argc, char **argv)
             run_memory(argc >= 3 ? parse_size(argv[2], 1) : 1);
         } else if (workload == "scrollback") {
             run_scrollback(argc >= 3 ? parse_size(argv[2], 10000) : 10000);
+        } else if (workload == "churn") {
+            run_churn(argc >= 3 ? parse_size(argv[2], 100) : 100,
+                      argc >= 4 ? parse_size(argv[3], 1) : 1);
         } else if (workload == "resize") {
             run_resize(argc >= 3 ? parse_size(argv[2], 1000) : 1000);
         } else if (workload == "redraw") {

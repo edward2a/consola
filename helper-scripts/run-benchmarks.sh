@@ -39,11 +39,13 @@ printf '\n'
 # allocations from an earlier workload. Only the redraw workload needs X.
 "$bench" parser 256
 "$bench" pty 64
+"$bench" pty 256
 "$bench" startup
 "$bench" memory 1
 "$bench" memory 10
 "$bench" memory 50
 "$bench" scrollback 10000
+"$bench" churn 100 2
 "$bench" resize 1000
 "$bench" idle 2 1
 "$bench" idle 2 10

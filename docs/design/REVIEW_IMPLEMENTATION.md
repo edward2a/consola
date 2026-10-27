@@ -1127,3 +1127,11 @@ review: PASS WITH FINDINGS**, resolved here: the row clip alone would let
 italic/wide/combining glyphs overhang into neighbouring cells, so those cells
 keep a per-cell horizontal clip while upright single-cell glyphs use the row
 clip. The measured win is retained.
+
+**S7-CS5 — memory and long-duration validation (DIP 7.6).** The harness adds a
+`churn` workload (repeated create/close with descriptor, thread and RSS
+reporting), a 256 MiB long-output run, and a scrollback bound check.
+`PERFORMANCE.md` records: 100 churn cycles leave descriptors and threads
+unchanged (no leaks), 64 MiB and 256 MiB PTY runs end at the same ~32.7 MiB RSS
+(bounded by scrollback), and 10,000 fed lines store 9,953. Stage 7 exit criteria
+and remaining evidence-gated follow-ups are recorded.

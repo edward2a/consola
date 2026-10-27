@@ -109,3 +109,39 @@ VM) and `strace -f -c`. Samples are Release builds.
 | S7-CS1 | Harness, workloads, baseline | — | see above |
 | S7-CS3 | Inbound borrow-and-pop; resume only after consuming; discard-mode unsuspend | idle 1.25% / 1.63%; PTY 26.8 MiB/s | idle 0.56% / 0.65%; PTY 26.4 MiB/s |
 | S7-CS4 | One clip per painted row, cached font/colour, ASCII URL prefix fast path | full 2.73 ms, incremental 1.33 ms | full ~2.2-2.4 ms, incremental ~0.9-1.0 ms |
+| S7-CS5 | Lifecycle churn, long-output and scrollback-bound validation | — | no leaks; bounded RSS |
+
+## Memory validation (S7-CS5)
+
+- **Lifecycle churn.** 100 cycles of creating and closing two terminals
+  (`/bin/sleep 30`, two tabs per cycle): descriptors 7 → 7 → 7, threads
+  3 → 3 → 1 (after shutdown), RSS peak +508 KiB. No descriptor, thread or
+  terminal/session leak.
+- **Long output.** The PTY workload finishes 256 MiB in 9.4 s at 27.1 MiB/s.
+  The final RSS is the same after 64 MiB and 256 MiB (~32.7 MiB), so memory is
+  bounded by scrollback, not by total bytes written. The residual delta is the
+  emulator's retained scrollback/allocator, not growth per byte.
+- **Scrollback bound.** With a 10,000-line limit, 10,000 fed lines store 9,953
+  lines (the visible screen holds the rest) and the workload fails if the
+  stored count exceeds the configured maximum.
+- **Run-to-run.** `terminal_manager_test` exercises the close/backpressure paths
+  repeatedly; the full Debug and ASan/UBSan suites pass 32/32.
+
+## Stage 7 exit criteria
+
+| Criterion | Status |
+| --- | --- |
+| Benchmark results recorded | Baseline, profiles and after-numbers in this document; `make bench-run` reproduces them |
+| Major hotspots addressed | Idle wakeups, per-batch queue allocation, per-cell clips and URL `tolower` fixed; libtsm parser and glyph atlas deferred with evidence |
+| Memory remains bounded | Churn leaks none; 64 MiB and 256 MiB runs end at the same RSS; scrollback bound enforced |
+| Idle CPU negligible | ~0.53% / 0.63% under the harness's 100 Hz pump (9 polls/2 s); the real UI is event-driven |
+| High-output workloads responsive | 27 MiB/s end-to-end PTY, 256 MiB in 9.4 s; 413 fps full redraw, 1126 fps incremental |
+
+## Remaining follow-ups
+
+- A glyph atlas remains the evidence-gated rendering step if the Xlib request
+  path is still too costly on the target hardware.
+- Parser throughput is libtsm-bound; improving it requires the deferred libtsm
+  fork.
+- The 10,000-line default costs ~51 MiB at 160 columns; revisit the default or
+  the scrollback representation only with a product decision.
