@@ -422,12 +422,22 @@ void run_churn(std::size_t cycles, std::size_t parallel)
             manager.shutdown();
             std::exit(EXIT_FAILURE);
         }
+        // Sample while the terminals are alive; reading only after removal
+        // would miss transient per-terminal memory.
+        if (const auto rss = read_vm_rss_kib(); rss.has_value()) {
+            peak_kib = std::max(peak_kib, rss.value());
+        }
         for (const TerminalId id : ids) {
             manager.close_terminal(id);
         }
         while (manager.tabs().count() > 1) {
             manager.close_tab(manager.tabs().active_id());
             wait_for([&] { return manager.tabs().count() == 1; }, manager, 5.0);
+        }
+        if (manager.tabs().count() != 1) {
+            std::fprintf(stderr, "churn: tab cleanup failed\n");
+            manager.shutdown();
+            std::exit(EXIT_FAILURE);
         }
         const bool removed = wait_for([&] { return manager.terminal_count() == 0; }, manager, 10.0);
         if (!removed) {
@@ -459,6 +469,14 @@ void run_churn(std::size_t cycles, std::size_t parallel)
     if (rss_before.has_value()) {
         std::printf("churn_rss_before_kib=%ld\n", rss_before.value());
         std::printf("churn_rss_peak_kib=%ld\n", peak_kib);
+    }
+    if (fds_after > fds_before || fds_final > fds_before) {
+        std::fprintf(stderr, "churn: descriptor leak detected\n");
+        std::exit(EXIT_FAILURE);
+    }
+    if (threads_after > threads_before || threads_final > 1) {
+        std::fprintf(stderr, "churn: thread leak detected\n");
+        std::exit(EXIT_FAILURE);
     }
 }
 

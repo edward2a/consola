@@ -115,8 +115,9 @@ VM) and `strace -f -c`. Samples are Release builds.
 
 - **Lifecycle churn.** 100 cycles of creating and closing two terminals
   (`/bin/sleep 30`, two tabs per cycle): descriptors 7 → 7 → 7, threads
-  3 → 3 → 1 (after shutdown), RSS peak +508 KiB. No descriptor, thread or
-  terminal/session leak.
+  3 → 3 → 1 (after shutdown), RSS peak +544 KiB sampled while both terminals
+  are active. The workload fails on descriptor or thread growth; no leak was
+  detected.
 - **Long output.** The PTY workload finishes 256 MiB in 9.4 s at 27.1 MiB/s.
   The final RSS is the same after 64 MiB and 256 MiB (~32.7 MiB), so memory is
   bounded by scrollback, not by total bytes written. The residual delta is the
