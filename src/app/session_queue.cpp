@@ -26,21 +26,21 @@ bool SessionInboundQueue::try_push_lifecycle(InboundMessage message)
         return false;
     }
     slot->sequence = next_sequence_++;
-    slot->message = std::move(message);
+    slot->message = message;
     lifecycle_.commit_push();
     return true;
 }
 
-bool SessionInboundQueue::try_pop(InboundMessage &out)
+bool SessionInboundQueue::front_is_data() const noexcept
 {
     const DataSlot *data = data_.front();
     const LifecycleSlot *lifecycle = lifecycle_.front();
-    if (data == nullptr && lifecycle == nullptr) {
+    if (data == nullptr) {
         return false;
     }
-
-    const bool take_data =
-        lifecycle == nullptr || (data != nullptr && data->sequence < lifecycle->sequence);
+    if (lifecycle == nullptr) {
+        return true;
+    }
 
     // Data and lifecycle events live in separate rings. If we selected the ring
     // that published later, re-read the other ring: an item published just
@@ -48,30 +48,59 @@ bool SessionInboundQueue::try_pop(InboundMessage &out)
     // first load. The acquire on the selected ring's head makes every earlier
     // producer commit visible to this second load, so the merge cannot return a
     // later event before an earlier one (DIP 1.7 ordering).
-    if (take_data) {
+    if (data->sequence < lifecycle->sequence) {
         const LifecycleSlot *earlier = lifecycle_.front();
-        if (earlier != nullptr && earlier->sequence < data->sequence) {
-            out = std::move(lifecycle_.front_mut()->message);
-            lifecycle_.pop();
-            return true;
-        }
-        out = InboundMessage{};
-        out.kind = InboundMessage::Kind::data;
-        out.bytes = std::move(data_.front_mut()->bytes);
-        data_.pop();
-        return true;
+        return earlier == nullptr || earlier->sequence >= data->sequence;
     }
-
     const DataSlot *earlier = data_.front();
-    if (earlier != nullptr && earlier->sequence < lifecycle->sequence) {
-        out = InboundMessage{};
+    return earlier != nullptr && earlier->sequence < lifecycle->sequence;
+}
+
+bool SessionInboundQueue::try_peek(View &out) const
+{
+    const DataSlot *data = data_.front();
+    const LifecycleSlot *lifecycle = lifecycle_.front();
+    if (data == nullptr && lifecycle == nullptr) {
+        return false;
+    }
+    if (front_is_data()) {
         out.kind = InboundMessage::Kind::data;
-        out.bytes = std::move(data_.front_mut()->bytes);
-        data_.pop();
+        out.bytes = data->bytes;
+        out.exit_status = 0;
+        out.paste_status = PasteStatus::completed;
         return true;
     }
-    out = std::move(lifecycle_.front_mut()->message);
-    lifecycle_.pop();
+    out.kind = lifecycle->message.kind;
+    out.bytes = {};
+    out.exit_status = lifecycle->message.exit_status;
+    out.paste_status = lifecycle->message.paste_status;
+    return true;
+}
+
+void SessionInboundQueue::pop()
+{
+    if (front_is_data()) {
+        data_.pop();
+    } else {
+        lifecycle_.pop();
+    }
+}
+
+bool SessionInboundQueue::try_pop(InboundMessage &out)
+{
+    View view;
+    if (!try_peek(view)) {
+        return false;
+    }
+    out.kind = view.kind;
+    out.exit_status = view.exit_status;
+    out.paste_status = view.paste_status;
+    if (view.kind == InboundMessage::Kind::data) {
+        out.bytes.assign(view.bytes.begin(), view.bytes.end());
+    } else {
+        out.bytes.clear();
+    }
+    pop();
     return true;
 }
 

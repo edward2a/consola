@@ -191,6 +191,7 @@ private:
     std::unordered_map<TerminalId, TabId> instance_tab_;
     std::unordered_set<TerminalId> terminate_sent_;
     std::unordered_set<TerminalId> remove_requested_;
+    std::unordered_set<TerminalId> resume_pending_;
     std::unordered_set<TabId> closing_tabs_;
     TabManager tabs_;
     std::uint64_t next_id_ = 1;

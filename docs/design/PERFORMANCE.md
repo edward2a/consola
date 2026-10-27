@@ -46,26 +46,30 @@ not single samples.
 
 ## Observations and follow-ups
 
-- **Idle CPU is not negligible.** About 1.3% for one idle pane is higher than a
-  poll-blocked loop should need. Profile the I/O loop and UI pump wakeups
-  before changing anything.
-- **PTY throughput is roughly half the parser rate** (26.8 vs 66.0 MiB/s).
-  The gap covers the loop read batch, the inbound queue copy, the wakeup and
-  the UI pump. Measure the split before optimizing.
+- **Idle CPU was driven by UI wakeups.** The initial ~1.3% came from
+  `consume_inbound()` resuming every running pane on every pump; `strace` showed
+  192 polls in 2 s. S7-CS3 resumes only after the UI consumed data, and a 2 s
+  run now shows 9 polls. The remaining ~0.56% is the harness's 100 Hz pump; the
+  real UI is event-driven.
+- **PTY throughput is roughly half the parser rate** (26.4 vs 57-66 MiB/s,
+  run-to-run variance). The gap covers the loop read batch, the inbound queue
+  copy, the wakeup and the UI pump. The borrow-and-pop change removed the
+  per-batch reallocation but not the unavoidable read-buffer copy.
 - **Scrollback is ~5.2 KiB per line** at 160 columns, so the default 10,000-line
   history costs ~51 MiB. Decide whether the representation or the default is
   the right lever after profiling; do not change the configured default without
   evidence.
 - **Redraw cost is dominated by the per-cell text path.** A full 800x480 frame
-  takes ~3 ms and an incremental frame still ~1 ms. Both `emulator_.draw()`
-  passes traverse every visible cell (URL collection plus paint); incremental
-  frames also scan for URLs. Profile before considering a glyph atlas.
-- **Per-batch allocation.** `SessionInboundQueue::try_pop()` moves each data
-  vector out of its ring slot, so the consumer frees the buffer every batch and
-  the producer reallocates on the next push. This is a candidate for a
-  borrow-and-pop API. It also triggers a GCC 14 `-Wnull-dereference` false
-  positive in `std::vector` move assignment, which currently blocks the
-  warnings-as-errors Release build.
+  takes ~2.8 ms and an incremental frame still ~1.3-1.6 ms. Both
+  `emulator_.draw()` passes traverse every visible cell (URL collection plus
+  paint); incremental frames also scan for URLs. Profile before considering a
+  glyph atlas.
+- **Per-batch allocation (fixed in S7-CS3).** `SessionInboundQueue` now exposes
+  `try_peek()`/`pop()`: the consumer feeds directly from the ring slot and the
+  producer reuses its capacity, so the per-batch free/reallocation and the GCC
+  14 `std::vector` move-assignment false positive are gone. Production Release
+  targets build clean; a few test-only `get_if`/null-check false positives from
+  GCC 14 remain in the Release test build.
 
 ## Profiling (S7-CS2)
 
@@ -101,3 +105,4 @@ VM) and `strace -f -c`. Samples are Release builds.
 | Change set | Change | Before | After |
 | --- | --- | --- | --- |
 | S7-CS1 | Harness, workloads, baseline | — | see above |
+| S7-CS3 | Inbound borrow-and-pop; resume only after consuming; discard-mode unsuspend | idle 1.25% / 1.63%; PTY 26.8 MiB/s | idle 0.56% / 0.65%; PTY 26.4 MiB/s |

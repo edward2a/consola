@@ -31,7 +31,22 @@ public:
     // only if the reserved lifecycle slots are exhausted (a defect).
     [[nodiscard]] bool try_push_lifecycle(InboundMessage message);
 
-    // Consumer (UI). Moves the oldest message, in sequence order, into out.
+    // Consumer (UI). Borrow the oldest message without moving its payload. The
+    // view, including a data span, stays valid until pop() is called; feed the
+    // bytes before popping. This keeps the ring slot's buffer alive so the
+    // producer can reuse its capacity instead of allocating per batch.
+    struct View {
+        InboundMessage::Kind kind = InboundMessage::Kind::data;
+        std::span<const std::byte> bytes;
+        int exit_status = 0;
+        PasteStatus paste_status = PasteStatus::completed;
+    };
+    [[nodiscard]] bool try_peek(View &out) const;
+    void pop();
+
+    // Consumer (UI). Moves/copies the oldest message, in sequence order, into
+    // out. Prefer try_peek()/pop() on the hot path; this is kept for callers
+    // that want an owning message.
     [[nodiscard]] bool try_pop(InboundMessage &out);
 
     [[nodiscard]] bool empty() const noexcept;
@@ -51,6 +66,8 @@ private:
     SpscRing<DataSlot, kDataSlots> data_;
     SpscRing<LifecycleSlot, kLifecycleSlots> lifecycle_;
     std::uint64_t next_sequence_ = 0; // producer only
+
+    [[nodiscard]] bool front_is_data() const noexcept;
 };
 
 // Admission class for the outbound budget (DIP 1.7). `user` bytes (keys, paste

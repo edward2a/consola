@@ -100,6 +100,9 @@ void LayoutTree::collect_terminals(NodeId id, std::vector<TerminalId> &out) cons
         return;
     }
     const auto *sn = std::get_if<SplitNode>(n);
+    if (sn == nullptr) {
+        return; // unreachable: a node is either a terminal or a split
+    }
     collect_terminals(sn->first, out);
     collect_terminals(sn->second, out);
 }
@@ -147,6 +150,9 @@ std::optional<NodeId> LayoutTree::split_terminal(TerminalId target, Orientation 
         root_ = split_id;
     } else {
         auto *ps = std::get_if<SplitNode>(&nodes_.at(parent.value).node);
+        if (ps == nullptr) {
+            return added_id; // unreachable: a parent is always a split
+        }
         if (ps->first == leaf_id) {
             ps->first = split_id;
         } else {
@@ -181,6 +187,9 @@ std::optional<NodeId> LayoutTree::remove(TerminalId target)
         root_ = sibling;
     } else {
         auto *gs = std::get_if<SplitNode>(&nodes_.at(grand.value).node);
+        if (gs == nullptr) {
+            return leaf_id; // unreachable: a grandparent is always a split
+        }
         if (gs->first == parent_id) {
             gs->first = sibling;
         } else {

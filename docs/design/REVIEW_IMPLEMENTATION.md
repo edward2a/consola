@@ -1082,3 +1082,24 @@ ASan/UBSan configurations on Linux/X11. Dependency source was not modified.
   therefore means "a launch failed at some point", not "a failed pane is still
   open". Debug and ASan/UBSan suites pass 32/32; format/tidy clean. S6-CS7 is
   complete and Stage 6 is complete.
+
+### Stage 7 — Efficiency pass
+
+**S7-CS1 — benchmark harness, workloads and baseline (DIP 7.1, 7.2).** Adds
+`bench/consola_bench` with deterministic parser, PTY (self re-exec `--emit`),
+startup, 1/10/50-terminal memory, scrollback, resize, redraw (Xvfb) and idle
+workloads; `helper-scripts/run-benchmarks.sh` runs each in a fresh process;
+`make bench` builds a separate Release tree, `make bench-run` runs the suite.
+`docs/design/PERFORMANCE.md` records method, environment and the baseline.
+**Luna-Six review: PASS WITH FINDINGS**, resolved here: the scrollback workload
+builds its input before the RSS baseline and feeds it directly (no byte-vector
+copy), app smoke timing runs inside an already-ready Xvfb and is labelled
+`app_smoke_total_ms`, and startup samples are labelled warm-process.
+
+**S7-CS2 — profile and record findings (DIP 7.3).** `perf` (cpu-clock; hardware
+counters unavailable in the VM) and `strace` show: libtsm dominates the parser;
+the PTY gap includes syscalls, per-batch queue allocation and 1 ms budget
+`clock_gettime`; idle CPU came from `consume_inbound()` resuming every pane on
+every pump (~192 polls/2 s); redraw is dominated by the Xlib request path plus
+per-cell paint and the URL `tolower` scan. Findings and evidence-gated
+follow-ups are in `PERFORMANCE.md`; no production change.

@@ -1011,6 +1011,10 @@ void LinuxIoLoop::start_termination(Registered &session)
     session.termination.active = true;
     if (!session.drain_output_on_close) {
         session.discard_output = true;
+        // Discard mode no longer waits for inbound queue room, so a session
+        // suspended by backpressure must re-enter the poll set to drain the
+        // post-exit output and publish `exited`.
+        session.suspended = false;
     }
 
     const auto session_id = static_cast<pid_t>(session.process_id);

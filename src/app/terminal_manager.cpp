@@ -299,23 +299,40 @@ bool TerminalManager::consume_inbound()
     for (auto &entry : instances_) {
         TerminalInstance *instance = entry.second;
         const bool discard = instance->closing() && !instance->options().drain_output_on_close;
-        InboundMessage message;
-        while (instance->inbound().try_pop(message)) {
-            if (message.kind == InboundMessage::Kind::data) {
+        bool consumed = false;
+        SessionInboundQueue::View view;
+        while (instance->inbound().try_peek(view)) {
+            consumed = true;
+            if (view.kind == InboundMessage::Kind::data) {
                 // Explicit-close discard policy: consume queued data without
                 // feeding it or triggering a redraw (DIP 1.6).
                 if (!discard) {
-                    instance->emulator().feed(message.bytes);
+                    instance->emulator().feed(view.bytes);
                     dirty = true;
                 }
-            } else if (message.kind == InboundMessage::Kind::eof) {
+            } else if (view.kind == InboundMessage::Kind::eof) {
                 instance->mark_eof();
-            } else if (message.kind == InboundMessage::Kind::exited) {
+            } else if (view.kind == InboundMessage::Kind::exited) {
                 instance->set_state(TerminalState::exited);
             }
+            instance->inbound().pop();
         }
-        if (instance->state() == TerminalState::running) {
-            loop_->resume(entry.first);
+        // Wake the loop only when the UI actually consumed something and the
+        // queue has room. The loop can observe a full queue and suspend just
+        // after the UI drained it; consuming in this pump is the signal that
+        // this race may have happened. Idle pumps consume nothing, so they do
+        // not turn the idle poll into a timer. A resume can be rejected while
+        // the command ring is full, so retry it until the loop accepts it.
+        if (instance->state() == TerminalState::running && consumed &&
+            !instance->inbound().data_full()) {
+            resume_pending_.insert(entry.first);
+        }
+    }
+    for (auto it = resume_pending_.begin(); it != resume_pending_.end();) {
+        if (loop_->resume(*it)) {
+            it = resume_pending_.erase(it);
+        } else {
+            ++it;
         }
     }
     return dirty;
@@ -378,6 +395,7 @@ void TerminalManager::finalize(TerminalId id)
     instances_.erase(it);
     terminate_sent_.erase(id);
     remove_requested_.erase(id);
+    resume_pending_.erase(id);
     // A tab being closed is removed once its last terminal is finalized.
     if (tab_id.value != 0 && closing_tabs_.contains(tab_id)) {
         Tab *tab = tabs_.find(tab_id);
