@@ -113,6 +113,11 @@ int main()
     release(widget, 2, 1);
     CHECK(emulator.selection_copy() == "world");
 
+    // The canceled press is not reused: a new drag starts at its own press
+    // cell, not the stale (0,1).
+    drag(widget, 1, 1, 3, 1);
+    CHECK(emulator.selection_copy() == "eco");
+
     // Mouse reporting turning on mid-gesture routes drag/release to the
     // application and cancels the pending click.
     press(widget, 0, 1);
@@ -124,7 +129,11 @@ int main()
     const std::string disable_tracking = "\x1b[?1003l\x1b[?1006l";
     emulator.feed(std::span<const std::byte>(
         reinterpret_cast<const std::byte *>(disable_tracking.data()), disable_tracking.size()));
-    CHECK(emulator.selection_copy() == "world");
+    CHECK(emulator.selection_copy() == "eco");
+
+    // The canceled press is not reused here either.
+    drag(widget, 1, 1, 3, 1);
+    CHECK(emulator.selection_copy() == "eco");
 
     // A static click elsewhere clears the active selection.
     click(widget, 0, 1);

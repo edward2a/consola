@@ -1151,5 +1151,5 @@ unchanged. `TerminalEmulator` gains `has_selection()`, backed by the only
 public libtsm probe (`tsm_screen_selection_copy`); it allocates only while a
 selection exists, bounded by the scrollback, because libtsm exposes no
 selection-state query. `terminal_widget_test` covers select, deselect, drag,
-replace and the two cancellation paths; Debug and ASan/UBSan suites pass
-33/33.
+replace, both cancellation paths, and that a canceled press is not reused;
+Debug and ASan/UBSan suites pass 33/33.
