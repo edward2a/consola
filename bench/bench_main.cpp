@@ -25,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <time.h> // NOLINT(modernize-deprecated-headers): POSIX clock_gettime
@@ -485,7 +486,7 @@ void run_scrollback(std::size_t lines)
     std::printf("scrollback_feed_seconds=%.6f\n", elapsed);
     const int stored = emulator.scrollback_line_count();
     std::printf("scrollback_stored=%d\n", stored);
-    if (stored >= 0 && static_cast<std::size_t>(stored) > lines) {
+    if (std::cmp_greater(stored, lines)) {
         std::fprintf(stderr, "scrollback: stored %d lines exceeds the %zu-line bound\n", stored,
                      lines);
         std::exit(EXIT_FAILURE);
