@@ -1122,4 +1122,8 @@ production Release build clean; test-only GCC 14 false positives remain.
 the per-cell clip, font/colour state is cached across cells, and the URL prefix
 scan uses an ASCII fast path instead of `std::tolower`. Full redraw improves
 from ~2.73 ms to ~2.2-2.4 ms and incremental from ~1.33 ms to ~0.9-1.0 ms.
-No glyph atlas was added; the Xlib request path still dominates.
+No glyph atlas was added; the Xlib request path still dominates. **Luna-Six
+review: PASS WITH FINDINGS**, resolved here: the row clip alone would let
+italic/wide/combining glyphs overhang into neighbouring cells, so those cells
+keep a per-cell horizontal clip while upright single-cell glyphs use the row
+clip. The measured win is retained.

@@ -669,6 +669,13 @@ void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
 
     if (out != utf8_scratch_.data()) {
         ensure_row_clip(row);
+        // Upright single-cell glyphs fit their monospace advance, so the row
+        // clip is enough. Italic, wide and combining cells can overhang into
+        // neighbours, so they keep the tighter per-cell horizontal clip.
+        const bool clip_cell = attr.italic || cell.width > 1 || cell.text.size() > 1;
+        if (clip_cell) {
+            fl_push_clip(px, py, pw, ph);
+        }
         const int face = face_for(attr);
         if (face != paint_face_ || style_.font_size != paint_size_) {
             fl_font(face, style_.font_size);
@@ -683,6 +690,9 @@ void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
         fl_draw(utf8_scratch_.data(), px, py + metrics_.ascent);
         if (attr.underline) {
             fl_line(px, py + metrics_.ascent + 1, px + pw - 1, py + metrics_.ascent + 1);
+        }
+        if (clip_cell) {
+            fl_pop_clip();
         }
     }
 
