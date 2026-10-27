@@ -19,14 +19,19 @@ bool SessionInboundQueue::try_push_data(std::span<const std::byte> bytes)
     return true;
 }
 
-bool SessionInboundQueue::try_push_lifecycle(InboundMessage message)
+bool SessionInboundQueue::try_push_lifecycle(InboundMessage &&message)
 {
     LifecycleSlot *slot = lifecycle_.prepare_push();
     if (slot == nullptr) {
         return false;
     }
     slot->sequence = next_sequence_++;
-    slot->message = message;
+    // Lifecycle payloads carry no bytes; copy the small fields so the ring slot
+    // never performs a vector move assignment (GCC 14 warns on the inlined one).
+    slot->message.kind = message.kind;
+    slot->message.exit_status = message.exit_status;
+    slot->message.paste_status = message.paste_status;
+    slot->message.bytes.clear();
     lifecycle_.commit_push();
     return true;
 }
