@@ -41,7 +41,7 @@ Environment: Linux 6.18.49_1 x86_64, 8 CPUs, AMD Ryzen AI 9 HX 370.
 | Redraw, incremental | one line per frame, 200 frames | 1.33 ms/frame (750 fps) |
 | Idle CPU, 1 terminal | 2 s, pump every 10 ms | 1.25% |
 | Idle CPU, 10 terminals | 2 s, pump every 10 ms | 1.63% |
-| Full-screen TUI (added in S7-CS5) | 2,000 frames, 80x24 alt screen | 35,734 fps (74.5 MiB/s) |
+| Full-screen TUI (added in S7-CS5) | 2,000 frames, 80x24 alt screen | ~29-36k fps (median ~32k), 60-74 MiB/s |
 
 Run-to-run variance is roughly 10% for throughput and redraw; compare trends,
 not single samples.
