@@ -10,7 +10,7 @@
 set -eu
 
 bench=${1:-build/bench/consola_bench}
-app=${2:-$(dirname "$bench")/terminal_app}
+app=${2:-$(dirname "$bench")/consola}
 
 if [ ! -x "$bench" ]; then
     printf 'error: benchmark binary not found: %s\n' "$bench" >&2

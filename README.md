@@ -27,7 +27,7 @@ cmake --build build
 Run the application:
 
 ```sh
-./build/terminal_app
+./build/consola
 ```
 
 Run the tests:

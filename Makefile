@@ -45,7 +45,7 @@ tsan: ## Build and test with ThreadSanitizer.
 	ctest --preset tsan
 
 run: build ## Build and run the terminal (needs a display).
-	./build/debug/terminal_app
+	./build/debug/consola
 
 bench: ## Build the Release benchmark harness.
 	cmake -S . -B build/bench -DCMAKE_BUILD_TYPE=Release -DCONSOLA_WARNINGS_AS_ERRORS=OFF

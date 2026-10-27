@@ -191,6 +191,7 @@ target_compile_definitions(terminal_ui PRIVATE
     CONSOLA_FONT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/Inconsolata-Condensed.ttf")
 
 add_executable(terminal_app src/app/main.cpp)
+set_target_properties(terminal_app PROPERTIES OUTPUT_NAME consola)
 target_link_libraries(terminal_app PRIVATE terminal_ui terminal_platform terminal_core)
 
 install(TARGETS terminal_app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
