@@ -12,9 +12,9 @@ constexpr std::array<std::string_view, 5> kPrefixes = {
     "http://", "https://", "ftp://", "file://", "www.",
 };
 
-char lower(char c)
+constexpr char ascii_lower(char c) noexcept
 {
-    return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
 }
 
 bool starts_with_ci(std::string_view text, std::string_view prefix)
@@ -23,7 +23,7 @@ bool starts_with_ci(std::string_view text, std::string_view prefix)
         return false;
     }
     for (std::size_t i = 0; i < prefix.size(); ++i) {
-        if (lower(text[i]) != lower(prefix[i])) {
+        if (ascii_lower(text[i]) != ascii_lower(prefix[i])) {
             return false;
         }
     }
@@ -32,6 +32,14 @@ bool starts_with_ci(std::string_view text, std::string_view prefix)
 
 std::size_t prefix_length(std::string_view text, std::size_t at)
 {
+    if (at >= text.size()) {
+        return 0;
+    }
+    // Every scheme starts with h, f or w; reject the rest before comparing.
+    const char first = ascii_lower(text[at]);
+    if (first != 'h' && first != 'f' && first != 'w') {
+        return 0;
+    }
     for (const std::string_view prefix : kPrefixes) {
         if (starts_with_ci(text.substr(at), prefix)) {
             return prefix.size();

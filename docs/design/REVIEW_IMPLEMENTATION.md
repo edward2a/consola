@@ -1103,3 +1103,23 @@ the PTY gap includes syscalls, per-batch queue allocation and 1 ms budget
 every pump (~192 polls/2 s); redraw is dominated by the Xlib request path plus
 per-cell paint and the URL `tolower` scan. Findings and evidence-gated
 follow-ups are in `PERFORMANCE.md`; no production change.
+
+**S7-CS3 — data-path and idle efficiency (DIP 7.4).** `SessionInboundQueue` adds
+`try_peek()`/`pop()` so the UI feeds directly from the ring slot (no per-batch
+vector move/free); `try_pop()` remains for owning callers. `consume_inbound()`
+resumes the loop only after consuming data and the queue has room, with a
+pending-resume retry for a full command ring; this removes ~100 Hz idle wakeups
+and closes the drain/suspend race. `start_termination()` unsuspends discard-mode
+sessions so a backpressured pane can publish `exited` (fixes a shutdown hang).
+Idle CPU drops from 1.25%/1.63% to ~0.56%/~0.65% (100 Hz harness pump; 9 polls
+instead of 192 per 2 s); PTY throughput is unchanged within variance.
+**Luna-Six review: PASS WITH FINDINGS**, resolved here: the lifecycle push takes
+`const InboundMessage &` (no value copy, no use-after-move) and the remaining
+lvalue test caller is updated. The explicit `get_if` null checks keep the
+production Release build clean; test-only GCC 14 false positives remain.
+
+**S7-CS4 — rendering efficiency (DIP 7.5).** One clip per painted row replaces
+the per-cell clip, font/colour state is cached across cells, and the URL prefix
+scan uses an ASCII fast path instead of `std::tolower`. Full redraw improves
+from ~2.73 ms to ~2.2-2.4 ms and incremental from ~1.33 ms to ~0.9-1.0 ms.
+No glyph atlas was added; the Xlib request path still dominates.

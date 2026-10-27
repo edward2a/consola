@@ -59,11 +59,13 @@ not single samples.
   history costs ~51 MiB. Decide whether the representation or the default is
   the right lever after profiling; do not change the configured default without
   evidence.
-- **Redraw cost is dominated by the per-cell text path.** A full 800x480 frame
-  takes ~2.8 ms and an incremental frame still ~1.3-1.6 ms. Both
-  `emulator_.draw()` passes traverse every visible cell (URL collection plus
-  paint); incremental frames also scan for URLs. Profile before considering a
-  glyph atlas.
+- **Redraw cost is dominated by the per-cell text path.** S7-CS4 replaced the
+  per-cell clip with one clip per painted row, caches the font/colour state and
+  removes the redundant URL `tolower` scan; a full 800x480 frame is now
+  ~2.2-2.4 ms and an incremental frame ~0.9-1.0 ms. The Xlib request path still
+  dominates. Both `emulator_.draw()` passes traverse every visible cell (URL
+  collection plus paint); a glyph atlas remains the evidence-gated next step if
+  more rendering speed is needed.
 - **Per-batch allocation (fixed in S7-CS3).** `SessionInboundQueue` now exposes
   `try_peek()`/`pop()`: the consumer feeds directly from the ring slot and the
   producer reuses its capacity, so the per-batch free/reallocation and the GCC
@@ -106,3 +108,4 @@ VM) and `strace -f -c`. Samples are Release builds.
 | --- | --- | --- | --- |
 | S7-CS1 | Harness, workloads, baseline | — | see above |
 | S7-CS3 | Inbound borrow-and-pop; resume only after consuming; discard-mode unsuspend | idle 1.25% / 1.63%; PTY 26.8 MiB/s | idle 0.56% / 0.65%; PTY 26.4 MiB/s |
+| S7-CS4 | One clip per painted row, cached font/colour, ASCII URL prefix fast path | full 2.73 ms, incremental 1.33 ms | full ~2.2-2.4 ms, incremental ~0.9-1.0 ms |

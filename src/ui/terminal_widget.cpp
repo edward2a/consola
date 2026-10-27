@@ -387,6 +387,10 @@ void TerminalWidget::draw()
     paint_region_ = Rect{};
     content_region_ = Rect{};
     cursor_repaint_ = false;
+    paint_row_ = -1;
+    paint_face_ = -1;
+    paint_size_ = -1;
+    paint_foreground_valid_ = false;
 
     // FLTK clips draw() to the damage region; fl_clip_box() returns 0 when the
     // widget is not clipped, in which case the whole widget is drawable.
@@ -458,6 +462,7 @@ void TerminalWidget::draw()
     }
 
     const ContentAge painted = emulator_.draw(&paint_callback, this);
+    flush_row_clip();
 
     if (full_ || cursor_repaint_) {
         draw_cursor();
@@ -591,6 +596,25 @@ bool TerminalWidget::url_at(int column, int row) const noexcept
     });
 }
 
+void TerminalWidget::ensure_row_clip(int row)
+{
+    if (paint_row_ == row) {
+        return;
+    }
+    flush_row_clip();
+    const Rect rect = cell_rect(0, row, 1);
+    fl_push_clip(x(), rect.y0, w(), std::max(1, rect.y1 - rect.y0));
+    paint_row_ = row;
+}
+
+void TerminalWidget::flush_row_clip()
+{
+    if (paint_row_ >= 0) {
+        fl_pop_clip();
+        paint_row_ = -1;
+    }
+}
+
 void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
 {
     if (!full_ && !intersects(cell_rect(column, row, cell.width), paint_region_)) {
@@ -629,8 +653,11 @@ void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
     const int ph = rect.y1 - rect.y0;
 
     if (!same(background, style_.background)) {
+        ensure_row_clip(row);
         fl_color(background.r, background.g, background.b);
         fl_rectf(px, py, pw, ph);
+        // fl_color() changed the global colour; the cached text colour is stale.
+        paint_foreground_valid_ = false;
     }
 
     utf8_scratch_.assign((cell.text.size() * 4) + 1, '\0');
@@ -641,14 +668,22 @@ void TerminalWidget::paint_cell(int column, int row, const Cell &cell)
     *out = '\0';
 
     if (out != utf8_scratch_.data()) {
-        fl_font(face_for(attr), style_.font_size);
-        fl_push_clip(px, py, pw, ph);
-        fl_color(foreground.r, foreground.g, foreground.b);
+        ensure_row_clip(row);
+        const int face = face_for(attr);
+        if (face != paint_face_ || style_.font_size != paint_size_) {
+            fl_font(face, style_.font_size);
+            paint_face_ = face;
+            paint_size_ = style_.font_size;
+        }
+        if (!paint_foreground_valid_ || !(foreground == paint_foreground_)) {
+            fl_color(foreground.r, foreground.g, foreground.b);
+            paint_foreground_ = foreground;
+            paint_foreground_valid_ = true;
+        }
         fl_draw(utf8_scratch_.data(), px, py + metrics_.ascent);
         if (attr.underline) {
             fl_line(px, py + metrics_.ascent + 1, px + pw - 1, py + metrics_.ascent + 1);
         }
-        fl_pop_clip();
     }
 
     if (is_cursor) {

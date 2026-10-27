@@ -121,6 +121,8 @@ private:
     [[nodiscard]] static bool inside(Rect a, Rect b);
     void paint_cell(int column, int row, const Cell &cell);
     void collect_cell(int column, int row, const Cell &cell);
+    void ensure_row_clip(int row);
+    void flush_row_clip();
     void draw_cursor();
     void draw_scrollbar();
     void event_cell(int &column, int &row) const;
@@ -158,6 +160,13 @@ private:
     int cursor_row_ = 0;
     bool cursor_visible_ = false;
     CursorStyle cursor_style_ = CursorStyle::default_style;
+    // Per-draw text state: one clip per painted row instead of one per cell,
+    // and font/colour changes only when the attributes change.
+    int paint_row_ = -1;
+    int paint_face_ = -1;
+    int paint_size_ = -1;
+    Rgb paint_foreground_;
+    bool paint_foreground_valid_ = false;
     std::string cursor_text_;
     CellAttributes cursor_attributes_;
     Rgb cursor_foreground_;
