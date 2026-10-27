@@ -194,7 +194,7 @@ bool test_inbound_concurrent_order()
                 consola::InboundMessage message;
                 message.kind = consola::InboundMessage::Kind::paste_finished;
                 message.exit_status = i;
-                while (!queue.try_push_lifecycle(message)) {
+                while (!queue.try_push_lifecycle(std::move(message))) {
                     std::this_thread::yield();
                 }
             }
