@@ -36,6 +36,18 @@ Run the tests:
 ctest --test-dir build --output-on-failure
 ```
 
+## Mouse and selection
+
+- Left-click selects the pressed cell; click-drag selects a range. While a
+  selection is active, a static click clears it and a drag starts a new one.
+- Middle-click pastes the primary selection.
+- Right-click is sent to the running application when it enables mouse
+  reporting; otherwise it currently behaves like a left click and starts or
+  extends a text selection. There is no context menu.
+- The wheel scrolls scrollback; on the alternate screen it sends Up/Down when
+  `alternate_scroll` is enabled. Shift+wheel always scrolls, even while the
+  application is using mouse reporting.
+
 Run the Stage 7 benchmark suite (Release, needs Xvfb for the redraw workload):
 
 ```sh
