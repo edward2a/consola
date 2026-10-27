@@ -1138,3 +1138,14 @@ unchanged (no leaks), 64 MiB and 256 MiB PTY runs end at the same ~32.7 MiB RSS
 (bounded by scrollback), 10,000 fed lines store 9,953, and 2,000 full-screen
 frames run at ~26-36k fps (54-74 MiB/s, high variance). Stage 7 exit criteria
 and remaining evidence-gated follow-ups are recorded.
+
+### Post-Stage 7 — selection click behavior
+
+A single click with no active selection still selects the pressed cell. With an
+active selection, a static click now clears it instead of selecting another
+cell, and a click-drag elsewhere starts a new selection from the press cell.
+The widget defers the decision until FL_DRAG or FL_RELEASE so it can tell the
+two apart. Double-click word selection and mouse-reporting routing are
+unchanged. `TerminalEmulator` gains `has_selection()`, backed by the public
+`tsm_screen_selection_copy` probe. `terminal_widget_test` covers select,
+deselect, drag and replace; Debug and ASan/UBSan suites pass 33/33.

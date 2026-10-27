@@ -432,6 +432,14 @@ void TerminalEmulator::selection_reset()
     tsm_screen_selection_reset(impl_->screen);
 }
 
+bool TerminalEmulator::has_selection() const
+{
+    char *raw = nullptr;
+    const int length = tsm_screen_selection_copy(impl_->screen, &raw);
+    std::free(raw);
+    return length >= 0;
+}
+
 std::string TerminalEmulator::selection_copy() const
 {
     char *raw = nullptr;

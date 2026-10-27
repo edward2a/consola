@@ -103,6 +103,7 @@ public:
     void selection_start(int column, int row);
     void selection_target(int column, int row);
     void selection_reset();
+    [[nodiscard]] bool has_selection() const;
     [[nodiscard]] std::string selection_copy() const;
     void select_word(int column, int row, std::string_view word_chars);
 

@@ -99,6 +99,14 @@ add_test(NAME font_metrics_test
             $<TARGET_FILE:consola_font_metrics_test>)
 set_tests_properties(font_metrics_test PROPERTIES TIMEOUT 30)
 
+add_executable(consola_terminal_widget_test terminal_widget_test.cpp)
+target_link_libraries(consola_terminal_widget_test PRIVATE terminal_ui)
+
+add_test(NAME terminal_widget_test
+    COMMAND ${CMAKE_SOURCE_DIR}/helper-scripts/run-headless.sh
+            $<TARGET_FILE:consola_terminal_widget_test>)
+set_tests_properties(terminal_widget_test PROPERTIES TIMEOUT 30)
+
 add_executable(consola_config_model_test config_model_test.cpp)
 target_link_libraries(consola_config_model_test PRIVATE terminal_core)
 
@@ -181,6 +189,7 @@ if(CONSOLA_SANITIZERS)
     set_tests_properties(broadcast_view_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(terminal_frame_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set_tests_properties(font_metrics_test PROPERTIES ENVIRONMENT "${lsan_options}")
+    set_tests_properties(terminal_widget_test PROPERTIES ENVIRONMENT "${lsan_options}")
     set(session_smoke_env "${session_smoke_env};${lsan_options}")
 endif()
 

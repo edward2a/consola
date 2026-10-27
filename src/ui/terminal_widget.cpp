@@ -900,11 +900,20 @@ int TerminalWidget::handle_push()
         return 1;
     }
 
-    selecting_ = true;
     if (Fl::event_clicks() > 0) {
+        selecting_ = true;
         word_selection_ = true;
+        pending_selection_click_ = false;
         emulator_.select_word(column, row, style_.word_chars);
+    } else if (emulator_.has_selection()) {
+        // A static click on an existing selection clears it; a drag replaces
+        // it. Defer the decision until FL_DRAG or FL_RELEASE.
+        pending_selection_click_ = true;
+        pending_selection_column_ = column;
+        pending_selection_row_ = row;
+        return 1;
     } else {
+        selecting_ = true;
         word_selection_ = false;
         emulator_.selection_start(column, row);
     }
@@ -935,6 +944,20 @@ int TerminalWidget::handle_drag()
         return 1;
     }
 
+    if (pending_selection_click_) {
+        if (column == pending_selection_column_ && row == pending_selection_row_) {
+            return 1;
+        }
+        pending_selection_click_ = false;
+        selecting_ = true;
+        word_selection_ = false;
+        emulator_.selection_start(pending_selection_column_, pending_selection_row_);
+        emulator_.selection_target(column, row);
+        full_redraw_requested_ = true;
+        redraw();
+        return 1;
+    }
+
     if (selecting_) {
         word_selection_ = false;
         emulator_.selection_target(column, row);
@@ -960,6 +983,15 @@ int TerminalWidget::handle_release()
         event.action = MouseActionReleased;
         event.modifiers = fltk_mouse_modifiers();
         emulator_.handle_mouse(event);
+        pressed_button_ = -1;
+        return 1;
+    }
+
+    if (pending_selection_click_) {
+        pending_selection_click_ = false;
+        emulator_.selection_reset();
+        full_redraw_requested_ = true;
+        redraw();
         pressed_button_ = -1;
         return 1;
     }

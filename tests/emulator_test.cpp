@@ -206,13 +206,20 @@ int main()
 
     // Selection and double-click word selection.
     emulator.selection_reset();
+    if (emulator.has_selection()) {
+        return EXIT_FAILURE;
+    }
     emulator.selection_start(0, 0);
     emulator.selection_target(4, 0);
-    if (emulator.selection_copy() != "hello") {
+    if (!emulator.has_selection() || emulator.selection_copy() != "hello") {
         return EXIT_FAILURE;
     }
     emulator.select_word(1, 1, "-A-Za-z0-9,./?%&#:_=+@~");
-    if (emulator.selection_copy() != "world") {
+    if (!emulator.has_selection() || emulator.selection_copy() != "world") {
+        return EXIT_FAILURE;
+    }
+    emulator.selection_reset();
+    if (emulator.has_selection()) {
         return EXIT_FAILURE;
     }
 

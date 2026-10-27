@@ -176,6 +176,9 @@ private:
     // Mouse/selection state (DIP 2.7).
     bool selecting_ = false;
     bool word_selection_ = false;
+    bool pending_selection_click_ = false;
+    int pending_selection_column_ = 0;
+    int pending_selection_row_ = 0;
     int pressed_button_ = -1;
 
     // Clipboard (DIP 2.8).
