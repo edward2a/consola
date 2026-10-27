@@ -36,7 +36,7 @@ bool test_inbound_order()
     }
     consola::InboundMessage eof;
     eof.kind = consola::InboundMessage::Kind::eof;
-    if (!queue.try_push_lifecycle(std::move(eof))) {
+    if (!queue.try_push_lifecycle(eof)) {
         return false;
     }
     if (!push_data(queue, "second")) {
@@ -74,7 +74,7 @@ bool test_inbound_bounds()
     }
     consola::InboundMessage eof;
     eof.kind = consola::InboundMessage::Kind::eof;
-    if (!queue.try_push_lifecycle(std::move(eof))) {
+    if (!queue.try_push_lifecycle(eof)) {
         return false;
     }
 
@@ -194,7 +194,7 @@ bool test_inbound_concurrent_order()
                 consola::InboundMessage message;
                 message.kind = consola::InboundMessage::Kind::paste_finished;
                 message.exit_status = i;
-                while (!queue.try_push_lifecycle(std::move(message))) {
+                while (!queue.try_push_lifecycle(message)) {
                     std::this_thread::yield();
                 }
             }

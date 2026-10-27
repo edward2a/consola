@@ -953,7 +953,7 @@ void LinuxIoLoop::queue_eof(Registered &session)
     }
     InboundMessage message;
     message.kind = InboundMessage::Kind::eof;
-    if (!session.inbound->try_push_lifecycle(std::move(message))) {
+    if (!session.inbound->try_push_lifecycle(message)) {
         log(LogLevel::Error, "session lifecycle queue overflow (eof)");
     }
     session.eof_queued = true;
@@ -995,7 +995,7 @@ void LinuxIoLoop::finish_exit_if_drained(Registered &session)
     InboundMessage message;
     message.kind = InboundMessage::Kind::exited;
     message.exit_status = session.exit_status;
-    if (!session.inbound->try_push_lifecycle(std::move(message))) {
+    if (!session.inbound->try_push_lifecycle(message)) {
         log(LogLevel::Error, "session lifecycle queue overflow (exited)");
     }
     session.exit_notified = true;

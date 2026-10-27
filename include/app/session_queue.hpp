@@ -29,7 +29,7 @@ public:
 
     // Producer (I/O loop). Lifecycle events are never dropped; returns false
     // only if the reserved lifecycle slots are exhausted (a defect).
-    [[nodiscard]] bool try_push_lifecycle(InboundMessage &&message);
+    [[nodiscard]] bool try_push_lifecycle(const InboundMessage &message);
 
     // Consumer (UI). Borrow the oldest message without moving its payload. The
     // view, including a data span, stays valid until pop() is called; feed the

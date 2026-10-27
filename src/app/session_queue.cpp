@@ -19,7 +19,7 @@ bool SessionInboundQueue::try_push_data(std::span<const std::byte> bytes)
     return true;
 }
 
-bool SessionInboundQueue::try_push_lifecycle(InboundMessage &&message)
+bool SessionInboundQueue::try_push_lifecycle(const InboundMessage &message)
 {
     LifecycleSlot *slot = lifecycle_.prepare_push();
     if (slot == nullptr) {
